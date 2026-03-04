@@ -58,7 +58,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.refresh_btn.connect("clicked", self.on_refresh_clicked)
         header_box.append(self.refresh_btn)
         
+        # Ollama GPU toggle
+        self.ollama_btn = Gtk.Button()
+        self.ollama_btn.connect("clicked", self.on_ollama_toggle)
+        header_box.append(self.ollama_btn)
+        self.update_ollama_btn_label()
+        
         self.status_label = Gtk.Label(label="Ready.")
+        self.status_label.set_hexpand(True)
+        self.status_label.set_halign(Gtk.Align.END)
         header_box.append(self.status_label)
         
         # Notebook for Tabs
@@ -68,13 +76,35 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.vbox.append(self.notebook)
         
         # --- TAB 1: Fresh Jobs (New) ---
+        fresh_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        
+        # Filter bar
+        filter_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        filter_box.set_margin_top(8)
+        filter_box.set_margin_start(10)
+        filter_box.set_margin_end(10)
+        filter_label = Gtk.Label(label="Filter by Rank:")
+        filter_box.append(filter_label)
+        
+        self.rank_filter_options = ["ALL"] + RANKS
+        filter_model = Gtk.StringList.new(self.rank_filter_options)
+        self.rank_filter_drop = Gtk.DropDown(model=filter_model)
+        self.rank_filter_drop.set_selected(0)  # Default: ALL
+        self.rank_filter_drop.connect("notify::selected", self.on_rank_filter_changed)
+        filter_box.append(self.rank_filter_drop)
+        
+        fresh_vbox.append(filter_box)
+        
         self.fresh_scroll = Gtk.ScrolledWindow()
         self.fresh_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.fresh_scroll.set_vexpand(True)
         self.fresh_listbox = Gtk.ListBox()
         self.fresh_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self.fresh_listbox.add_css_class("boxed-list")
         self.fresh_scroll.set_child(self.fresh_listbox)
-        self.notebook.append_page(self.fresh_scroll, Gtk.Label(label="Fresh Jobs"))
+        fresh_vbox.append(self.fresh_scroll)
+        
+        self.notebook.append_page(fresh_vbox, Gtk.Label(label="Fresh Jobs"))
         
         # --- TAB 2: Applied ---
         self.applied_scroll = Gtk.ScrolledWindow()
@@ -322,6 +352,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         rank = data.get("rank", "UNKNOWN")
         reason = data.get("reason", "")
         
+        # Apply rank filter for Fresh Jobs only
+        if status == "New":
+            active_filter = self.get_active_rank_filter()
+            if active_filter != "ALL" and rank != active_filter:
+                return
+        
         row = Gtk.ListBoxRow()
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         box.set_margin_top(10)
@@ -438,7 +474,62 @@ class JobAppWindow(Gtk.ApplicationWindow):
         try: webbrowser.open(link)
         except Exception as e: print(f"Failed to open URI: {e}")
 
+    def get_active_rank_filter(self):
+        """Return the currently selected rank filter string."""
+        idx = self.rank_filter_drop.get_selected()
+        return self.rank_filter_options[idx] if idx < len(self.rank_filter_options) else "ALL"
+
+    def on_rank_filter_changed(self, dropdown, pspec):
+        """Re-populate Fresh Jobs when filter changes."""
+        self.refresh_ui()
+
+    def is_ollama_running(self):
+        """Check if Ollama systemd service is active."""
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", "ollama"],
+                capture_output=True, text=True, timeout=3
+            )
+            return result.stdout.strip() == "active"
+        except Exception:
+            return False
+
+    def update_ollama_btn_label(self):
+        """Update the Ollama button text based on service status."""
+        if self.is_ollama_running():
+            self.ollama_btn.set_label("🟢 Ollama ON")
+            self.ollama_btn.remove_css_class("destructive-action")
+            self.ollama_btn.add_css_class("suggested-action")
+        else:
+            self.ollama_btn.set_label("🔴 Ollama OFF")
+            self.ollama_btn.remove_css_class("suggested-action")
+            self.ollama_btn.add_css_class("destructive-action")
+
+    def on_ollama_toggle(self, button):
+        """Start or stop the Ollama service."""
+        self.ollama_btn.set_sensitive(False)
+        thread = threading.Thread(target=self.run_ollama_toggle)
+        thread.daemon = True
+        thread.start()
+
+    def run_ollama_toggle(self):
+        try:
+            if self.is_ollama_running():
+                subprocess.run(["pkexec", "systemctl", "stop", "ollama"], timeout=30)
+            else:
+                subprocess.run(["pkexec", "systemctl", "start", "ollama"], timeout=30)
+        except Exception as e:
+            print(f"Ollama toggle error: {e}")
+        GLib.idle_add(self.on_ollama_toggle_done)
+
+    def on_ollama_toggle_done(self):
+        self.ollama_btn.set_sensitive(True)
+        self.update_ollama_btn_label()
+        return False
+
     def on_refresh_clicked(self, button):
+        # Reload DB from disk (rank_internships.py writes directly to it)
+        self.jobs_db = self.load_db()
         self.sync_csv_to_db()
         self.sync_ranked_csv_to_db()
         self.refresh_ui()
@@ -457,24 +548,43 @@ class JobAppWindow(Gtk.ApplicationWindow):
         thread.start()
         
     def run_scraper(self):
+        import time
         try:
             # Use the virtual environment's Python explicitly
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3" # Fallback
             process = subprocess.Popen([venv_python, "intern_scraper.py"], cwd=os.getcwd())
-            process.wait()
-            GLib.idle_add(self.on_scrape_finished, True)
+            
+            # While scraper runs, periodically sync CSV→DB and trigger ranking
+            while process.poll() is None:
+                time.sleep(30)  # Check every 30 seconds
+                GLib.idle_add(self.periodic_sync_and_rank)
+            
+            GLib.idle_add(self.on_scrape_finished, process.returncode == 0)
         except Exception as e:
             print(f"Error running scraper: {e}")
             GLib.idle_add(self.on_scrape_finished, False)
 
+    def periodic_sync_and_rank(self):
+        """Sync CSV to DB and trigger ranking while scraper is still running."""
+        self.sync_csv_to_db()
+        self.refresh_ui()
+        self.status_label.set_text("Scraping in progress... syncing & ranking new jobs live!")
+        # Start ranker if not already running
+        if self.sort_btn.get_sensitive():
+            self.on_sort_clicked(self.sort_btn)
+        return False
+
     def on_scrape_finished(self, success):
         self.scrape_btn.set_sensitive(True)
         if success:
-            self.status_label.set_text("Scraping finished!")
+            # Final sync + rank pass to catch any stragglers
             self.sync_csv_to_db()
             self.refresh_ui()
+            self.status_label.set_text("Scraping finished! Running final ranking pass...")
+            if self.sort_btn.get_sensitive():
+                self.on_sort_clicked(self.sort_btn)
         else:
             self.status_label.set_text("Scraping failed.")
 

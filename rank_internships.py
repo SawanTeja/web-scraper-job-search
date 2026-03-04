@@ -2,9 +2,10 @@ import asyncio
 import csv
 import re
 import ollama
+import json
 from playwright.async_api import async_playwright
 
-INPUT_CSV = "fresh_internships.csv"
+DB_FILE = "jobs_db.json"
 OUTPUT_CSV = "ranked_internships.csv"
 
 CANDIDATE_PROFILE = """
@@ -58,18 +59,23 @@ async def evaluate_job_with_llm(job_title, jd_text):
         return "ERROR", str(e)
 
 async def process_and_rank_jobs():
-    jobs = []
-    
+    # Load jobs from DB and only rank "New" (Fresh) ones
     try:
-        with open(INPUT_CSV, mode='r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                jobs.append(row)
+        with open(DB_FILE, 'r', encoding='utf-8') as f:
+            jobs_db = json.load(f)
     except FileNotFoundError:
-        print(f"❌ Could not find {INPUT_CSV}. Run the scraper first!")
+        print(f"❌ Could not find {DB_FILE}. Run the scraper first!")
         return
 
-    print(f"🚀 Starting JD extraction and AI ranking for {len(jobs)} jobs...\n")
+    # Filter: only jobs with status "New" AND rank "UNKNOWN" (not yet ranked)
+    fresh_jobs = {link: data for link, data in jobs_db.items()
+                  if data.get("status") == "New" and data.get("rank", "UNKNOWN") == "UNKNOWN"}
+    
+    if not fresh_jobs:
+        print("ℹ️  No fresh jobs to rank. All jobs have already been processed.")
+        return
+
+    print(f"🚀 Starting JD extraction and AI ranking for {len(fresh_jobs)} fresh jobs...\n")
 
     ranked_results = []
 
@@ -80,40 +86,44 @@ async def process_and_rank_jobs():
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
+        page.set_default_timeout(30000)  # 30s max for any Playwright action
 
-        for index, job in enumerate(jobs):
-            title = job["Job Title / Company"]
-            url = job["Application Link"]
-            print(f"[{index + 1}/{len(jobs)}] Extracting: {title}")
+        for index, (url, data) in enumerate(fresh_jobs.items()):
+            title = data.get("title", "Unknown")
+            print(f"[{index + 1}/{len(fresh_jobs)}] Extracting: {title}")
             
             try:
-                # 1. Wait for 'networkidle' (API calls finished) with a longer 30s timeout
-                try:
-                    await page.goto(url, wait_until="networkidle", timeout=30000)
-                except Exception:
-                    # If infinite tracking scripts prevent networkidle, catch the timeout 
-                    # and manually wait 3 seconds before forcing the extraction anyway.
-                    await asyncio.sleep(3)
-                
-                # 2. Use Playwright's native locator to reliably grab text
-                raw_text = await page.locator("body").inner_text()
-                jd_text = clean_text(raw_text)
-                
-                # 3. Fallback for extremely stubborn JS walls (like Workday)
-                if len(jd_text) < 100:
-                    fallback_text = await page.evaluate("""() => {
-                        return Array.from(document.querySelectorAll('p, li, div, span'))
-                            .map(el => el.innerText)
-                            .join(' ');
-                    }""")
-                    jd_text = clean_text(fallback_text)
-                
-                if len(jd_text) < 100:
-                    print("   ⚠️ Not enough text found. Blocked by heavy JS wall or Captcha.")
-                    rank, reason = "ERROR", "Failed to extract meaningful text."
-                else:
-                    print("   🧠 Analyzing JD with Llama 3.1...")
-                    rank, reason = await evaluate_job_with_llm(title, jd_text)
+                # Wrap entire job in a 45s timeout so nothing gets stuck
+                async def process_single_job():
+                    # 1. Try networkidle first, fall back to domcontentloaded
+                    try:
+                        await page.goto(url, wait_until="networkidle", timeout=20000)
+                    except Exception:
+                        try:
+                            await page.goto(url, wait_until="domcontentloaded", timeout=10000)
+                        except Exception:
+                            await asyncio.sleep(2)
+                    
+                    # 2. Extract text
+                    raw_text = await page.locator("body").inner_text()
+                    jd_text = clean_text(raw_text)
+                    
+                    # 3. Fallback for stubborn JS walls
+                    if len(jd_text) < 100:
+                        fallback_text = await page.evaluate("""() => {
+                            return Array.from(document.querySelectorAll('p, li, div, span'))
+                                .map(el => el.innerText)
+                                .join(' ');
+                        }""")
+                        jd_text = clean_text(fallback_text)
+                    
+                    if len(jd_text) < 100:
+                        return "ERROR", "Failed to extract meaningful text."
+                    else:
+                        print("   🧠 Analyzing JD with Llama 3.1...")
+                        return await evaluate_job_with_llm(title, jd_text)
+
+                rank, reason = await asyncio.wait_for(process_single_job(), timeout=45)
                 
                 print(f"   📊 Result: {rank} - {reason}\n")
                 
@@ -123,26 +133,40 @@ async def process_and_rank_jobs():
                     "Rank": rank,
                     "Reason": reason
                 })
+                jobs_db[url]["rank"] = rank
+                jobs_db[url]["reason"] = reason
+                
+            except asyncio.TimeoutError:
+                print(f"   ⏰ TIMEOUT after 45s. Skipping with ERROR tag.\n")
+                ranked_results.append({"Job Title": title, "Link": url, "Rank": "ERROR", "Reason": "Timed out after 45s."})
+                jobs_db[url]["rank"] = "ERROR"
+                jobs_db[url]["reason"] = "Timed out after 45s."
                 
             except Exception as e:
-                print(f"   ❌ Failed to process URL: {e}\n")
-                ranked_results.append({
-                    "Job Title": title,
-                    "Link": url,
-                    "Rank": "ERROR",
-                    "Reason": "Page load or extraction failed."
-                })
+                print(f"   ❌ Failed: {e}. Skipping.\n")
+                ranked_results.append({"Job Title": title, "Link": url, "Rank": "ERROR", "Reason": str(e)[:100]})
+                jobs_db[url]["rank"] = "ERROR"
+                jobs_db[url]["reason"] = str(e)[:100]
+            
+            # Save DB after every job so progress isn't lost
+            with open(DB_FILE, 'w', encoding='utf-8') as f:
+                json.dump(jobs_db, f, indent=4)
                 
         await browser.close()
 
-    # Save the ranked results
+    # Save updated DB with ranks
+    with open(DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump(jobs_db, f, indent=4)
+
+    # Also save the ranked results CSV
     with open(OUTPUT_CSV, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.DictWriter(file, fieldnames=["Job Title", "Link", "Rank", "Reason"])
         writer.writeheader()
         writer.writerows(ranked_results)
 
     print("==================================================")
-    print(f"✅ Finished! Ranked jobs saved to {OUTPUT_CSV}")
+    print(f"✅ Finished! Ranked {len(fresh_jobs)} fresh jobs.")
+    print(f"   Results saved to {OUTPUT_CSV} and {DB_FILE}")
     print("==================================================")
 
 if __name__ == "__main__":
