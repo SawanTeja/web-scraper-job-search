@@ -8,10 +8,34 @@ from playwright.async_api import async_playwright
 DB_FILE = "jobs_db.json"
 
 CANDIDATE_PROFILE = """
-- B.Tech Computer Science student
-- Skills: Python, JavaScript, React, Node.js, C++, SQL, Git, Linux
-- Interests: Software Development, Data Engineering, AI/ML, Full-Stack Development
-- Looking for: Software Engineering / Data / AI internships
+Candidate Background:
+
+Education:
+- Integrated M.Sc. Mathematics and Computing
+
+Core Skills:
+- Languages: C, C++, JavaScript, SQL
+- Backend: Node.js, Express.js, REST APIs
+- Frontend/Mobile: React.js, React Native
+- Systems & Networking: Boost.Asio, TCP/UDP sockets, multithreading
+- Databases: MongoDB, PostgreSQL
+- Tools: Git, Linux, FFmpeg
+
+Project Experience:
+- Built peer-to-peer networking systems in C++ using Boost.Asio
+- Developed full-stack applications using MERN stack
+- Built Android/mobile apps with React Native
+- Designed REST APIs and backend services
+
+Internship Experience:
+- Software Engineering Intern building AI interviewer platform using Node.js backend and React frontend.
+
+Career Goals:
+Looking for internships in:
+- Software Engineering
+- Backend Development
+- Systems Programming
+- Full-Stack Development
 """
 
 def clean_text(text):
@@ -23,21 +47,63 @@ async def evaluate_job_with_llm(job_title, jd_text):
     """Sends the job description to the local GPU-powered LLM for ranking."""
     
     prompt = f"""
-    You are an expert tech recruiter. Evaluate the following internship job description against the candidate's profile.
-    
-    {CANDIDATE_PROFILE}
-    
-    Job Title: {job_title}
-    Job Description: {jd_text}
-    
-    RULES:
-    1. If the job is clearly NOT a software development, data analysis, or core engineering role (e.g., HR, Marketing, Tech Sales, IT Support), immediately rank it as IGNORE.
-    2. Otherwise, rank the match as HIGH, MEDIUM, or LOW based on how well the candidate's skills align with the requirements.
-    
-    Provide your response in exactly this format:
-    RANK: [HIGH/MEDIUM/LOW/IGNORE]
-    REASON: [One short sentence explaining why.]
-    """
+You are an experienced technical recruiter.
+
+Evaluate how well this internship matches the candidate profile.
+
+====================
+CANDIDATE PROFILE
+====================
+{CANDIDATE_PROFILE}
+
+====================
+JOB
+====================
+Title: {job_title}
+
+Description:
+{jd_text}
+
+====================
+RANKING RULES
+====================
+
+HIGH:
+- Software Engineering
+- Backend Engineering
+- Full Stack Development
+- Systems Programming
+- C/C++ roles
+- Node.js / JavaScript backend roles
+- Networking / distributed systems roles
+- Mobile app development roles
+
+MEDIUM:
+- General developer roles
+- Web development internships
+- Platform engineering roles
+- DevOps roles
+
+LOW:
+- Data engineering
+- Data analyst roles
+- DevOps heavy roles
+- Cloud-only infrastructure roles
+
+IGNORE:
+- AI/ML research roles
+- Data science roles
+- HR / Marketing / Sales
+- Technical support
+- QA / manual testing
+
+====================
+
+Respond ONLY in this format:
+
+RANK: HIGH / MEDIUM / LOW / IGNORE
+REASON: One short sentence explaining the decision.
+"""
 
     try:
         response = ollama.chat(model='llama3.1', messages=[

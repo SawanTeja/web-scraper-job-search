@@ -8,54 +8,35 @@ from playwright.async_api import async_playwright
 
 # The expanded list of ATS, Portals, and Career Pages
 SITES = [
-    # --- Core Startup ATS ---
+    # Startup ATS
     "lever.co",
     "boards.greenhouse.io",
     "jobs.ashbyhq.com",
-    "smartrecruiters.com",
     "apply.workable.com",
+    "smartrecruiters.com",
 
-    # --- Enterprise ATS ---
+    # Enterprise ATS
     "myworkdayjobs.com",
     "icims.com",
-    "taleo.net",
-    "jobs.brassring.com",
-    "eightfold.ai",
-    "phenompro.com",
     "jobvite.com",
     "bamboohr.com",
     "breezy.hr",
     "recruitee.com",
 
-    # --- Regional & Startup Tech Portals ---
+    # Tech portals
     "wellfound.com",
-    "ycombinator.com/jobs",
     "instahyre.com",
-    "hirist.tech",
     "cutshort.io",
-
-    # --- Fresher / Campus Portals ---
-    "unstop.com",
-    "simplify.jobs",
-
-    # --- Big Tech Career Pages ---
-    "careers.google.com",
-    "careers.microsoft.com",
-    "amazon.jobs",
-    "metacareers.com",
-    "jobs.apple.com",
-
-    # --- LinkedIn Recruiters ---
-    "linkedin.com/posts/",
-    "linkedin.com/feed/update/"
+    "hirist.tech"
 ]
 
-# The "Broad Tech" Dragnet (Ensures we catch oddly-named SDE roles)
+# The "Broad Tech" Dragnet
 SEARCH_QUERIES = [
-    '(software OR developer OR engineering) (intern OR internship) 2026',
-    '(data OR analytics OR quantitative) (intern OR internship) 2026',
-    '(backend OR frontend OR fullstack OR systems) (intern OR internship)',
-    '(c++ OR react OR node) (intern OR internship)'
+    '(software engineer OR software developer) (intern OR internship) 2026',
+    '(backend OR backend engineer) (intern OR internship)',
+    '(full stack OR fullstack) (intern OR internship)',
+    '(c++ OR systems OR networking) (intern OR internship)',
+    '(node.js OR react OR javascript) (intern OR internship)'
 ]
 
 TIME_FILTER = "qdr:d"
@@ -100,7 +81,7 @@ def add_job_to_db(db, title, url):
     save_db(db)
     return True
 
-# --- NEW: Anti-CAPTCHA Mouse and Scroll Function ---
+# --- Anti-CAPTCHA Mouse and Scroll Function ---
 async def human_scroll_and_move(page):
     """Simulates random human scrolling and mouse movements."""
     await page.mouse.move(random.randint(100, 800), random.randint(100, 600))
@@ -115,10 +96,11 @@ async def human_scroll_and_move(page):
 # ---------------------------------------------------
 
 async def scrape_google_jobs():
-    unique_jobs = set()  # Track URLs we've seen this run
+    unique_jobs = set()  
     search_count = 0
-    jobs_db = load_db()  # Load existing DB for deduplication
-    # Also add all existing URLs to unique_jobs so we skip them
+    jobs_db = load_db()  
+    
+    # Add all existing URLs to unique_jobs so we skip them
     unique_jobs.update(jobs_db.keys())
     new_jobs_added = 0
 
@@ -129,7 +111,7 @@ async def scrape_google_jobs():
         )
         page = await context.new_page()
 
-        print(f"🚀 Starting the Massive 2-Hour ATS Scraper...")
+        print(f"🚀 Starting the Massive ATS Scraper...")
         print(f"📁 Data will auto-save to {DB_FILE} in real-time.")
         print(f"📦 {len(jobs_db)} existing jobs loaded (will skip duplicates).\n")
 
@@ -142,15 +124,14 @@ async def scrape_google_jobs():
                 print(f"\n   🔍 Query: {query_term}")
                 
                 for start in range(0, MAX_PAGES * 10, 10):
-                    search_count += 1 # --- NEW ---
+                    search_count += 1 
                     
-                    # --- NEW: RANDOM HOMEPAGE DETOUR ---
+                    # RANDOM HOMEPAGE DETOUR 
                     if search_count % random.randint(8, 12) == 0:
                         print("      🏠 Taking a detour to Google homepage to act human...")
                         await page.goto("https://www.google.com")
                         await human_scroll_and_move(page)
                         await asyncio.sleep(random.uniform(10, 20))
-                    # -----------------------------------
 
                     query = f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
@@ -159,9 +140,8 @@ async def scrape_google_jobs():
                     
                     await page.goto(search_url)
                     
-                    # --- NEW: HUMAN SCROLLING AFTER LOAD ---
+                    # HUMAN SCROLLING AFTER LOAD 
                     await human_scroll_and_move(page)
-                    # ---------------------------------------
 
                     # 1. PAGE-TO-PAGE GAP
                     sleep_time = random.uniform(12, 25)
