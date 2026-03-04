@@ -2,72 +2,104 @@ import asyncio
 import urllib.parse
 import random
 import csv
+import os
 from playwright.async_api import async_playwright
 
-# The ATS domains to target
+# The expanded list of ATS, Portals, and Career Pages
 SITES = [
+    # --- Core Startup ATS ---
     "lever.co",
-    "smartrecruiters.com",
     "boards.greenhouse.io",
     "jobs.ashbyhq.com",
+    "smartrecruiters.com",
     "apply.workable.com",
-    "myworkdayjobs.com"
+
+    # --- Enterprise ATS ---
+    "myworkdayjobs.com",
+    "icims.com",
+    "taleo.net",
+    "jobs.brassring.com",
+    "eightfold.ai",
+    "phenompro.com",
+    "jobvite.com",
+    "bamboohr.com",
+    "breezy.hr",
+    "recruitee.com",
+
+    # --- Regional & Startup Tech Portals ---
+    "wellfound.com",
+    "ycombinator.com/jobs",
+    "instahyre.com",
+    "hirist.tech",
+    "cutshort.io",
+
+    # --- Fresher / Campus Portals ---
+    "unstop.com",
+    "simplify.jobs",
+
+    # --- Big Tech Career Pages ---
+    "careers.google.com",
+    "careers.microsoft.com",
+    "amazon.jobs",
+    "metacareers.com",
+    "jobs.apple.com",
+
+    # --- LinkedIn Recruiters ---
+    "linkedin.com/posts/",
+    "linkedin.com/feed/update/"
 ]
 
-# Multiple specific combinations to trick Google into showing hidden results
+# The "Broad Tech" Dragnet (Ensures we catch oddly-named SDE roles)
 SEARCH_QUERIES = [
-    '"software engineer" (intern OR internship) 2026',
-    '"sde" (intern OR internship) 2026',
-    '"full stack" OR "react" (intern OR internship)',
-    '"data analyst" OR "data analysis" (intern OR internship)',
-    '"developer" summer internship fresher'
+    '(software OR developer OR engineering) (intern OR internship) 2026',
+    '(data OR analytics OR quantitative) (intern OR internship) 2026',
+    '(backend OR frontend OR fullstack OR systems) (intern OR internship)',
+    '(c++ OR react OR node) (intern OR internship)'
 ]
 
-# Time filter: 'qdr:d' restricts results to the past 24 hours
 TIME_FILTER = "qdr:d"
-
-# Scrape up to 2 pages (20 results) per query to keep volume manageable
-MAX_PAGES = 2 
+MAX_PAGES = 5
+CSV_FILENAME = "fresh_internships.csv"
 
 def clean_url(raw_url):
-    """
-    Decodes Google redirects and removes tracking queries 
-    to ensure unique job IDs.
-    """
+    """Decodes Google redirects and removes tracking queries."""
     if "google.com/url" in raw_url:
         parsed = urllib.parse.urlparse(raw_url)
         query_params = urllib.parse.parse_qs(parsed.query)
         if 'q' in query_params:
             raw_url = query_params['q'][0]
+    return raw_url.split('?')[0]
 
-    # Strip tracking parameters to deduplicate (e.g., ?utm_source=...)
-    clean = raw_url.split('?')[0]
-    return clean
+def append_to_csv(title, url):
+    """Instantly saves a single job to the CSV to prevent data loss."""
+    file_exists = os.path.isfile(CSV_FILENAME)
+    with open(CSV_FILENAME, mode='a', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            writer.writerow(["Job Title / Company", "Application Link"])
+        writer.writerow([title, url])
 
 async def scrape_google_jobs():
-    # Dictionary to store unique jobs. Key: Clean URL, Value: Job Title
-    unique_jobs = {}
+    unique_jobs = set() # Changed to a set to just track URLs we've seen this run
 
     async with async_playwright() as p:
-        # headless=False opens a visible browser for manual CAPTCHA solving
         browser = await p.chromium.launch(headless=False)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
 
-        print("🚀 Starting the Multi-Query Stealth ATS Scraper...\n")
+        print(f"🚀 Starting the Massive 2-Hour ATS Scraper...")
+        print(f"📁 Data will auto-save to {CSV_FILENAME} in real-time.\n")
 
         for site in SITES:
             print(f"\n=====================================")
-            print(f"🏢 TARGETING ATS: {site}")
+            print(f"🏢 TARGETING: {site}")
             print(f"=====================================")
             
-            # Loop through every query combination for this specific ATS
             for query_term in SEARCH_QUERIES:
                 print(f"\n   🔍 Query: {query_term}")
                 
-                # Implemented Pagination (0, 10)
                 for start in range(0, MAX_PAGES * 10, 10):
                     query = f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
@@ -76,7 +108,7 @@ async def scrape_google_jobs():
                     
                     await page.goto(search_url)
                     
-                    # 1. PAGE-TO-PAGE GAP: 12-25 seconds
+                    # 1. PAGE-TO-PAGE GAP
                     sleep_time = random.uniform(12, 25)
                     print(f"      ⏳ Page {int(start/10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")
                     await asyncio.sleep(sleep_time)
@@ -87,7 +119,6 @@ async def scrape_google_jobs():
                         await page.wait_for_selector('div#search', timeout=0) 
                     
                     try:
-                        # Extract both the URL and the Google Result Title (h3)
                         results = await page.eval_on_selector_all(
                             "div.yuRUbf",
                             """elements => elements.map(e => {
@@ -102,27 +133,32 @@ async def scrape_google_jobs():
                         
                         if not results:
                             print(f"      🚫 No more results for this query. Moving to next.")
-                            break # Stop paginating if no results are on this page
+                            break 
 
+                        new_jobs_found = 0
                         for res in results:
                             raw_url = res['url']
                             title = res['title']
                             
                             if site in raw_url:
                                 final_url = clean_url(raw_url)
-                                # Add to dictionary (automatically handles duplicates)
                                 if final_url not in unique_jobs:
-                                    unique_jobs[final_url] = title
+                                    unique_jobs.add(final_url)
+                                    append_to_csv(title, final_url) # Real-time save
+                                    new_jobs_found += 1
+                        
+                        if new_jobs_found > 0:
+                            print(f"      💾 Auto-saved {new_jobs_found} new jobs.")
                                 
                     except Exception as e:
-                        print(f"      ❌ Error extracting links on page {int(start/10) + 1}: {e}")
+                        print(f"      ❌ Error extracting links: {e}")
 
-                # 2. QUERY-TO-QUERY GAP: 30-45 seconds
+                # 2. QUERY-TO-QUERY GAP
                 query_pause = random.uniform(30, 45)
                 print(f"   🛑 Finished query block. Resting for {query_pause:.0f}s...")
                 await asyncio.sleep(query_pause)
 
-            # 3. SITE-TO-SITE GAP: 90-150 seconds (1.5 - 2.5 minutes)
+            # 3. SITE-TO-SITE GAP
             site_pause = random.uniform(90, 150)
             print(f"☕ Finished {site}. Taking a long {site_pause:.0f}s break...")
             await asyncio.sleep(site_pause)
@@ -132,18 +168,7 @@ async def scrape_google_jobs():
 
 if __name__ == "__main__":
     jobs = asyncio.run(scrape_google_jobs())
-    
     print("\n" + "="*50)
-    print(f"🎯 Found {len(jobs)} unique internship postings!")
+    print(f"🎯 Scrape complete! Total unique jobs found this run: {len(jobs)}")
+    print(f"✅ All data is safely secured in {CSV_FILENAME}")
     print("="*50)
-    
-    # Export to CSV
-    csv_filename = "fresh_internships.csv"
-    with open(csv_filename, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Job Title / Company", "Application Link"])
-        
-        for url, title in jobs.items():
-            writer.writerow([title, url])
-            
-    print(f"✅ Data successfully saved to {csv_filename}")
