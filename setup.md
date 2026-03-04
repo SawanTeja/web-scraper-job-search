@@ -83,3 +83,17 @@ CSV so you only see the good matches, run this quick bash command:
 
 Now, open high_priority_jobs.csv and start applying!
 ====================================================================
+
+
+To start Ollama:
+
+Bash
+sudo systemctl start ollama
+To stop Ollama (frees up your GPU and RAM):
+
+Bash
+sudo systemctl stop ollama
+To check if it is currently running:
+
+Bash
+systemctl status ollama
