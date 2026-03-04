@@ -3,14 +3,14 @@
         "title": "Whoop - Software Engineer I (Backend)",
         "status": "New",
         "rank": "HIGH",
-        "reason": "The candidate has a strong background in backend development, Node.js, and JavaScript, which are all relevant to the Software Engineer I (Backend) role at WHOOP, and their experience with C, C++, and Boost.Asio is also applicable to the job requirements.",
+        "reason": "The candidate's skills and experience align closely with the job requirements, including backend development, systems programming, and experience with Node.js and JavaScript.",
         "added_at": "2026-03-04T17:58:46.471167+00:00"
     },
     "https://jobs.lever.co/fehrandpeers/9e50b963-fbb9-4be5-b038-27cba33673fe": {
         "title": "Fehr & Peers - Transportation Internship (Summer 2026)",
         "status": "New",
         "rank": "MEDIUM",
-        "reason": "The internship is in software engineering, but it's not a backend, full stack, or systems programming role, and it doesn't involve Node.js or JavaScript, which are key areas of interest for the candidate.",
+        "reason": "The internship is related to software development, but the technical skills required (Microsoft Excel, Adobe Creative Suite, etc.) do not match the candidate's profile, which emphasizes backend development, systems programming, and full-stack development.",
         "added_at": "2026-03-04T17:58:46.471347+00:00"
     }
 }

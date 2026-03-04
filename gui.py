@@ -13,12 +13,11 @@ from gi.repository import Gtk, GLib, Pango
 
 DB_FILE = "jobs_db.json"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
-RANKS = ["VERY HIGH", "HIGH", "MEDIUM", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
+RANKS = ["HIGH", "MEDIUM", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
 NA_EXPIRY_HOURS = 24
 
 # Color mapping for ranks
 RANK_COLORS = {
-    "VERY HIGH": "#90ee90", # light green
     "HIGH": "#1a531b",   # green
     "MEDIUM": "#8b7e12", # yellow
     "LOW": "#8c4412",    # orange
@@ -197,7 +196,6 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 font-weight: bold;
                 margin-right: 10px;
             }
-            .rank-VERY_HIGH { background-color: #90ee90; color: black; }
             .rank-HIGH { background-color: #1a531b; }
             .rank-MEDIUM { background-color: #8b7e12; }
             .rank-LOW { background-color: #8c4412; }
@@ -299,10 +297,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         )
         
         # --- UI for Priority (Sorted) ---
-        # Sort logic: VERY HIGH -> HIGH -> MEDIUM -> LOW -> UNKNOWN -> ERROR -> IGNORE
+        # Sort logic: HIGH -> MEDIUM -> LOW -> UNKNOWN -> ERROR -> IGNORE
         def get_rank_weight(rank_str):
-            weights = {"VERY HIGH": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4, "ERROR": 5, "IGNORE": 6}
-            return weights.get(rank_str, 4)
+            weights = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNKNOWN": 3, "ERROR": 4, "IGNORE": 5}
+            return weights.get(rank_str, 3)
 
         sorted_jobs = sorted(self.jobs_db.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
         for link, data in sorted_jobs:
@@ -330,7 +328,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # Rank pill
         rank_label = Gtk.Label(label=rank)
         rank_label.add_css_class("rank-label")
-        rank_label.add_css_class(f"rank-{rank.replace(' ', '_')}")
+        rank_label.add_css_class(f"rank-{rank}")
         rank_label.set_valign(Gtk.Align.CENTER)
         
         # Title text
@@ -384,7 +382,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         
         rank_label = Gtk.Label(label=rank)
         rank_label.add_css_class("rank-label")
-        rank_label.add_css_class(f"rank-{rank.replace(' ', '_')}")
+        rank_label.add_css_class(f"rank-{rank}")
         
         title_label = Gtk.Label(label=title)
         title_label.set_hexpand(True)
