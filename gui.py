@@ -10,8 +10,7 @@ from datetime import datetime, timezone, timedelta
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib, Pango
 
-CSV_FILE = "fresh_internships.csv"
-OUTPUT_RANKED_CSV = "ranked_internships.csv"
+
 DB_FILE = "jobs_db.json"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
 RANKS = ["HIGH", "MEDIUM", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
@@ -182,10 +181,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # Connect tab change signal to trigger special updates if needed
         self.notebook.connect("switch-page", self.on_tab_switched)
 
-        # Initial Sync & Load
-        self.sync_csv_to_db()
+        # Initial Load
         self.backfill_added_at()
-        self.sync_ranked_csv_to_db()
         self.expire_stale_jobs()
         self.refresh_ui()
 
@@ -223,29 +220,6 @@ class JobAppWindow(Gtk.ApplicationWindow):
         with open(DB_FILE, 'w', encoding='utf-8') as f:
             json.dump(self.jobs_db, f, indent=4)
 
-    def sync_csv_to_db(self):
-        if not os.path.exists(CSV_FILE): return
-        added = 0
-        try:
-            with open(CSV_FILE, mode='r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                header = next(reader, None)
-                for row in reader:
-                    if len(row) >= 2:
-                        title, link = row[0], row[1]
-                        if link not in self.jobs_db:
-                            self.jobs_db[link] = {
-                                "title": title,
-                                "status": "New",
-                                "rank": "UNKNOWN",
-                                "reason": "",
-                                "added_at": datetime.now(timezone.utc).isoformat()
-                            }
-                            added += 1
-            if added > 0:
-                self.save_db()
-        except Exception as e:
-            print(f"Error syncing raw CSV: {e}")
 
     def backfill_added_at(self):
         """Add added_at timestamp to existing jobs and migrate old statuses."""
@@ -280,26 +254,6 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.save_db()
             print(f"⏰ Auto-expired {expired} stale jobs to NA.")
 
-    def sync_ranked_csv_to_db(self):
-        if not os.path.exists(OUTPUT_RANKED_CSV): return
-        updated = 0
-        try:
-            with open(OUTPUT_RANKED_CSV, mode='r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    link = row.get("Link")
-                    if link and link in self.jobs_db:
-                        # Only update rank if it exists in CSV
-                        rank = row.get("Rank", "UNKNOWN")
-                        reason = row.get("Reason", "")
-                        if self.jobs_db[link].get("rank") != rank or self.jobs_db[link].get("reason") != reason:
-                            self.jobs_db[link]["rank"] = rank
-                            self.jobs_db[link]["reason"] = reason
-                            updated += 1
-            if updated > 0:
-                self.save_db()
-        except Exception as e:
-            print(f"Error syncing ranked CSV: {e}")
 
     def clear_listbox(self, listbox):
         while True:
@@ -546,10 +500,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.status_label.set_text("No IGNORE jobs to delete.")
 
     def on_refresh_clicked(self, button):
-        # Reload DB from disk (rank_internships.py writes directly to it)
+        # Reload DB from disk
         self.jobs_db = self.load_db()
-        self.sync_csv_to_db()
-        self.sync_ranked_csv_to_db()
         self.refresh_ui()
         
     def on_tab_switched(self, notebook, page, page_num):
@@ -585,8 +537,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
             GLib.idle_add(self.on_scrape_finished, False)
 
     def periodic_sync_and_rank(self):
-        """Sync CSV to DB and trigger ranking while scraper is still running."""
-        self.sync_csv_to_db()
+        """Reload DB from disk and trigger ranking while scraper is still running."""
+        self.jobs_db = self.load_db()
         self.refresh_ui()
         self.status_label.set_text("Scraping in progress... syncing & ranking new jobs live!")
         # Start ranker if not already running
@@ -597,8 +549,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
     def on_scrape_finished(self, success):
         self.scrape_btn.set_sensitive(True)
         if success:
-            # Final sync + rank pass to catch any stragglers
-            self.sync_csv_to_db()
+            # Final reload + rank pass to catch any stragglers
+            self.jobs_db = self.load_db()
             self.refresh_ui()
             self.status_label.set_text("Scraping finished! Running final ranking pass...")
             if self.sort_btn.get_sensitive():
@@ -636,7 +588,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.sort_btn.set_sensitive(True)
         if success:
             self.sort_status_label.set_text("Ranking finished!")
-            self.sync_ranked_csv_to_db()
+            self.jobs_db = self.load_db()
             self.refresh_ui()
         else:
             self.sort_status_label.set_text("Ranking script failed.")

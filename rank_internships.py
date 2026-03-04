@@ -6,7 +6,6 @@ import json
 from playwright.async_api import async_playwright
 
 DB_FILE = "jobs_db.json"
-OUTPUT_CSV = "ranked_internships.csv"
 
 CANDIDATE_PROFILE = """
 - B.Tech Computer Science student
@@ -77,8 +76,6 @@ async def process_and_rank_jobs():
 
     print(f"🚀 Starting JD extraction and AI ranking for {len(fresh_jobs)} fresh jobs...\n")
 
-    ranked_results = []
-
     async with async_playwright() as p:
         # Keep headless=True, but add a real user-agent so Cloudflare doesn't block the extraction
         browser = await p.chromium.launch(headless=True)
@@ -126,25 +123,16 @@ async def process_and_rank_jobs():
                 rank, reason = await asyncio.wait_for(process_single_job(), timeout=45)
                 
                 print(f"   📊 Result: {rank} - {reason}\n")
-                
-                ranked_results.append({
-                    "Job Title": title,
-                    "Link": url,
-                    "Rank": rank,
-                    "Reason": reason
-                })
                 jobs_db[url]["rank"] = rank
                 jobs_db[url]["reason"] = reason
                 
             except asyncio.TimeoutError:
                 print(f"   ⏰ TIMEOUT after 45s. Skipping with ERROR tag.\n")
-                ranked_results.append({"Job Title": title, "Link": url, "Rank": "ERROR", "Reason": "Timed out after 45s."})
                 jobs_db[url]["rank"] = "ERROR"
                 jobs_db[url]["reason"] = "Timed out after 45s."
                 
             except Exception as e:
                 print(f"   ❌ Failed: {e}. Skipping.\n")
-                ranked_results.append({"Job Title": title, "Link": url, "Rank": "ERROR", "Reason": str(e)[:100]})
                 jobs_db[url]["rank"] = "ERROR"
                 jobs_db[url]["reason"] = str(e)[:100]
             
@@ -158,15 +146,9 @@ async def process_and_rank_jobs():
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(jobs_db, f, indent=4)
 
-    # Also save the ranked results CSV
-    with open(OUTPUT_CSV, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=["Job Title", "Link", "Rank", "Reason"])
-        writer.writeheader()
-        writer.writerows(ranked_results)
-
     print("==================================================")
     print(f"✅ Finished! Ranked {len(fresh_jobs)} fresh jobs.")
-    print(f"   Results saved to {OUTPUT_CSV} and {DB_FILE}")
+    print(f"   Results saved to {DB_FILE}")
     print("==================================================")
 
 if __name__ == "__main__":

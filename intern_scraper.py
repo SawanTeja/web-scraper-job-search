@@ -1,8 +1,9 @@
 import asyncio
 import urllib.parse
 import random
-import csv
+import json
 import os
+from datetime import datetime, timezone
 from playwright.async_api import async_playwright
 
 # The expanded list of ATS, Portals, and Career Pages
@@ -59,7 +60,7 @@ SEARCH_QUERIES = [
 
 TIME_FILTER = "qdr:d"
 MAX_PAGES = 5
-CSV_FILENAME = "fresh_internships.csv"
+DB_FILE = "jobs_db.json"
 
 def clean_url(raw_url):
     """Decodes Google redirects and removes tracking queries."""
@@ -70,14 +71,34 @@ def clean_url(raw_url):
             raw_url = query_params['q'][0]
     return raw_url.split('?')[0]
 
-def append_to_csv(title, url):
-    """Instantly saves a single job to the CSV to prevent data loss."""
-    file_exists = os.path.isfile(CSV_FILENAME)
-    with open(CSV_FILENAME, mode='a', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        if not file_exists:
-            writer.writerow(["Job Title / Company", "Application Link"])
-        writer.writerow([title, url])
+def load_db():
+    """Load the jobs database from disk."""
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_db(db):
+    """Save the jobs database to disk."""
+    with open(DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump(db, f, indent=4)
+
+def add_job_to_db(db, title, url):
+    """Add a job directly to the DB if it doesn't already exist. Returns True if new."""
+    if url in db:
+        return False
+    db[url] = {
+        "title": title,
+        "status": "New",
+        "rank": "UNKNOWN",
+        "reason": "",
+        "added_at": datetime.now(timezone.utc).isoformat()
+    }
+    save_db(db)
+    return True
 
 # --- NEW: Anti-CAPTCHA Mouse and Scroll Function ---
 async def human_scroll_and_move(page):
@@ -94,8 +115,12 @@ async def human_scroll_and_move(page):
 # ---------------------------------------------------
 
 async def scrape_google_jobs():
-    unique_jobs = set() # Changed to a set to just track URLs we've seen this run
-    search_count = 0 # --- NEW: Track searches for homepage detours ---
+    unique_jobs = set()  # Track URLs we've seen this run
+    search_count = 0
+    jobs_db = load_db()  # Load existing DB for deduplication
+    # Also add all existing URLs to unique_jobs so we skip them
+    unique_jobs.update(jobs_db.keys())
+    new_jobs_added = 0
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False)
@@ -105,7 +130,8 @@ async def scrape_google_jobs():
         page = await context.new_page()
 
         print(f"🚀 Starting the Massive 2-Hour ATS Scraper...")
-        print(f"📁 Data will auto-save to {CSV_FILENAME} in real-time.\n")
+        print(f"📁 Data will auto-save to {DB_FILE} in real-time.")
+        print(f"📦 {len(jobs_db)} existing jobs loaded (will skip duplicates).\n")
 
         for site in SITES:
             print(f"\n=====================================")
@@ -173,11 +199,12 @@ async def scrape_google_jobs():
                                 final_url = clean_url(raw_url)
                                 if final_url not in unique_jobs:
                                     unique_jobs.add(final_url)
-                                    append_to_csv(title, final_url) # Real-time save
-                                    new_jobs_found += 1
+                                    if add_job_to_db(jobs_db, title, final_url):
+                                        new_jobs_found += 1
+                                        new_jobs_added += 1
                         
                         if new_jobs_found > 0:
-                            print(f"      💾 Auto-saved {new_jobs_found} new jobs.")
+                            print(f"      💾 Auto-saved {new_jobs_found} new jobs to DB.")
                                 
                     except Exception as e:
                         print(f"      ❌ Error extracting links: {e}")
@@ -193,11 +220,10 @@ async def scrape_google_jobs():
             await asyncio.sleep(site_pause)
 
         await browser.close()
-        return unique_jobs
+        return new_jobs_added
 
 if __name__ == "__main__":
-    jobs = asyncio.run(scrape_google_jobs())
+    count = asyncio.run(scrape_google_jobs())
     print("\n" + "="*50)
-    print(f"🎯 Scrape complete! Total unique jobs found this run: {len(jobs)}")
-    print(f"✅ All data is safely secured in {CSV_FILENAME}")
+    print(f"🎯 Scrape complete! {count} new jobs added to {DB_FILE}")
     print("="*50)

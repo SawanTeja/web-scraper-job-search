@@ -1,7 +1,7 @@
 {
     "https://jobs.lever.co/nextshiftlearning/a1bccc99-c98f-4601-932d-ad11b65e501f": {
         "title": "Next Shift Learning - Snap Engineering Academy 2026",
-        "status": "New",
+        "status": "NA",
         "rank": "HIGH",
         "reason": "The job description matches the candidate's skills and interests perfectly, with requirements for programming languages, data structures, and experience in computer science fundamentals, as well as a focus on software development and technical skills.",
         "added_at": "2026-03-04T11:17:59.889508+00:00"
@@ -34,40 +34,12 @@
         "reason": "The job description is for a UX Research Intern, which does not align with the candidate's interests in software development, data engineering, AI/ML, and full-stack development.",
         "added_at": "2026-03-04T11:17:59.889524+00:00"
     },
-    "https://boards.greenhouse.io/betterhelpcom/jobs/5136712008": {
-        "title": "Job Application for SEO/GEO Intern - Summer 2026 at ...",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an SEO/GEO Intern, which is a marketing role, and does not align with the candidate's interests in software development, data engineering, AI/ML, and full-stack development.",
-        "added_at": "2026-03-04T11:17:59.889525+00:00"
-    },
     "https://boards.greenhouse.io/point72/jobs/8435134002": {
         "title": "2027 Point72 Academy Investment Analyst Summer ...",
         "status": "New",
         "rank": "MEDIUM",
         "reason": "The job is related to software engineering and data analysis, but it's more focused on finance and investment, and the candidate's skills are primarily technical.",
         "added_at": "2026-03-04T11:17:59.889527+00:00"
-    },
-    "https://boards.greenhouse.io/betterhelpcom/jobs/5134207008": {
-        "title": "Social & Influencer Marketing Intern - Summer 2026",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Social & Influencer Marketing Intern, which is not a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889528+00:00"
-    },
-    "https://boards.greenhouse.io/pingidentity/jobs/8442534002": {
-        "title": "Job Application for Revenue Enablement Manager at Ping ...",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Revenue Enablement Manager, which is a sales and business operations role unrelated to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889529+00:00"
-    },
-    "https://boards.greenhouse.io/clinchoice/jobs/4794940101": {
-        "title": "Clinical Quality Assurance Consultant",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Clinical Quality Assurance Consultant, which is a non-software development, non-data analysis role that requires a background in life sciences rather than computer science.",
-        "added_at": "2026-03-04T11:17:59.889530+00:00"
     },
     "https://boards.greenhouse.io/ridgeline/jobs/7584443003": {
         "title": "Careers at Ridgeline",
@@ -78,21 +50,21 @@
     },
     "https://jobs.ashbyhq.com/taaraconnect/ed52ef53-dca2-433e-a2b7-6003d8be7ea2": {
         "title": "2026 Software Engineering Internship @ Taara",
-        "status": "New",
+        "status": "Applied",
         "rank": "HIGH",
         "reason": "The candidate has a strong foundation in software engineering, with skills in languages used at Taara (Python, TypeScript, etc.) and relevant experience with full-stack development, data structures, and algorithms, making them a good fit for the role.",
         "added_at": "2026-03-04T11:17:59.889534+00:00"
     },
     "https://jobs.ashbyhq.com/airwallex/98cef827-ceb6-4caa-a2fd-e4d6e8c7d2a9": {
         "title": "2026/27 Software Engineering Intern Program @ Airwallex",
-        "status": "New",
+        "status": "Applied",
         "rank": "HIGH",
         "reason": "The candidate's skills, interests, and desired job roles align perfectly with the software engineering, data engineering, and AI/ML requirements of the internship.",
         "added_at": "2026-03-04T11:17:59.889535+00:00"
     },
     "https://jobs.ashbyhq.com/monarchmoney/b62fbd01-4082-4ddf-9a39-ec0ae1e526ee/application": {
         "title": "Software Engineering Intern (Summer 2026)",
-        "status": "New",
+        "status": "Applied",
         "rank": "HIGH",
         "reason": "The job requires software engineering skills, and the candidate has relevant skills in Python, JavaScript, React, Node.js, C++, and SQL.",
         "added_at": "2026-03-04T11:17:59.889536+00:00"
@@ -146,20 +118,6 @@
         "reason": "The job description involves various non-technical tasks such as go-to-market strategy, sales, partnership building, hiring, and community building, but the candidate's technical skills in programming languages and frameworks are not explicitly mentioned as required for the Founders Associate role, which seems to focus on business and operational tasks.",
         "added_at": "2026-03-04T11:17:59.889544+00:00"
     },
-    "https://jobs.ashbyhq.com/vega/0fca6143-a8e6-4a85-9b52-cf5cdacb0bfc/application": {
-        "title": "Strategy and Growth - Summer Internship",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job title and description indicate a business-focused role with no mention of software development, data analysis, or core engineering, suggesting it's not related to the candidate's areas of interest.",
-        "added_at": "2026-03-04T11:17:59.889546+00:00"
-    },
-    "https://jobs.ashbyhq.com/robin-radar/963edf83-c738-47d9-9e66-2b9f53f08d4d": {
-        "title": "Sales Operations Intern @ Robin Radar",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Sales Operations Intern, which is not related to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889547+00:00"
-    },
     "https://jobs.ashbyhq.com/the-exploration-company/a1be4c06-727b-447c-9708-47b4558fc76d/application": {
         "title": "Working Student - AI & Computer Vision for Space Navigation",
         "status": "New",
@@ -167,40 +125,12 @@
         "reason": "The job requires AI and Computer Vision skills, which align with the candidate's interests in AI/ML and their technical skills in Python and C++.",
         "added_at": "2026-03-04T11:17:59.889548+00:00"
     },
-    "https://jobs.ashbyhq.com/robin-radar/a3ca96fb-98a7-4abc-b1f0-4a90325c7e39": {
-        "title": "Marketing Research Intern @ Robin Radar",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description focuses on marketing research, gathering intel, and turning data into actionable insights, which is not aligned with the candidate's software development and engineering interests.",
-        "added_at": "2026-03-04T11:17:59.889549+00:00"
-    },
-    "https://jobs.ashbyhq.com/the-exploration-company/b009e272-8f31-401d-b81b-a6ec6690900d": {
-        "title": "Thermo-mechanical Engineer @ The Exploration Company",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Thermo-mechanical Engineer, which is a non-software engineering role that requires expertise in thermal and structural analysis of mechanical systems, unrelated to the candidate's skills and interests.",
-        "added_at": "2026-03-04T11:17:59.889550+00:00"
-    },
-    "https://jobs.smartrecruiters.com/RenesasElectronics/744000112447847-ic-design-engineer-intern": {
-        "title": "Renesas Electronics IC Design Engineer Intern",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an IC Design Engineer Intern, which is a hardware-focused role that involves analog circuit design, not software development or data analysis.",
-        "added_at": "2026-03-04T11:17:59.889551+00:00"
-    },
     "https://jobs.smartrecruiters.com/Sandisk/744000112380278-staff-engineer-technology-development-engineering-semiconductor-device-physics-process-and-reliability-": {
         "title": "Sandisk Staff Engineer, Technology Development ...",
         "status": "New",
         "rank": "MEDIUM",
         "reason": "The job requires specific knowledge in semiconductor device physics, process, and reliability, which is not directly mentioned in the candidate's profile, but the candidate's background in computer science and interest in data engineering and AI/ML might be relevant in a broader sense, but the lack of explicit expertise in these areas makes it a medium match.",
         "added_at": "2026-03-04T11:17:59.889553+00:00"
-    },
-    "https://jobs.smartrecruiters.com/JSHeldLLC/744000112452843-project-support-services-internship-spring-2027": {
-        "title": "Project Support Services Internship - Spring 2027",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Project Support Services Internship, which is a non-technical role focused on marketing and proposal development, not software development or engineering.",
-        "added_at": "2026-03-04T11:17:59.889554+00:00"
     },
     "https://jobs.smartrecruiters.com/BoschGroup/744000112398708-working-student-prototype-coordination": {
         "title": "Bosch Group Working Student Prototype Coordination",
@@ -223,47 +153,12 @@
         "reason": "The job description is not directly related to software development, data analysis, or core engineering, but the candidate's skills in tech and their interest in software development could still be a good fit, given the internship's focus on learning technical, communication, and time management skills in a business environment.",
         "added_at": "2026-03-04T11:17:59.889558+00:00"
     },
-    "https://jobs.smartrecruiters.com/WesternDigital/744000112508474-regional-creative-designer": {
-        "title": "Western Digital Regional Creative Designer",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Graphic Design position, which is not a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889559+00:00"
-    },
-    "https://jobs.smartrecruiters.com/JSHeldLLC/744000112453125-accident-reconstruction-engineer": {
-        "title": "J.S. Held LLC Accident Reconstruction Engineer",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job is for an Accident Reconstruction Engineer, which is not a software development, data analysis, or core engineering role related to the candidate's skills.",
-        "added_at": "2026-03-04T11:17:59.889560+00:00"
-    },
     "https://jobs.smartrecruiters.com/abbvie/3743990011954286-senior-statistician-research": {
         "title": "AbbVie Senior Statistician, Research",
         "status": "New",
         "rank": "MEDIUM",
         "reason": "The candidate has relevant technical skills, such as Python and SQL, but the job requires statistical expertise, which is not explicitly mentioned in the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889561+00:00"
-    },
-    "https://jobs.smartrecruiters.com/DeloitteNZ/6000000000908852-leadership-programmes-events-coordinator-": {
-        "title": "Deloitte NZ Leadership Programmes & Events Coordinator",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description does not match the candidate's skills or interests, as it is a leadership program and events coordinator role, unrelated to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889563+00:00"
-    },
-    "https://jobs.smartrecruiters.com/WabashValleyPowerAlliance/744000112252677-groundman": {
-        "title": "Wabash Valley Power Alliance Groundman",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Groundman position in a rural electric cooperative, with no mention of software development, data analysis, or core engineering responsibilities.",
-        "added_at": "2026-03-04T11:17:59.889564+00:00"
-    },
-    "https://jobs.smartrecruiters.com/BoschGroup/744000112417465-varastotyontekija-kesatyo-": {
-        "title": "Bosch Group Varastoty\u00f6ntekij\u00e4 (kes\u00e4ty\u00f6)",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a warehouse worker position, which is not related to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889565+00:00"
     },
     "https://jobs.smartrecruiters.com/visa/744000112370734-product-intern": {
         "title": "Visa Product Intern",
@@ -286,13 +181,6 @@
         "reason": "The job description is focused on technology and payments, but it's not a direct software development or data analysis role, and the required skills (e.g., Python, JavaScript, React) are only partially aligned with the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889569+00:00"
     },
-    "https://jobs.smartrecruiters.com/DeloitteNZ/6000000000909628-2026-2027-intern-customer-strategy-applied-design-auckland": {
-        "title": "2026/2027 Intern | Customer Strategy & Applied Design",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job is a customer strategy and design role, requiring skills in human-centred design and customer experience, which do not align with the candidate's software development and engineering interests.",
-        "added_at": "2026-03-04T11:17:59.889570+00:00"
-    },
     "https://www.smartrecruiters.com/ServiceNow/744000112438437-commercial-gtm-strategy-intern-12-months-placement-year-": {
         "title": "ServiceNow Commercial GTM Strategy Intern - 12 months ...",
         "status": "New",
@@ -300,54 +188,12 @@
         "reason": "The candidate has relevant skills in Python, JavaScript, and SQL, but the job description focuses more on strategy and operations rather than pure software development, and the candidate's interests and experience don't exactly align with the required AI/ML skills.",
         "added_at": "2026-03-04T11:17:59.889571+00:00"
     },
-    "https://www.smartrecruiters.com/Eataly/744000112266977-total-rewards-intern": {
-        "title": "Eataly North America Total Rewards Intern",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Benefits Intern role in HR, which is unrelated to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889572+00:00"
-    },
-    "https://jobs.smartrecruiters.com/WesternDigital/744000111024045-human-resources-rotational-program-early-career-": {
-        "title": "Human Resources Rotational Program (Early Career)",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an HR Rotational Program, which is not a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889574+00:00"
-    },
-    "https://www.smartrecruiters.com/Eataly//744000111180827-finance-intern": {
-        "title": "Finance Intern -- Eataly Corporate",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description clearly indicates that the role is a Finance Intern position, which is unrelated to the candidate's background in software development and data analysis.",
-        "added_at": "2026-03-04T11:17:59.889575+00:00"
-    },
     "https://jobs.smartrecruiters.com/ubisoft2/744000112447409-development-tester-intern-rainbow-six-siege": {
         "title": "Ubisoft Development Tester Intern - Rainbow Six Siege",
         "status": "New",
         "rank": "MEDIUM",
         "reason": "The job description is not strictly a software development or data analysis role, but the candidate's skills in Python, JavaScript, and Node.js align with the requirements, making it a medium match.",
         "added_at": "2026-03-04T11:17:59.889576+00:00"
-    },
-    "https://jobs.smartrecruiters.com/abbvie/3743990011953616-manager-regulatory-affairs-neuroscience-eyecare-and-specialty-japac": {
-        "title": "Manager, Regulatory Affairs (Neuroscience Eyecare and ...",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job is a regulatory affairs manager position, which is unrelated to software development, data analysis, or core engineering roles.",
-        "added_at": "2026-03-04T11:17:59.889577+00:00"
-    },
-    "https://jobs.smartrecruiters.com/abbvie/3743990011949736-associate-director-consumer-marketing-otc-eye-care-": {
-        "title": "Associate Director, Consumer Marketing - OTC (Eye Care)",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a marketing role with no apparent connection to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889578+00:00"
-    },
-    "https://jobs.smartrecruiters.com/abbvie/3743990011946876-associate-director-marketing-oncology-ultra-rare-hematology-brand-launch": {
-        "title": "AbbVie Associate Director, Marketing Oncology - Ultra ...",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a marketing role in the pharmaceutical industry, with no mention of software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889579+00:00"
     },
     "https://jobs.smartrecruiters.com/abbvie/3743990011940816-praktikant-werkstudent-all-genders-im-bereich-data-analytics": {
         "title": "Praktikant / Werkstudent (all genders) im Bereich Data & ...",
@@ -362,20 +208,6 @@
         "rank": "MEDIUM",
         "reason": "The candidate has skills in SQL, which is mentioned as a requirement in the job description, but the focus is more on CRM and automation, which is not a primary area of interest for the candidate.",
         "added_at": "2026-03-04T11:17:59.889581+00:00"
-    },
-    "https://jobs.smartrecruiters.com/abbvie/3743990011945006-account-specialist-chronic-migraine-princeton-nj": {
-        "title": "AbbVie Account Specialist, Chronic Migraine - Princeton, NJ",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a field-based sales role in the pharmaceutical industry, which is not a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889583+00:00"
-    },
-    "https://jobs.smartrecruiters.com/abbvie/3743990011942381-account-executive-i-ii-parkinson-s-disease-baltimore-west-md": {
-        "title": "AbbVie Account Executive I/II, Parkinson's Disease",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an Account Executive in a pharmaceutical company, requiring business and sales skills, not software development or data analysis expertise.",
-        "added_at": "2026-03-04T11:17:59.889584+00:00"
     },
     "https://jobs.smartrecruiters.com/miratech1/744000112445897-senior-frontend-developer-react-": {
         "title": "Miratech Senior Frontend Developer (React)",
@@ -404,20 +236,6 @@
         "rank": "MEDIUM",
         "reason": "The candidate has relevant programming skills, but the job requires specific expertise in Power BI, Power Apps, and Excel, which are not mentioned in the candidate's profile, and the focus is on data analysis and automation, which aligns somewhat with the candidate's interests.",
         "added_at": "2026-03-04T11:17:59.889590+00:00"
-    },
-    "https://jobs.smartrecruiters.com/aboutyougmbh/744000112453648-intern-marketing-m-f-d-scayle": {
-        "title": "ABOUT YOU SE & Co. KG Intern Marketing (m/f/d) - SCAYLE",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an Intern Marketing role, not a software development, data analysis, or core engineering position.",
-        "added_at": "2026-03-04T11:17:59.889591+00:00"
-    },
-    "https://jobs.smartrecruiters.com/BoschGroup/744000112392386-facility-management-smart-start-recruitment-days": {
-        "title": "Facility Management Smart Start-Recruitment Days",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description does not involve software development, data analysis, or core engineering, but rather facility management and building automation systems.",
-        "added_at": "2026-03-04T11:17:59.889593+00:00"
     },
     "https://jobs.smartrecruiters.com/ubisoft2/744000112358026-web-developer": {
         "title": "Ubisoft Web Developer",
@@ -454,47 +272,12 @@
         "reason": "The candidate has relevant technical skills such as Linux, Kubernetes, Terraform, and Python, but the job description emphasizes DevOps and operations experience, which may require additional skills and experience beyond the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889599+00:00"
     },
-    "https://jobs.smartrecruiters.com/BoschGroup/744000112339398-warehouse-supervisor-1-year-contract-": {
-        "title": "Bosch Group Warehouse Supervisor (1 Year Contract)",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Warehouse Supervisor role in a manufacturing plant, which is not a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889601+00:00"
-    },
     "https://jobs.smartrecruiters.com/abbvie/3743990011957686-ami-digital-coe-manager": {
         "title": "AbbVie AMI Digital & COE Manager",
         "status": "New",
         "rank": "LOW",
         "reason": "The job description requires extensive experience in pharmaceutical or medical device industry, digital learning platforms, and regulatory compliance, which are not directly related to the candidate's skills and interests in software development and data engineering.",
         "added_at": "2026-03-04T11:17:59.889602+00:00"
-    },
-    "https://jobs.smartrecruiters.com/DeloitteNZ/6000000000907650-sap-technical-lead": {
-        "title": "Deloitte NZ SAP Technical Lead",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job requires an SAP Technical Lead with experience in SAP technologies, project management, and leadership, which is not a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889603+00:00"
-    },
-    "https://www.smartrecruiters.com/Continental/744000112269073-intern-corporate-tax-year-round": {
-        "title": "Continental Intern - Corporate Tax, Year-Round",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Corporate Tax Intern, which is not a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889604+00:00"
-    },
-    "https://jobs.smartrecruiters.com/westerndigital/744000112355012-technician-failure-analysis-engineering-fa-": {
-        "title": "Technician, Failure Analysis Engineering (FA)",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a technical role in failure analysis, which is not related to software development, data analysis, or core engineering, but rather a specific technical discipline in the field of engineering.",
-        "added_at": "2026-03-04T11:17:59.889605+00:00"
-    },
-    "https://jobs.smartrecruiters.com/SegulaTechnologies/744000112511709-automotive-mechanical-engineer-": {
-        "title": "Segula Technologies Automotive Mechanical Engineer",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an Automotive Mechanical Engineer, which is unrelated to software development, data analysis, or core engineering roles.",
-        "added_at": "2026-03-04T11:17:59.889607+00:00"
     },
     "https://www.smartrecruiters.com/MattelInc/744000112523097-assoc-analyst-inventory": {
         "title": "Mattel Assoc Analyst Inventory",
@@ -503,68 +286,12 @@
         "reason": "The candidate has relevant technical skills in Python, JavaScript, and SQL, but the job description focuses on data analysis and reporting rather than software development, and the required skills are more aligned with data analysis tools like Microsoft Excel and Power BI.",
         "added_at": "2026-03-04T11:17:59.889608+00:00"
     },
-    "https://www.smartrecruiters.com/PSLogistics/744000112442597-supply-chain-specialist": {
-        "title": "PS Logistics Supply Chain Specialist",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Supply Chain Specialist, which is a non-software development, non-data analysis role.",
-        "added_at": "2026-03-04T11:17:59.889609+00:00"
-    },
-    "https://www.smartrecruiters.com/Intuitive/744000112503487-field-service-engineer-2-wknd-shift": {
-        "title": "Intuitive Field Service Engineer 2 - Wknd Shift",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description does not mention software development, data analysis, or core engineering skills, but rather emphasizes technical skills for a Field Service Engineer position.",
-        "added_at": "2026-03-04T11:17:59.889610+00:00"
-    },
-    "https://jobs.smartrecruiters.com/NBCUniversal3/744000112378707-assistant-director-engineering-safety": {
-        "title": "NBCUniversal Assistant Director, Engineering & Safety",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a management position in theme park engineering and safety, requiring significant experience in vendor management and theme park operations, which is not aligned with the candidate's skills and interests in software development, data engineering, AI/ML, and full-stack development.",
-        "added_at": "2026-03-04T11:17:59.889611+00:00"
-    },
-    "https://www.smartrecruiters.com/IQEQ/744000112424741--front-of-house-reception": {
-        "title": "IQ-EQ Front Of House, Reception",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Front of House, Reception role that involves customer service, administrative tasks, and facilities management, which is unrelated to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889612+00:00"
-    },
-    "https://www.smartrecruiters.com/AccorHotel/744000112113588-commis-i": {
-        "title": "AccorHotel Commis I",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Commis I position in a hotel, with no mention of software development, data analysis, or core engineering roles.",
-        "added_at": "2026-03-04T11:17:59.889614+00:00"
-    },
-    "https://jobs.smartrecruiters.com/CityOfNewYork/3743990011936491-legal-support-intern": {
-        "title": "City of New York Legal Support Intern",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Legal Support Intern role that requires administrative and clerical tasks, and has no direct connection to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889615+00:00"
-    },
     "https://jobs.smartrecruiters.com/CHECK24/744000112464088-werkstudent-m-w-d-digital-product-ai-innovation-identitycheck": {
         "title": "Werkstudent (m/w/d) Digital Product & AI Innovation",
         "status": "New",
         "rank": "MEDIUM",
         "reason": "The job description involves AI, data-driven innovation, and digital product management, which aligns with the candidate's interests in AI/ML and software development, but the required tools and skills are not explicitly mentioned as a match for their expertise.",
         "added_at": "2026-03-04T11:17:59.889616+00:00"
-    },
-    "https://jobs.smartrecruiters.com/abbvie/3743990011958735-scientist-ii-commercial-design-verification-testing-dvt-all-genders-unbefristet-vollzeit": {
-        "title": "AbbVie Scientist II Commercial Design Verification Testing ...",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Scientist II role in commercial design verification testing, which is a non-software development position requiring experience in GMP, design control, and laboratory work.",
-        "added_at": "2026-03-04T11:17:59.889617+00:00"
-    },
-    "https://jobs.smartrecruiters.com/NorthwesternMedicine/744000112516387-clinical-dietitian-nicu-per-diem-days-1-weekend-month-": {
-        "title": "Clinical Dietitian - NICU, Per-Diem, Days (1 weekend/month)",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Clinical Dietitian role, which is not related to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889618+00:00"
     },
     "https://apply.workable.com/tmeic-corporation-americas/j/5EA3965FF2": {
         "title": "Intern - Engineering EIS (Summer 2026) (ET25182)",
@@ -594,33 +321,12 @@
         "reason": "The candidate has relevant Python skills and experience, but the job description emphasizes expertise in Python for a specific domain (RegTech) and a more senior level of experience (3-5 years) than the candidate's profile suggests (B.Tech student).",
         "added_at": "2026-03-04T11:17:59.889623+00:00"
     },
-    "https://apply.workable.com/sei/j/91599C9023": {
-        "title": "Operations Intern - Stockholm Environment Institute - U.S.",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an Operations Intern role in a non-profit organization, with tasks focused on project management, fundraising, and donor tracking, which has no relation to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889624+00:00"
-    },
-    "https://apply.workable.com/perkins-and-co/j/3E31B27709": {
-        "title": "Summer 2027 Internship - STUDENTS ONLY - Perkins & Co",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a tax or audit internship in accounting, which is not a software development or data analysis role.",
-        "added_at": "2026-03-04T11:17:59.889626+00:00"
-    },
     "https://apply.workable.com/worldfish/j/5346E43056/": {
         "title": "Internship - Procurement - WorldFish",
         "status": "New",
         "rank": "LOW",
         "reason": "The job description is for a Procurement Intern role, requiring skills in procurement procedures, compliance standards, and operational best practices, which do not align with the candidate's software development and data analysis interests and skills.",
         "added_at": "2026-03-04T11:17:59.889627+00:00"
-    },
-    "https://apply.workable.com/supplycore-1/j/22E5E896B2/apply/": {
-        "title": "2026 Vendor Relations Intern - SupplyCore - Application",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Vendor Relations Intern, which does not seem to be a software development, data analysis, or core engineering role.",
-        "added_at": "2026-03-04T11:17:59.889628+00:00"
     },
     "https://apply.workable.com/bigspaceship/j/F9E2BA5999": {
         "title": "2026 Summer Internship - Big Spaceship",
@@ -650,34 +356,6 @@
         "reason": "The candidate has relevant skills such as Python, JavaScript, React, Node.js, C++, SQL, and Git, and the job requires software development experience, making them a strong fit for the Data Engineering Intern role.",
         "added_at": "2026-03-04T11:17:59.889633+00:00"
     },
-    "https://apply.workable.com/americanbatterytechnologycompany/j/F1203EDFD9": {
-        "title": "Manufacturing & Material Flow Intern - American Battery ...",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description focuses on manufacturing and material flow, with no emphasis on software development, data analysis, or engineering skills.",
-        "added_at": "2026-03-04T11:17:59.889634+00:00"
-    },
-    "https://apply.workable.com/intellibright/j/1B9937E6A8": {
-        "title": "Design Intern / Junior Designer - Intellibright",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Design Intern / Junior Designer role, which is not related to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889635+00:00"
-    },
-    "https://apply.workable.com/solaimpact/j/727461CB9C/apply/": {
-        "title": "Construction Engineering Summer Intern - SoLa Impact",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Construction Engineering Summer Intern, which is unrelated to software development, data analysis, or core engineering roles.",
-        "added_at": "2026-03-04T11:17:59.889636+00:00"
-    },
-    "https://apply.workable.com/the-treetop-aba/j/4FF99E5115": {
-        "title": "Behavior Technician Trainee - Paid Training Included",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Behavior Technician Trainee in Applied Behavior Analysis (ABA) therapy, which is unrelated to software development, data analysis, or core engineering roles.",
-        "added_at": "2026-03-04T11:17:59.889637+00:00"
-    },
     "https://boeing.wd1.myworkdayjobs.com/en-US/INTERN/job/Millennium-Space-Systems-Summer-2026-Internship-Program---Flight-Software-Test-Intern_JR2026498888": {
         "title": "Millennium Space Systems Summer 2026 Internship Program",
         "status": "New",
@@ -705,13 +383,6 @@
         "rank": "ERROR",
         "reason": "Failed to extract meaningful text.",
         "added_at": "2026-03-04T11:17:59.889642+00:00"
-    },
-    "https://ag.wd3.myworkdayjobs.com/en-US/Airbus/job/Grand-Prairie-TX/Long-term-Internship---Engineering_JR10395717/apply/autofillWithResume": {
-        "title": "Long-term Internship - Engineering - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description lacks any relevant information about the role, making it impossible to determine its match with the candidate's profile.",
-        "added_at": "2026-03-04T11:17:59.889643+00:00"
     },
     "https://pernodricard.wd3.myworkdayjobs.com/en-US/pernod-ricard/job/Paris/Data-Platform-Intern---Sept-2026---6-months_JR-052367-1": {
         "title": "Data Platform Intern - Sept 2026 - 6 months",
@@ -874,20 +545,6 @@
         "reason": "Failed to extract meaningful text.",
         "added_at": "2026-03-04T11:17:59.889672+00:00"
     },
-    "https://dxctechnology.wd1.myworkdayjobs.com/en-US/DXCJobs/job/MYS---PETALING-JAYA/Intern-Communications---Marketing--April-2026-Intake-_51574222": {
-        "title": "Intern Communications & Marketing (April 2026 Intake)",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an Intern Communications & Marketing role, which is not a software development, data analysis, or core engineering position.",
-        "added_at": "2026-03-04T11:17:59.889673+00:00"
-    },
-    "https://bostondynamics.wd1.myworkdayjobs.com/Boston_Dynamics/job/Waltham-Office-POST/Mechanical-Engineering-Intern_R2475": {
-        "title": "Mechanical Engineering Intern - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Mechanical Engineering Intern, which does not align with the candidate's interests and skills in software development, data engineering, and AI/ML.",
-        "added_at": "2026-03-04T11:17:59.889675+00:00"
-    },
     "https://kbr.wd5.myworkdayjobs.com/en-US/KBR_Careers/job/El-Segundo-California/National-Security-Solutions--NSS--Internship---Systems-Engineering-Intern_R2119800": {
         "title": "National Security Solutions (NSS) Internship - KBR Careers",
         "status": "New",
@@ -916,13 +573,6 @@
         "reason": "The candidate has a strong foundation in software development with relevant skills like Python, JavaScript, React, Node.js, and C++, but some of the required skills like Java and Angular are not mentioned in the candidate's profile, and experience with object-oriented languages is preferred, which might be a concern.",
         "added_at": "2026-03-04T11:17:59.889680+00:00"
     },
-    "https://8x8inc.wd5.myworkdayjobs.com/8x8_External_Careers/job/Romania-Cluj-Office/Product-Designer-Internship_R2302": {
-        "title": "Product Designer Internship - Careers at 8x8",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Product Designer Internship, which is a non-software development role, and the candidate is looking for software engineering or data-related internships.",
-        "added_at": "2026-03-04T11:17:59.889681+00:00"
-    },
     "https://mdlz.wd3.myworkdayjobs.com/External": {
         "title": "Search for Jobs - Myworkdayjobs.com",
         "status": "New",
@@ -936,13 +586,6 @@
         "rank": "LOW",
         "reason": "The job is a consulting internship that focuses on various skill groups, including Finance, Economics & Analytics, Digital & Data Transformation, and Management Consulting, but there is no clear indication that software development or data analysis skills are required.",
         "added_at": "2026-03-04T11:17:59.889683+00:00"
-    },
-    "https://dxctechnology.wd1.myworkdayjobs.com/en-US/DXCJobs/job/MYS---PETALING-JAYA/HR-Internship--April-2026-Intake-_51574223": {
-        "title": "HR Internship (April 2026 Intake) - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for an HR Internship, which is clearly not a software development or data analysis role.",
-        "added_at": "2026-03-04T11:17:59.889685+00:00"
     },
     "https://ksb.wd3.myworkdayjobs.com/de-DE/KSB_ExternalCareerSite/job/Richmond-VA/Application-Engineer-Sales-Support-Internship_JR_28457": {
         "title": "Application Engineer/Sales Support-Internship",
@@ -972,13 +615,6 @@
         "reason": "The job requires AI-related skills and experience, which the candidate has, but the focus on customer experience, process optimization, and knowledge management is somewhat outside the candidate's primary interests and skills in software development and data engineering.",
         "added_at": "2026-03-04T11:17:59.889689+00:00"
     },
-    "https://curtisswright.wd1.myworkdayjobs.com/cw_external_career_site/job/US-NY-East-Farmingdale-TR/Welding-Engineering-Intern_JR11208-2": {
-        "title": "Welding Engineering Intern - Join the WRIGHT Team!",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job is for a Welding Engineering Intern with no requirements related to software development, data analysis, or core engineering.",
-        "added_at": "2026-03-04T11:17:59.889691+00:00"
-    },
     "https://cae.wd3.myworkdayjobs.com/career/job/Montreal-St-Laurent/C-CST-301-Lab-Administrator-Intern_120620-1": {
         "title": "C-CST-301 Lab Administrator Intern",
         "status": "New",
@@ -992,27 +628,6 @@
         "rank": "MEDIUM",
         "reason": "The job requires some technical skills like Microsoft applications, documentation, and data compilation, but software development or engineering is not the primary focus, and the skills mentioned in the job description do not directly match the candidate's expertise in Python, JavaScript, and React.",
         "added_at": "2026-03-04T11:17:59.889694+00:00"
-    },
-    "https://marvell.wd1.myworkdayjobs.com/MarvellCareers/job/Westborough-MA/Advanced-Packaging-SI-PI-Senior-Staff-Engineer_2600535": {
-        "title": "Marvell Careers - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is focused on electrical engineering and signal/power integrity verification, which is not a software development or core engineering role matching the candidate's skills and interests.",
-        "added_at": "2026-03-04T11:17:59.889695+00:00"
-    },
-    "https://marvell.wd1.myworkdayjobs.com/MarvellCareers/job/Austin-TX/Principal-Marketing-Technology-Solutions-Lead_2600420-1": {
-        "title": "Marketing Technology Solutions Lead - Marvell Careers",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "The job description is for a Marketing Technology Solutions Lead role, which is a non-technical, business-facing position that requires experience in marketing technology, customer-facing applications, and stakeholder management, none of which align with the candidate's skills and interests.",
-        "added_at": "2026-03-04T11:17:59.889696+00:00"
-    },
-    "https://mcgill.wd3.myworkdayjobs.com/McGill_Careers": {
-        "title": "Search for Jobs - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "IGNORE",
-        "reason": "Clearly a technical role, but not related to software development or data analysis.",
-        "added_at": "2026-03-04T11:17:59.889697+00:00"
     },
     "https://marvell.wd1.myworkdayjobs.com/en-US/MarvellCareers/job/Cordoba-Argentina/Firmware-Intern_2600638": {
         "title": "Firmware Intern - Marvell Careers",
@@ -1038,449 +653,260 @@
     "https://sggovterp.wd102.myworkdayjobs.com/en-US/PublicServiceCareers/job/Intern--Data-Office_JR-10000048194": {
         "title": "Intern, Data Office - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate's skills align moderately with the requirements, as they have experience with Python, SQL, and Git, but are not explicitly mentioned as necessary for the job, and the role involves data analysis and visualization which are a good match for their interests.",
         "added_at": "2026-03-04T11:17:59.889701+00:00"
     },
     "https://ag.wd3.myworkdayjobs.com/en-US/Airbus/job/Donauwrth/Internship--d-f-m--in-Machine-Learning---Multimodal-AI_JR10387536": {
         "title": "Internship (d/f/m) in Machine Learning & Multimodal AI",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate's skills in Machine Learning and AI are relevant, but the job description specifies experience with Scikit-learn, PyTorch, and TensorFlow, which are not mentioned in the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889702+00:00"
     },
     "https://relx.wd3.myworkdayjobs.com/en-US/ElsevierJobs/job/Washington/Research-Intern_R109546-1": {
         "title": "Research Intern - Elsevier Jobs - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate's skills in Python, JavaScript, and SQL align with the job requirements, but the emphasis is on data analysis and market research rather than pure software development.",
         "added_at": "2026-03-04T11:17:59.889703+00:00"
     },
     "https://franklintempleton.wd5.myworkdayjobs.com/en-US/Primary-External-1/job/Poznan-Poland/Intern---Data-Operations-Analyst_866722": {
         "title": "Intern - Data Operations Analyst",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has a relevant background in computer science, but the job description doesn't specifically mention software development or data analysis, and instead focuses on data operations, which is a related but distinct field.",
         "added_at": "2026-03-04T11:17:59.889705+00:00"
     },
     "https://uchicago.wd5.myworkdayjobs.com/en-US/External/job/Chicago-IL/Temporary-Data-Analytics-Intern_JR32883": {
         "title": "Temporary Data Analytics Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires technical skills such as data cleaning, statistical analysis, and proficiency in at least one statistical package (R or Python), which aligns with the candidate's skills in Python and SQL, but does not explicitly mention software development or engineering.",
         "added_at": "2026-03-04T11:17:59.889706+00:00"
     },
     "https://mastercard.wd1.myworkdayjobs.com/Campus/job/Purchase-New-York/Data-Management-Intern--Summer-2026---Purchase--NY_R-256375-1/apply": {
         "title": "Data Management Intern, Summer 2026 - Purchase, NY",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job title mentions Data Management, which suggests a data-related role, but there is no specific information on the required skills, making it difficult to assess the exact match with the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889707+00:00"
     },
     "https://icf.wd5.myworkdayjobs.com/en-US/ICFExternal_Career_Site/job/Reston-VA/XMLNAME-2026-Summer-Intern--Cyber-Security-Analyst--Remote-or-Austin--TX-_R2600713": {
         "title": "2026 Summer Intern, Cyber Security Analyst ... - ICF Jobs",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires some technical skills in security tools and concepts, but the candidate's primary skills in software development, data engineering, and AI/ML are not directly applicable to this role, and the job's focus is on cybersecurity rather than software development.",
         "added_at": "2026-03-04T11:17:59.889708+00:00"
     },
     "https://beigene.wd5.myworkdayjobs.com/beigene/job/remote-us/summer-internship--us-commercial-learning-and-development-intern--remote-_r33579": {
         "title": "US Commercial Learning and Development Intern (Remote)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires strong writing and editing skills, attention to detail, and the ability to work with complex scientific information, but the candidate's technical skills in programming languages like Python, JavaScript, and C++ are not directly relevant to the role.",
         "added_at": "2026-03-04T11:17:59.889709+00:00"
-    },
-    "https://ag.wd3.myworkdayjobs.com/en-US/Airbus/job/Beijing-Area/TA---EM-Intern_JR10390186/apply/useMyLastApplication": {
-        "title": "TA & EM Intern - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889710+00:00"
-    },
-    "https://beigene.wd5.myworkdayjobs.com/beigene/job/remote-us/summer-internship--regulatory-affairs-intern--remote-_r33578": {
-        "title": "Summer Internship: Regulatory Affairs Intern (Remote)",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889711+00:00"
-    },
-    "https://ryan.wd1.myworkdayjobs.com/en-US/RyanCareers/job/Plano/Summer-2026-Intern--Business-Solutions_R0019181-1": {
-        "title": "Summer 2026 Intern, Business Solutions - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889712+00:00"
     },
     "https://kbr.wd5.myworkdayjobs.com/KBR_Careers/job/El-Segundo-California/National-Security-Solutions--NSS--Internship---AI-Engineer-Intern_R2119798": {
         "title": "National Security Solutions (NSS) Internship - KBR Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The candidate has relevant skills in Python, JavaScript, and C++, and the job requires experience with Python, SQL, and a strong desire to learn, making it a strong match for the candidate's skills and interests.",
         "added_at": "2026-03-04T11:17:59.889714+00:00"
-    },
-    "https://dentsuaegis.wd3.myworkdayjobs.com/en-US/DAN_GLOBAL/job/New-York/Dentsu-Summer-Experience-Program---Internships-in-Legal_R1117163": {
-        "title": "Dentsu Summer Experience Program \u2013 Internships in Legal",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889715+00:00"
     },
     "https://healthresearch.wd1.myworkdayjobs.com/HRI_Careers": {
         "title": "HRI Careers - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "Some programming skills required, but job description doesn't specify programming languages, and job description mentions \"scientist\" which could imply more focus on research and less on development.",
         "added_at": "2026-03-04T11:17:59.889716+00:00"
     },
     "https://shell.wd3.myworkdayjobs.com/en-US/shellcareers/job/Cyberjaya-Wisma-Shell/Supply-Chain-Intern_R197463/apply/autofillWithResume": {
         "title": "Supply Chain Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job description does not explicitly mention software development or data analysis skills, but it is a technical role in a company like Shell, which likely has some engineering components, making it a medium match.",
         "added_at": "2026-03-04T11:17:59.889717+00:00"
     },
     "https://ag.wd3.myworkdayjobs.com/en-US/Airbus/job/Donauwrth/Internship--d-f-m--in-Trade-Compliance_JR10387549": {
         "title": "Intern in Trade Compliance (d/f/m) - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate's technical skills in Python, JavaScript, and Git are somewhat relevant to the regulatory analysis and data mapping tasks, but the role's focus on trade compliance and regulatory frameworks is not a direct match to the candidate's interests or skills.",
         "added_at": "2026-03-04T11:17:59.889718+00:00"
     },
     "https://modernatx.wd1.myworkdayjobs.com/en-US/M_tx/job/Norwood-Massachusetts/XMLNAME-2026-Co-Op--Business-Operations_R18861-1": {
         "title": "2026 Co-Op, Business Operations",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "LOW",
+        "reason": "The job description focuses on business operations, data-driven decision-making, and AI-enabled innovation, but the required skills are more aligned with data analysis and business acumen, whereas the candidate's skills are primarily in software development and engineering.",
         "added_at": "2026-03-04T11:17:59.889719+00:00"
     },
     "https://kbr.wd5.myworkdayjobs.com/en-US/KBR_Careers/job/El-Segundo-California/National-Security-Solutions--NSS--Internship---Digital-Engineer-Intern_R2119799": {
         "title": "National Security Solutions (NSS) Internship - KBR Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The job requires a strong foundation in programming skills, including Python, JavaScript, and SQL, which aligns with the candidate's technical skills and interests.",
         "added_at": "2026-03-04T11:17:59.889721+00:00"
     },
     "https://mallinckrodt.wd5.myworkdayjobs.com/en-US/MallinckrodtCareers/job/Horsham-PA/Bioprocess-Technical-Operations-and-Quality-Assurance-Intern_JR000015695": {
         "title": "Bioprocess Technical Operations and Quality Assurance Intern",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires some technical skills, such as familiarity with MS suite products and proficiency in learning new PC software, but the focus is on bioprocess technology and quality assurance, which does not directly align with the candidate's stated interests in software development, data engineering, AI/ML, and full-stack development.",
         "added_at": "2026-03-04T11:17:59.889722+00:00"
-    },
-    "https://faef.wd12.myworkdayjobs.com/FAEF_External_Careers/job/Rochester-NY/Digital-Marketing-Intern_R163": {
-        "title": "Digital Marketing Intern - FAEF Careers",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889723+00:00"
     },
     "https://statestreet.wd1.myworkdayjobs.com/pl-PL/Global/job/Gdansk-Poland/Career-Fair---Gdansk-University-of-Technology_R-785138": {
         "title": "Career Fair - Gdansk University of Technology",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has relevant technical skills such as Python, JavaScript, React, and Node.js, but the job description focuses more on general skills and work environment rather than specific technical requirements.",
         "added_at": "2026-03-04T11:17:59.889724+00:00"
     },
     "https://statestreet.wd1.myworkdayjobs.com/pl-PL/Global/job/Krakow-Poland/Career-Fair---UEK-Krakow_R-785163": {
         "title": "Career Fair - UEK Krakow - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job description mentions \"hands-on learning, practical guidance, and regular feedback\" in a structured environment, which suggests software development or engineering opportunities, but the specific skills required (e.g., Financial Services, Banking, FinTech) don't exactly match the candidate's interests.",
         "added_at": "2026-03-04T11:17:59.889725+00:00"
-    },
-    "https://worldmarket.wd5.myworkdayjobs.com/cost_plus_world_market_careers/job/Inventory-Management-Associate-Planner_R-0105385": {
-        "title": "Inventory Management Associate Planner - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889726+00:00"
     },
     "https://dowjones.wd1.myworkdayjobs.com/en-US/New_York_Post_Careers/job/NYC---1211-Ave-of-the-Americas/Youtube-Intern_Job_Req_51871": {
         "title": "Youtube Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate's skills in Python, JavaScript, and React are not directly required for the YouTube Intern role, but their experience in coding and software development may be transferable to tasks such as optimizing video content or creating metadata for YouTube videos.",
         "added_at": "2026-03-04T11:17:59.889727+00:00"
     },
     "https://roche.wd3.myworkdayjobs.com/zh-CN/roche-ext/job/Internship-in-Supply-Chain-Sustainability--Basel--12-month-_202602-103978-1": {
         "title": "Internship in Supply Chain Sustainability (Basel, 12 month)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The internship focuses on data analysis and sustainability, but the candidate's skills in Python, JavaScript, and React are not directly mentioned as required, and the emphasis is on GHG accounting and sustainability management, which is outside their core technical expertise.",
         "added_at": "2026-03-04T11:17:59.889728+00:00"
     },
     "https://usertesting.wd12.myworkdayjobs.com/UserTesting/job/Remote---Ontario/Backend-Software-Engineer---Summer-Internship_R-101163": {
         "title": "Backend Software Engineer - Summer Internship",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The job description requires Node.js, JavaScript, and backend development skills, which align perfectly with the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889729+00:00"
     },
     "https://nxp.wd3.myworkdayjobs.com/zh-TW/careers/job/Gratkorn/Summer-Internship--AI-Based-Anomaly-Detection-for-Logical-Attack-Detection--m-f-d-_R-10061825": {
         "title": "AI-Based Anomaly Detection for Logical Attack ... - Job Listings",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The candidate's skills and interests align closely with the job requirements, especially in machine learning, Python, and Linux, and the internship is focused on software engineering and data analysis.",
         "added_at": "2026-03-04T11:17:59.889730+00:00"
-    },
-    "https://nxp.wd3.myworkdayjobs.com/en-US/careers/job/Gratkorn/Summer-Internship--Human-Machine-Interface--HMI--System-Applications--f-m-d-_R-10061760": {
-        "title": "Human-Machine Interface (HMI) System Applications (f/m/d)",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889732+00:00"
     },
     "https://nxp.wd3.myworkdayjobs.com/en-US/careers/job/Gratkorn/Summer-Internship--RF-Measurements--m-f-d-_R-10061894": {
         "title": "Summer Internship: RF Measurements (m/f/d) - Job Listings",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "LOW",
+        "reason": "The job requires expertise in RF measurements and NFC standards, which are not mentioned in the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889733+00:00"
-    },
-    "https://cw.wd1.myworkdayjobs.com/en-US/External/job/Hyderabad-India/EIC-Intern_R308263": {
-        "title": "EIC Intern - Careers - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889734+00:00"
-    },
-    "https://deckers.wd5.myworkdayjobs.com/en-US/Deckers/job/Goleta-California/Summer-Intern--Corporate-Legal--Law-Student-_20190": {
-        "title": "Summer Intern, Corporate Legal (Law Student)",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889735+00:00"
     },
     "https://jcrew.wd1.myworkdayjobs.com/en-US/FriendsFamilyCareers/job/New-York-NY-USA-Headquarters/Intern---JCG-Talent-Acquisition_123181": {
         "title": "Intern - JCG Talent Acquisition",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires a bachelor's degree from a 4-year college or university, but it's a business-related internship, and the skills listed (Microsoft Office, communication abilities, analytical mindset) are somewhat related to the candidate's technical skills, but not directly.",
         "added_at": "2026-03-04T11:17:59.889736+00:00"
-    },
-    "https://deckers.wd5.myworkdayjobs.com/en-US/Deckers/job/Goleta-California/Summer-Intern--Corporate-Legal--Undergraduate-_20198": {
-        "title": "Summer Intern, Corporate Legal (Undergraduate)",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889737+00:00"
     },
     "https://stanfordhealthcare.wd5.myworkdayjobs.com/en-US/SHC_External_Career_Site/job/300P-Hospital---A-Boswell-Clinic---PALO-ALTO/Graduate--Intern-Interpretation-and-Translation-Services_R2552441": {
         "title": "Graduate Intern. Interpretation and Translation Services.",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires skills in data analysis and interpretation, but the candidate's technical skills in Python, JavaScript, and SQL could be applied to the role, albeit in a non-traditional way.",
         "added_at": "2026-03-04T11:17:59.889738+00:00"
-    },
-    "https://moelis.wd1.myworkdayjobs.com/Experienced-Hires/job/Experienced-Analyst--Shareholder-Advisory-Group---Los-Angeles-New-York-City--Activism-Defense-and-Hostile-M-A-_REQ102081": {
-        "title": "Los Angeles/New York City (Activism Defense)",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889739+00:00"
-    },
-    "https://jefferson.wd5.myworkdayjobs.com/External": {
-        "title": "Search for Jobs - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889740+00:00"
-    },
-    "https://seaworldentertainment.wd1.myworkdayjobs.com/en-US/SEA/job/Aquatica-Orlando/Asst-Supervisor--Guest-Arrival_JR128605": {
-        "title": "Asst. Supervisor, Guest Arrival - Career Opportunities",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889741+00:00"
     },
     "https://intel.wd1.myworkdayjobs.com/en-US/External/job/US-California-Santa-Clara/Lead-EDA-Tools-Engineer_JR0280859": {
         "title": "Lead EDA Tools Engineer - Intel Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "LOW",
+        "reason": "The job requires extensive experience in EDA (Electronic Design Automation) and CAD software, which is not a primary focus of the candidate's skills and interests, and the job also involves leadership and technical management responsibilities that are not mentioned in the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889742+00:00"
-    },
-    "https://valeo.wd3.myworkdayjobs.com/en-US/valeo_jobs/job/Greensburg-IN/Maintenance-Technician_REQ2026070196-1": {
-        "title": "Maintenance Technician - JOBS - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889744+00:00"
-    },
-    "https://valeo.wd3.myworkdayjobs.com/fr-FR/valeo_jobs/job/Bursa/Production-Supervisor_REQ2026071127": {
-        "title": "Production Supervisor - JOBS - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889745+00:00"
-    },
-    "https://valeo.wd3.myworkdayjobs.com/en-US/valeo_jobs/job/San-Luis-Potosi/Maintenance-Supervisor_REQ2026070539": {
-        "title": "Maintenance Supervisor - JOBS - Myworkdayjobs.com",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889746+00:00"
     },
     "https://careers-calamp.icims.com/jobs/4305/intern%2C-engineer-software---carlsbad%2C-ca-%28summer-2026%29/job": {
         "title": "Intern, Engineer Software - Carlsbad, CA (Summer 2026)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires software development expertise, but the specific technologies mentioned in the job description (e.g., EdgeCore, EdgeApp, CalAmp Telematics Cloud) are not directly aligned with the candidate's skills, indicating a moderate level of match.",
         "added_at": "2026-03-04T11:17:59.889747+00:00"
     },
     "https://careers-gdms.icims.com/jobs/71261/intern-engineer---software-engineering/job": {
         "title": "Find a Job - General Dynamics Mission Systems Intern Engineer",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The job description is for an Intern Engineer position, which aligns with the candidate's interests in Software Development and Data Engineering, and their skills in programming languages such as Python, JavaScript, and C++ are likely relevant to the role.",
         "added_at": "2026-03-04T11:17:59.889748+00:00"
-    },
-    "https://careers-dewberry.icims.com/jobs/15496/water-resources-engineering-intern/job": {
-        "title": "Water Resources Engineering Intern - Dewberry",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889749+00:00"
     },
     "https://careers-usta.icims.com/jobs/4775/undergraduate-intern-summer-2026---event-services/job": {
         "title": "Undergraduate Intern Summer 2026 - Event Services",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job description mentions \"real-world experience\" and \"career journey\", suggesting a technical role, but it's not explicitly a software development or data analysis position, and the focus is more on community engagement and outreach efforts rather than technical skills.",
         "added_at": "2026-03-04T11:17:59.889750+00:00"
-    },
-    "https://careers-dewberry.icims.com/jobs/15501/interior-design-intern/job": {
-        "title": "Interior Design Intern in Peoria, Illinois | Careers at Dewberry",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889751+00:00"
-    },
-    "https://careers-usta.icims.com/jobs/4743/undergraduate-intern-summer-2026---ntc-tennis-programs/job": {
-        "title": "Undergraduate Intern Summer 2026 - NTC Tennis Programs",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889752+00:00"
-    },
-    "https://careers-peraton.icims.com/jobs/164064/facilities-%28controls%29-technician/job": {
-        "title": "Facilities (Controls) Technician - Careers at CAO104 - Peraton",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889753+00:00"
-    },
-    "https://careers-kidscarehh.icims.com/jobs/14653/pediatric-speech-language-pathologist---clinical-fellow/job": {
-        "title": "Pediatric Speech Language Pathologist - Clinical Fellow",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889754+00:00"
     },
     "https://careers-commonspirit.icims.com/jobs/460584/intern/job": {
         "title": "Job Search | Intern in West Valley City, Utah",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job description does not explicitly mention software development or data analysis, but the absence of a clear non-technical job description and the presence of a tech company as the employer suggest it could be a technical role, but without more information, it's hard to determine a higher match.",
         "added_at": "2026-03-04T11:17:59.889756+00:00"
     },
     "https://external-flysfo.icims.com/jobs/intro": {
         "title": "Careers - San Francisco",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job description does not specify technical requirements, but given the airport's IT operations and technology division, it's likely to involve software development or engineering, but the candidate's skills could be applied in a more general IT or infrastructure role, not specifically as a software engineer or data scientist.",
         "added_at": "2026-03-04T11:17:59.889757+00:00"
     },
     "https://careers-commonspirit.icims.com/jobs/459203/echo-tech/job": {
         "title": "Echo Tech in SAN BERNARDINO, California",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job description doesn't explicitly mention software development or data engineering, but the company CommonSpirit Health and the role \"Echo Tech\" suggest a technical position, and the candidate has relevant skills in programming languages and databases.",
         "added_at": "2026-03-04T11:17:59.889758+00:00"
-    },
-    "https://jobs-selectmedicalcorp.icims.com/jobs/360036/pharmacy-intern---prn/job": {
-        "title": "Pharmacy Intern - PRN in Ypsilanti, Michigan - Ann Arbor",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889759+00:00"
-    },
-    "https://nato.taleo.net/careersection/2/jobdetail.ftl": {
-        "title": "Job Description - Cloud & Cyber Security Innovation Intern ...",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889760+00:00"
-    },
-    "https://petrofac.taleo.net/careersection/pfc_external_cs/jobsearch.ftl": {
-        "title": "Jobs: Petrofac Careers",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889761+00:00"
     },
     "https://weyerhaeuser.taleo.net/careersection/10000/jobsearch.ftl": {
         "title": "Weyerhaeuser :: Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job title suggests a technical role, but the description doesn't provide enough details to determine its alignment with the candidate's skills.",
         "added_at": "2026-03-04T11:17:59.889762+00:00"
     },
     "https://aku.taleo.net/careersection/ex/joblist.ftl": {
         "title": "Careers | The Aga Khan University",
         "status": "New",
         "rank": "UNKNOWN",
-        "reason": "",
+        "reason": "Clearly not a software development, data analysis, or core engineering role.",
         "added_at": "2026-03-04T11:17:59.889763+00:00"
     },
     "https://massanf.taleo.net/careersection/ex/jobdetail.ftl": {
         "title": "Job Description - Transit Intern Summer 2026 (2600016F)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has a strong background in software development, but the job description is unclear, and it's unlikely to be a traditional software engineering or data analysis role. However, it's possible that the role involves some technical aspects, making it a medium match.",
         "added_at": "2026-03-04T11:17:59.889764+00:00"
-    },
-    "https://aku.taleo.net/careersection/ex/jobdetail.ftl": {
-        "title": "Job Description - Programmes Assistant - Intern(GSMC ...",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889765+00:00"
     },
     "https://aku.taleo.net/careersection/ex/moresearch.ftl": {
         "title": "Careers | The Aga Khan University",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "Requires research skills, but no clear programming language requirements.",
         "added_at": "2026-03-04T11:17:59.889766+00:00"
     },
     "https://tre.tbe.taleo.net/tre01/ats/careers/requisition.jsp": {
         "title": "Registered Dietitian - Position Description",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "ERROR",
+        "reason": "Failed to extract meaningful text.",
         "added_at": "2026-03-04T11:17:59.889767+00:00"
     },
     "https://nato.taleo.net/careersection/1/joblist.ftl": {
         "title": "Job Openings (136 jobs found) - NATO - NATO Vacancies",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job involves working with mobile satellite systems, which may require software development skills, but the specific requirements are not explicitly mentioned.",
         "added_at": "2026-03-04T11:17:59.889769+00:00"
-    },
-    "https://hsbc.eightfold.ai/careers/search": {
-        "title": "Careers at HSBC",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889770+00:00"
-    },
-    "https://jobs.jobvite.com/unitedveterinarycare/job/oziLzfwV": {
-        "title": "Advanced Anesthesia Technician/Lead Anesthesia Trainer",
-        "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
-        "added_at": "2026-03-04T11:17:59.889771+00:00"
     }
 }
