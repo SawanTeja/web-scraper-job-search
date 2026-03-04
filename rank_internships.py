@@ -101,7 +101,7 @@ IGNORE:
 
 Respond ONLY in this format:
 
-RANK: HIGH / MEDIUM / LOW / IGNORE
+RANK: VERY HIGH / HIGH / MEDIUM / LOW / IGNORE
 REASON: One short sentence explaining the decision.
 """
 
@@ -112,7 +112,7 @@ REASON: One short sentence explaining the decision.
         
         result = response['message']['content'].strip()
         
-        rank_match = re.search(r'RANK:\s*(HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
+        rank_match = re.search(r'RANK:\s*(VERY HIGH|HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
         reason_match = re.search(r'REASON:\s*(.*)', result, re.IGNORECASE)
         
         rank = rank_match.group(1).upper() if rank_match else "UNKNOWN"
