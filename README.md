@@ -35,11 +35,11 @@ pip install playwright asyncio ollama PyGObject
 playwright install chromium
 ```
 
-> **Note**: To run the GUI (`gui.py`), you must be on a Linux system with GTK4 libraries available, or have the relevant GObject/GTK4 bindings installed for your OS.
+> **Note**: To run the GUI (`gui.py`), you must be on a Linux system with GTK4 libraries available, or have the relevant GObject/GTK4 bindings installed for your OS. For Windows users, the GUI is unsupported out-of-the-box unless you use WSL (Windows Subsystem for Linux) with GUI support enabled, or use the command-line scripts.
 
 ### 2. Local AI Setup (Ollama)
 
-This project requires a local GPU or CPU inference engine to evaluate job posts without sending your data to external APIs.
+This project requires a local GPU or CPU inference engine to evaluate job posts privately. **If you do not have a dedicated GPU or gaming laptop, you can skip this step!** The web scraper works perfectly fine on its own.
 
 ```bash
 # Install Ollama
@@ -47,6 +47,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 # Start the Ollama background service
 sudo systemctl start ollama
+# Note: On Windows, download the Ollama installer from their website and run it.
 
 # Download the Llama 3.1 model (~4.7GB)
 ollama pull llama3.1
@@ -56,7 +57,15 @@ ollama pull llama3.1
 
 ## How to Use
 
-### 1. The Dashboard (GUI)
+### 1. Using the Scraper ONLY (No ML / No GPU Required!)
+If you just want to automate the job search and fetch links without AI ranking, you can simply run the scraper script! It requires zero heavy ML hardware and works on any basic laptop.
+
+```bash
+python intern_scraper.py
+```
+This will silently crawl for new roles and save all links directly into the `jobs_db.json` file. You can then open this JSON file to view your fresh job leads!
+
+### 2. The Dashboard (GUI)
 Run the graphical interface to manage everything from one place:
 
 ```bash
