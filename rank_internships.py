@@ -67,6 +67,18 @@ Description:
 ====================
 RANKING RULES
 ====================
+CRITICAL INSTRUCTION: You MUST evaluate the IGNORE list first. If the job matches ANY of the IGNORE criteria, immediately rank it as IGNORE and stop matching.
+
+IGNORE (HARD VETO):
+- Transportation engineering, Urban planning, or Traffic operations
+- Civil, Mechanical, or Construction engineering
+- Architecture roles
+- HR / Marketing / Sales
+- Technical support
+- QA / manual testing
+- Roles asking for AutoCAD, MicroStation, SketchUp, or GIS.
+
+If and ONLY if the job is NOT in the IGNORE list, rank it using the following:
 
 HIGH:
 - Software Engineering
@@ -90,18 +102,14 @@ LOW:
 - DevOps heavy roles
 - Cloud-only infrastructure roles
 
-IGNORE:
-- AI/ML research roles
-- Data science roles
-- HR / Marketing / Sales
-- Technical support
-- QA / manual testing
+CATCH-ALL (DEFAULT):
+- If the job does NOT explicitly fit into HIGH, MEDIUM, or LOW, you MUST rank it as IGNORE. Do not guess or create new categories.
 
 ====================
 
 Respond ONLY in this format:
 
-RANK: VERY HIGH / HIGH / MEDIUM / LOW / IGNORE
+RANK: HIGH / MEDIUM / LOW / IGNORE
 REASON: One short sentence explaining the decision.
 """
 
@@ -112,7 +120,7 @@ REASON: One short sentence explaining the decision.
         
         result = response['message']['content'].strip()
         
-        rank_match = re.search(r'RANK:\s*(VERY HIGH|HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
+        rank_match = re.search(r'RANK:\s*(HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
         reason_match = re.search(r'REASON:\s*(.*)', result, re.IGNORECASE)
         
         rank = rank_match.group(1).upper() if rank_match else "UNKNOWN"
