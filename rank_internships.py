@@ -108,7 +108,7 @@ REASON: One short sentence explaining the decision.
     try:
         response = ollama.chat(model='llama3.1', messages=[
             {'role': 'user', 'content': prompt}
-        ])
+        ], options={"temperature": 0})
         
         result = response['message']['content'].strip()
         
@@ -167,9 +167,10 @@ async def process_and_rank_jobs():
                         except Exception:
                             await asyncio.sleep(2)
                     
-                    # 2. Extract text
+                    # 2. Extract text and add a wait for render
+                    await page.wait_for_timeout(3000)
                     raw_text = await page.locator("body").inner_text()
-                    jd_text = clean_text(raw_text)
+                    jd_text = clean_text(raw_text)[:6000]
                     
                     # 3. Fallback for stubborn JS walls
                     if len(jd_text) < 100:
@@ -178,7 +179,7 @@ async def process_and_rank_jobs():
                                 .map(el => el.innerText)
                                 .join(' ');
                         }""")
-                        jd_text = clean_text(fallback_text)
+                        jd_text = clean_text(fallback_text)[:6000]
                     
                     if len(jd_text) < 100:
                         return "ERROR", "Failed to extract meaningful text."
