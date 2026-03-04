@@ -751,288 +751,288 @@
     "https://dxctechnology.wd1.myworkdayjobs.com/en-US/DXCJobs/job/MYS---PETALING-JAYA/IT-Intern_51574224": {
         "title": "IT Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires troubleshooting, software knowledge, and basic hardware skills, but the specific technologies mentioned (Wintel, UNIX, Virtualization, Cloud) do not align closely with the candidate's skills, and the emphasis is more on IT operations rather than software development.",
         "added_at": "2026-03-04T11:17:59.889650+00:00"
     },
     "https://magna.wd3.myworkdayjobs.com/en-US/Magna/job/Engineering-Intern_R00206706/apply": {
         "title": "Engineering Intern",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "ERROR",
+        "reason": "Failed to extract meaningful text.",
         "added_at": "2026-03-04T11:17:59.889651+00:00"
     },
     "https://kla.wd1.myworkdayjobs.com/en-US/UR/job/Ann-Arbor-MI/Algorithm-Engineering-Intern--Image-Processing-_2531394-3": {
         "title": "Algorithm Engineering Intern (Image Processing)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has a strong background in software development and relevant skills in Python, JavaScript, and C++, but the job specifically requires expertise in image processing and computer vision, which is not explicitly mentioned in the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889653+00:00"
     },
     "https://nxp.wd3.myworkdayjobs.com/en-US/careers/job/Gratkorn/Summer-Internship--AI-Based-Anomaly-Detection-for-Logical-Attack-Detection--m-f-d-_R-10061825": {
         "title": "AI-Based Anomaly Detection for Logical Attack ... - Job Listings",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The candidate has a strong background in machine learning and programming, and the job requires knowledge of machine learning frameworks and experience working with hardware and development boards.",
         "added_at": "2026-03-04T11:17:59.889654+00:00"
     },
     "https://kbr.wd5.myworkdayjobs.com/KBR_Careers/job/El-Segundo-California/National-Security-Solutions--NSS--Internship---Systems-Engineering-Intern_R2119800/apply": {
         "title": "National Security Solutions (NSS) Internship",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job description doesn't explicitly mention software development, but it's likely related to systems engineering, which could involve programming skills, and the candidate has relevant technical skills like Python, JavaScript, and C++.",
         "added_at": "2026-03-04T11:17:59.889655+00:00"
     },
     "https://nxp.wd3.myworkdayjobs.com/en-US/careers/job/Gratkorn/Summer-Internship---Digital-Design-Verification--f-m-d-_R-10061910": {
         "title": "Summer Internship - Digital Design Verification (f/m/d)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has relevant programming skills, but the job description requires specific knowledge of ASIC design, Verilog/System Verilog, and experience with hardware engineering tasks, which are not explicitly mentioned in the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889656+00:00"
     },
     "https://sec.wd3.myworkdayjobs.com/en-US/Samsung_Careers/job/Quartier-daffaire-dAlger-Algiers-Algeria/AI-intern_R115030": {
         "title": "AI intern - Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has relevant skills in machine learning, data pre-processing, and programming languages, but the job description is more focused on applying machine learning technology and collecting data rather than developing software or algorithms from scratch.",
         "added_at": "2026-03-04T11:17:59.889658+00:00"
     },
     "https://nxp.wd3.myworkdayjobs.com/zh-TW/careers/job/Gratkorn/Summer-Internship-Validation--m-f-d-_R-10061946": {
         "title": "Summer Internship Validation (m/f/d) - Job Listings",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has some relevant programming skills (Python, JavaScript, C++) and experience with software development, but the job description emphasizes hardware and software integration, which may require additional skills beyond the candidate's profile.",
         "added_at": "2026-03-04T11:17:59.889659+00:00"
     },
     "https://rbc.wd3.myworkdayjobs.com/en-US/RBCEARLYTALENT1/job/Orlando-Florida-United-States-of-America/Edge-AI-Intern--Summer-2026_R-0000157134-1": {
         "title": "Edge AI Intern, Summer 2026 - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The candidate has strong programming skills in Python, JavaScript, and C++, as well as experience with Node.js, React, and SQL, which aligns with the requirements for the Edge AI Intern role, particularly with deep learning frameworks, model compression, and on-device deployment.",
         "added_at": "2026-03-04T11:17:59.889660+00:00"
     },
     "https://smithnephew.wd5.myworkdayjobs.com/en-US/External/job/MYS---Penang/Operational-Technology--Intern_R88799": {
         "title": "Operational Technology, Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate's skills in Python, JavaScript, and C++ are relevant, but the job description emphasizes operational technology and process automation, suggesting a more focused and industry-specific role that may not be a traditional software development or data analysis position.",
         "added_at": "2026-03-04T11:17:59.889662+00:00"
     },
     "https://beigene.wd5.myworkdayjobs.com/beigene/job/cambridge/summer-internship--strategic-partnerships-intern_r33586": {
         "title": "Summer Internship: Strategic Partnerships Intern",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The internship requires strategic analysis and computer skills, but does not specifically require software development or data engineering skills, and the candidate's skills in Python, JavaScript, and SQL could be valuable in this role, but are not explicitly mentioned in the job description.",
         "added_at": "2026-03-04T11:17:59.889663+00:00"
     },
     "https://rockwellautomation.wd1.myworkdayjobs.com/en-US/External-Rockwell-Automation-Early-Careers/job/Chennai-India/ENGINEER-IN-TRAINING_R25-10048-2": {
         "title": "engineer in training - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires a B.E. graduate with electrical, electronics, or instrumentation background, and although the candidate has a computer science background, they have relevant programming skills in C++ and Python, and the job involves automation project implementation and development, which aligns with their interests in software development and engineering.",
         "added_at": "2026-03-04T11:17:59.889664+00:00"
     },
     "https://mallinckrodt.wd5.myworkdayjobs.com/en-US/MallinckrodtCareers/job/Horsham-PA/Engineering-Intern_JR000015691": {
         "title": "Engineering Intern - Careers - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The internship involves technical skills like project management, documentation, and validation, but it's primarily focused on facilities and validation in a pharmaceutical environment, which doesn't directly align with the candidate's software development and data analysis interests.",
         "added_at": "2026-03-04T11:17:59.889665+00:00"
     },
     "https://worldvision.wd1.myworkdayjobs.com/en-US/WorldVisionInternational/job/Home-Working-United-States/AI-Training---Communications-Intern_JR48405": {
         "title": "AI Training & Communications Intern - Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has relevant technical skills, such as Python, JavaScript, and C++, but the job description emphasizes AI training, communications, and content creation, which may not be a perfect match for their technical background.",
         "added_at": "2026-03-04T11:17:59.889668+00:00"
     },
     "https://valeo.wd3.myworkdayjobs.com/en-US/valeo_jobs/job/Prague/System-Engineer---Young-Talent-Accelerator-Program_REQ2026070316": {
         "title": "System Engineer - Young Talent Accelerator Program - JOBS",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "LOW",
+        "reason": "The job description focuses on system engineering in the automotive industry, requiring expertise in ADAS and vehicle application, which is not directly related to the candidate's skills and interests.",
         "added_at": "2026-03-04T11:17:59.889669+00:00"
     },
     "https://ag.wd3.myworkdayjobs.com/en-US/Airbus/job/Tianjin-Area/MAP-Engineering-Tianjin-Digital-intern_JR10395240/apply": {
         "title": "MAP Engineering Tianjin Digital intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "ERROR",
+        "reason": "Failed to extract meaningful text.",
         "added_at": "2026-03-04T11:17:59.889670+00:00"
     },
     "https://kone.wd3.myworkdayjobs.com/fr-FR/Careers/job/Intern--Customer-Solution-Engineering_R0658045": {
         "title": "Intern- Customer Solution Engineering - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires no explicit programming skills, but the mention of \"Customer Solution Engineering\" and \"Engineering\" implies a technical role, and the candidate's skills in Python, JavaScript, and other languages may be relevant, but it's not a clear match for their interests and skills.",
         "added_at": "2026-03-04T11:17:59.889671+00:00"
     },
     "https://sanofi.wd3.myworkdayjobs.com/SanofiCareers/3/refreshFacet/318c8bb6f553100021d223d9780d30be": {
         "title": "Sanofi Careers - Workday",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "ERROR",
+        "reason": "Failed to extract meaningful text.",
         "added_at": "2026-03-04T11:17:59.889672+00:00"
     },
     "https://dxctechnology.wd1.myworkdayjobs.com/en-US/DXCJobs/job/MYS---PETALING-JAYA/Intern-Communications---Marketing--April-2026-Intake-_51574222": {
         "title": "Intern Communications & Marketing (April 2026 Intake)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "The job description is for an Intern Communications & Marketing role, which is not a software development, data analysis, or core engineering position.",
         "added_at": "2026-03-04T11:17:59.889673+00:00"
     },
     "https://bostondynamics.wd1.myworkdayjobs.com/Boston_Dynamics/job/Waltham-Office-POST/Mechanical-Engineering-Intern_R2475": {
         "title": "Mechanical Engineering Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "The job description is for a Mechanical Engineering Intern, which does not align with the candidate's interests and skills in software development, data engineering, and AI/ML.",
         "added_at": "2026-03-04T11:17:59.889675+00:00"
     },
     "https://kbr.wd5.myworkdayjobs.com/en-US/KBR_Careers/job/El-Segundo-California/National-Security-Solutions--NSS--Internship---Systems-Engineering-Intern_R2119800": {
         "title": "National Security Solutions (NSS) Internship - KBR Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The internship involves systems engineering, which aligns with the candidate's interests in software development and data engineering, and the required skills include Python, Node.js, and Git, which are directly mentioned in the job description.",
         "added_at": "2026-03-04T11:17:59.889676+00:00"
     },
     "https://pernodricard.wd3.myworkdayjobs.com/en-US/pernod-ricard/job/Paris/Data-Science-Intern---Pernod-Ricard-HQ---Paris---6-months-as-of-sept-oct-2026_JR-052351": {
         "title": "Data Science Intern \u2013 Pernod Ricard HQ \u2013 Paris",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The candidate has relevant skills in Python, SQL, and Git, and the job requires strong foundations in statistics, probability, and machine learning, making the candidate a strong match for the role.",
         "added_at": "2026-03-04T11:17:59.889677+00:00"
     },
     "https://nxp.wd3.myworkdayjobs.com/en-US/careers/job/Gratkorn/Summer-Internship--NFC-RF-System-Validation--m-f-d-_R-10061913": {
         "title": "NFC RF System Validation (m/f/d) - Job Listings",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "LOW",
+        "reason": "The job description requires RF measurement device knowledge and experience with C#, which are not mentioned in the candidate's profile, but the candidate does have experience with Python, which is listed as an advantage.",
         "added_at": "2026-03-04T11:17:59.889678+00:00"
     },
     "https://psu.wd1.myworkdayjobs.com/en-US/PSU_Staff/job/Penn-State-University-Park/Research-and-Development-Engineering-Intern_REQ_0000076214-1": {
         "title": "Research and Development Engineering Intern",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has a strong foundation in software development with relevant skills like Python, JavaScript, React, Node.js, and C++, but some of the required skills like Java and Angular are not mentioned in the candidate's profile, and experience with object-oriented languages is preferred, which might be a concern.",
         "added_at": "2026-03-04T11:17:59.889680+00:00"
     },
     "https://8x8inc.wd5.myworkdayjobs.com/8x8_External_Careers/job/Romania-Cluj-Office/Product-Designer-Internship_R2302": {
         "title": "Product Designer Internship - Careers at 8x8",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "The job description is for a Product Designer Internship, which is a non-software development role, and the candidate is looking for software engineering or data-related internships.",
         "added_at": "2026-03-04T11:17:59.889681+00:00"
     },
     "https://mdlz.wd3.myworkdayjobs.com/External": {
         "title": "Search for Jobs - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "Internship role in Brand Management, Trade Marketing, E-commerce & Shopper Activation, but some technical skills like JavaScript, Node.js, and React are mentioned.",
         "added_at": "2026-03-04T11:17:59.889682+00:00"
     },
     "https://pwc.wd3.myworkdayjobs.com/en-US/Global_Campus_Careers/job/PwC-Intern-Programme---Consulting--Auckland-_703620WD-1": {
         "title": "PwC Intern Programme - Consulting (Auckland)",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "LOW",
+        "reason": "The job is a consulting internship that focuses on various skill groups, including Finance, Economics & Analytics, Digital & Data Transformation, and Management Consulting, but there is no clear indication that software development or data analysis skills are required.",
         "added_at": "2026-03-04T11:17:59.889683+00:00"
     },
     "https://dxctechnology.wd1.myworkdayjobs.com/en-US/DXCJobs/job/MYS---PETALING-JAYA/HR-Internship--April-2026-Intake-_51574223": {
         "title": "HR Internship (April 2026 Intake) - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "The job description is for an HR Internship, which is clearly not a software development or data analysis role.",
         "added_at": "2026-03-04T11:17:59.889685+00:00"
     },
     "https://ksb.wd3.myworkdayjobs.com/de-DE/KSB_ExternalCareerSite/job/Richmond-VA/Application-Engineer-Sales-Support-Internship_JR_28457": {
         "title": "Application Engineer/Sales Support-Internship",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has relevant technical skills like Python, JavaScript, and SQL, but the job is more focused on engineering and sales support rather than software development or data analysis.",
         "added_at": "2026-03-04T11:17:59.889686+00:00"
     },
     "https://intel.wd1.myworkdayjobs.com/en-US/External/job/Israel-Kiryat-Gat/Student-Position---Electrical-Engineering---Power-Systems---Facilities---Kiryat-Gat_JR0281400-1": {
         "title": "Student Position - Electrical Engineering - Intel Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job involves software and database analysis, and the candidate has relevant skills, but the focus is on electrical systems and facilities management, not software development or data engineering.",
         "added_at": "2026-03-04T11:17:59.889687+00:00"
     },
     "https://parexel.wd1.myworkdayjobs.com/parexel_external_careers/job/united-kingdom-sheffield-remote/intern_r0000038395-1": {
         "title": "AI Intern - Parexel Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "HIGH",
+        "reason": "The candidate's skills in Python, JavaScript, and familiarity with AI/ML concepts align closely with the job requirements to build AI/ML applications, create intelligent agents, and develop software using Python, TensorFlow, and PyTorch.",
         "added_at": "2026-03-04T11:17:59.889688+00:00"
     },
     "https://abcfinancial.wd5.myworkdayjobs.com/abcfinancialservices/job/remote-united-states/customer-experience-technology-intern_req-1157": {
         "title": "Customer Experience Technology Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires AI-related skills and experience, which the candidate has, but the focus on customer experience, process optimization, and knowledge management is somewhat outside the candidate's primary interests and skills in software development and data engineering.",
         "added_at": "2026-03-04T11:17:59.889689+00:00"
     },
     "https://curtisswright.wd1.myworkdayjobs.com/cw_external_career_site/job/US-NY-East-Farmingdale-TR/Welding-Engineering-Intern_JR11208-2": {
         "title": "Welding Engineering Intern - Join the WRIGHT Team!",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "The job is for a Welding Engineering Intern with no requirements related to software development, data analysis, or core engineering.",
         "added_at": "2026-03-04T11:17:59.889691+00:00"
     },
     "https://cae.wd3.myworkdayjobs.com/career/job/Montreal-St-Laurent/C-CST-301-Lab-Administrator-Intern_120620-1": {
         "title": "C-CST-301 Lab Administrator Intern",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has relevant programming skills like Python, JavaScript, and C++, but the job description focuses on hardware and system administration, which doesn't perfectly align with the candidate's interests and skills.",
         "added_at": "2026-03-04T11:17:59.889692+00:00"
     },
     "https://mallinckrodt.wd5.myworkdayjobs.com/en-US/MallinckrodtCareers/job/Port-Allen-LA/Quality-Engineering-Intern_JR000015690": {
         "title": "Quality Engineering Intern - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires some technical skills like Microsoft applications, documentation, and data compilation, but software development or engineering is not the primary focus, and the skills mentioned in the job description do not directly match the candidate's expertise in Python, JavaScript, and React.",
         "added_at": "2026-03-04T11:17:59.889694+00:00"
     },
     "https://marvell.wd1.myworkdayjobs.com/MarvellCareers/job/Westborough-MA/Advanced-Packaging-SI-PI-Senior-Staff-Engineer_2600535": {
         "title": "Marvell Careers - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "The job description is focused on electrical engineering and signal/power integrity verification, which is not a software development or core engineering role matching the candidate's skills and interests.",
         "added_at": "2026-03-04T11:17:59.889695+00:00"
     },
     "https://marvell.wd1.myworkdayjobs.com/MarvellCareers/job/Austin-TX/Principal-Marketing-Technology-Solutions-Lead_2600420-1": {
         "title": "Marketing Technology Solutions Lead - Marvell Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "The job description is for a Marketing Technology Solutions Lead role, which is a non-technical, business-facing position that requires experience in marketing technology, customer-facing applications, and stakeholder management, none of which align with the candidate's skills and interests.",
         "added_at": "2026-03-04T11:17:59.889696+00:00"
     },
     "https://mcgill.wd3.myworkdayjobs.com/McGill_Careers": {
         "title": "Search for Jobs - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "IGNORE",
+        "reason": "Clearly a technical role, but not related to software development or data analysis.",
         "added_at": "2026-03-04T11:17:59.889697+00:00"
     },
     "https://marvell.wd1.myworkdayjobs.com/en-US/MarvellCareers/job/Cordoba-Argentina/Firmware-Intern_2600638": {
         "title": "Firmware Intern - Marvell Careers",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "LOW",
+        "reason": "The job description is for a Firmware Intern position, which focuses on developing firmware for high-speed networking systems, whereas the candidate's skills and interests are more aligned with software development, data engineering, and AI/ML.",
         "added_at": "2026-03-04T11:17:59.889698+00:00"
     },
     "https://valeo.wd3.myworkdayjobs.com/en-US/valeo_jobs/job/Cairo/AI---Tooling-Engineer--LIGHT_REQ2026071325": {
         "title": "AI & Tooling Engineer, LIGHT - JOBS - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The candidate has relevant skills in AI/ML, Python, and JavaScript, but some requirements like requirement extraction and AI tooling may require additional knowledge and experience beyond their listed skills.",
         "added_at": "2026-03-04T11:17:59.889699+00:00"
     },
     "https://ffive.wd5.myworkdayjobs.com/en-US/f5jobs/job/Data-Analyst-Intern_RP1036606-1": {
         "title": "Data Analyst Intern - Careers at F5 - Myworkdayjobs.com",
         "status": "New",
-        "rank": "UNKNOWN",
-        "reason": "",
+        "rank": "MEDIUM",
+        "reason": "The job requires data analysis skills and experience with spreadsheets, SQL, and Tableau, which align with the candidate's interests and skills in data engineering, but the role is not specifically focused on software development or AI/ML.",
         "added_at": "2026-03-04T11:17:59.889700+00:00"
     },
     "https://sggovterp.wd102.myworkdayjobs.com/en-US/PublicServiceCareers/job/Intern--Data-Office_JR-10000048194": {

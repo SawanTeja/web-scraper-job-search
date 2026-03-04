@@ -64,6 +64,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         header_box.append(self.ollama_btn)
         self.update_ollama_btn_label()
         
+        # Delete IGNORE jobs button
+        self.del_ignore_btn = Gtk.Button(label="🗑 Delete IGNORE")
+        self.del_ignore_btn.add_css_class("destructive-action")
+        self.del_ignore_btn.connect("clicked", self.on_delete_ignore_clicked)
+        header_box.append(self.del_ignore_btn)
+        
         self.status_label = Gtk.Label(label="Ready.")
         self.status_label.set_hexpand(True)
         self.status_label.set_halign(Gtk.Align.END)
@@ -526,6 +532,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.ollama_btn.set_sensitive(True)
         self.update_ollama_btn_label()
         return False
+
+    def on_delete_ignore_clicked(self, button):
+        """Remove all IGNORE-ranked jobs from the database."""
+        ignore_links = [link for link, data in self.jobs_db.items() if data.get("rank") == "IGNORE"]
+        for link in ignore_links:
+            del self.jobs_db[link]
+        if ignore_links:
+            self.save_db()
+            self.refresh_ui()
+            self.status_label.set_text(f"🗑 Deleted {len(ignore_links)} IGNORE jobs.")
+        else:
+            self.status_label.set_text("No IGNORE jobs to delete.")
 
     def on_refresh_clicked(self, button):
         # Reload DB from disk (rank_internships.py writes directly to it)
