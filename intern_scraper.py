@@ -79,8 +79,23 @@ def append_to_csv(title, url):
             writer.writerow(["Job Title / Company", "Application Link"])
         writer.writerow([title, url])
 
+# --- NEW: Anti-CAPTCHA Mouse and Scroll Function ---
+async def human_scroll_and_move(page):
+    """Simulates random human scrolling and mouse movements."""
+    await page.mouse.move(random.randint(100, 800), random.randint(100, 600))
+    await asyncio.sleep(random.uniform(0.5, 1.5))
+    
+    await page.mouse.wheel(0, random.randint(400, 1200))
+    await asyncio.sleep(random.uniform(2, 4))
+    
+    if random.choice([True, False]):
+        await page.mouse.wheel(0, -random.randint(100, 300))
+        await asyncio.sleep(random.uniform(1, 2))
+# ---------------------------------------------------
+
 async def scrape_google_jobs():
     unique_jobs = set() # Changed to a set to just track URLs we've seen this run
+    search_count = 0 # --- NEW: Track searches for homepage detours ---
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False)
@@ -101,6 +116,16 @@ async def scrape_google_jobs():
                 print(f"\n   🔍 Query: {query_term}")
                 
                 for start in range(0, MAX_PAGES * 10, 10):
+                    search_count += 1 # --- NEW ---
+                    
+                    # --- NEW: RANDOM HOMEPAGE DETOUR ---
+                    if search_count % random.randint(8, 12) == 0:
+                        print("      🏠 Taking a detour to Google homepage to act human...")
+                        await page.goto("https://www.google.com")
+                        await human_scroll_and_move(page)
+                        await asyncio.sleep(random.uniform(10, 20))
+                    # -----------------------------------
+
                     query = f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
                     
@@ -108,6 +133,10 @@ async def scrape_google_jobs():
                     
                     await page.goto(search_url)
                     
+                    # --- NEW: HUMAN SCROLLING AFTER LOAD ---
+                    await human_scroll_and_move(page)
+                    # ---------------------------------------
+
                     # 1. PAGE-TO-PAGE GAP
                     sleep_time = random.uniform(12, 25)
                     print(f"      ⏳ Page {int(start/10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")

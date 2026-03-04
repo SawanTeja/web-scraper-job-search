@@ -1,3 +1,24 @@
+import asyncio
+import csv
+import re
+import ollama
+from playwright.async_api import async_playwright
+
+INPUT_CSV = "fresh_internships.csv"
+OUTPUT_CSV = "ranked_internships.csv"
+
+CANDIDATE_PROFILE = """
+- B.Tech Computer Science student
+- Skills: Python, JavaScript, React, Node.js, C++, SQL, Git, Linux
+- Interests: Software Development, Data Engineering, AI/ML, Full-Stack Development
+- Looking for: Software Engineering / Data / AI internships
+"""
+
+def clean_text(text):
+    """Remove excessive whitespace and non-printable characters."""
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
 async def evaluate_job_with_llm(job_title, jd_text):
     """Sends the job description to the local GPU-powered LLM for ranking."""
     
@@ -123,3 +144,6 @@ async def process_and_rank_jobs():
     print("==================================================")
     print(f"✅ Finished! Ranked jobs saved to {OUTPUT_CSV}")
     print("==================================================")
+
+if __name__ == "__main__":
+    asyncio.run(process_and_rank_jobs())
