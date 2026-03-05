@@ -131,7 +131,7 @@ async def scrape_google_jobs():
                         print("      🏠 Taking a detour to Google homepage to act human...")
                         await page.goto("https://www.google.com")
                         await human_scroll_and_move(page)
-                        await asyncio.sleep(random.uniform(10, 20))
+                        await asyncio.sleep(random.uniform(3, 7))
 
                     query = f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
@@ -150,7 +150,7 @@ async def scrape_google_jobs():
                     await human_scroll_and_move(page)
 
                     # 1. PAGE-TO-PAGE GAP
-                    sleep_time = random.uniform(12, 25)
+                    sleep_time = random.uniform(3, 8)
                     print(f"      ⏳ Page {int(start/10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")
                     await asyncio.sleep(sleep_time)
                     
@@ -201,12 +201,12 @@ async def scrape_google_jobs():
                         print(f"      ❌ Error extracting links: {e}")
 
                 # 2. QUERY-TO-QUERY GAP
-                query_pause = random.uniform(30, 45)
+                query_pause = random.uniform(8, 15)
                 print(f"   🛑 Finished query block. Resting for {query_pause:.0f}s...")
                 await asyncio.sleep(query_pause)
 
             # 3. SITE-TO-SITE GAP
-            site_pause = random.uniform(90, 150)
+            site_pause = random.uniform(20, 30)
             print(f"☕ Finished {site}. Taking a long {site_pause:.0f}s break...")
             await asyncio.sleep(site_pause)
 

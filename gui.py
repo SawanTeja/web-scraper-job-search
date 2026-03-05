@@ -511,20 +511,45 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.refresh_ui()
 
     def on_scrape_clicked(self, button):
-        self.status_label.set_text("Scraping started... (Check terminal output for progress)")
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            message_type=Gtk.MessageType.QUESTION,
+            text="Select Scraping Speed",
+            secondary_text="Choose the scraper speed. 'Fast' may encounter more CAPTCHAs requiring manual solving."
+        )
+        dialog.add_button("⚡ Fast", 1)
+        dialog.add_button("🚶 Medium (Default)", 2)
+        dialog.add_button("🌙 Overnight", 3)
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.connect("response", self.on_scrape_dialog_response)
+        dialog.present()
+
+    def on_scrape_dialog_response(self, dialog, response_id):
+        dialog.close()
+        if response_id == Gtk.ResponseType.CANCEL or response_id < 0:
+            return
+            
+        script_name = "intern_scraper.py"
+        if response_id == 1:
+            script_name = "intern_scraper_fast.py"
+        elif response_id == 3:
+            script_name = "intern_scraper_overnight.py"
+            
+        self.status_label.set_text(f"Scraping started ({script_name})... (Check terminal output for progress)")
         self.scrape_btn.set_sensitive(False)
-        thread = threading.Thread(target=self.run_scraper)
+        thread = threading.Thread(target=self.run_scraper, args=(script_name,))
         thread.daemon = True
         thread.start()
         
-    def run_scraper(self):
+    def run_scraper(self, script_name="intern_scraper.py"):
         import time
         try:
             # Use the virtual environment's Python explicitly
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3" # Fallback
-            process = subprocess.Popen([venv_python, "intern_scraper.py"], cwd=os.getcwd())
+            
+            process = subprocess.Popen([venv_python, script_name], cwd=os.getcwd())
             
             # While scraper runs, periodically sync CSV→DB and trigger ranking
             while process.poll() is None:
