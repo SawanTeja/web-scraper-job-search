@@ -213,9 +213,9 @@ async def process_and_rank_jobs():
         print(f"❌ Could not find {DB_FILE}. Run the scraper first!")
         return
 
-    # Filter: only jobs with status "New" AND rank "UNKNOWN" (not yet ranked)
+    # Filter: only jobs with status "New" AND rank "UNKNOWN" or "ERROR"
     fresh_jobs = {link: data for link, data in jobs_db.items()
-                  if data.get("status") == "New" and data.get("rank", "UNKNOWN") == "UNKNOWN"}
+                  if data.get("status") == "New" and data.get("rank", "UNKNOWN") in ["UNKNOWN", "ERROR"]}
     
     if not fresh_jobs:
         print("ℹ️  No fresh jobs to rank. All jobs have already been processed.")
