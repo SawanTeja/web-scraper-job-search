@@ -3,6 +3,7 @@ import urllib.parse
 import random
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from playwright.async_api import async_playwright
 
@@ -22,12 +23,6 @@ SITES = [
     "bamboohr.com",
     "breezy.hr",
     "recruitee.com",
-
-    # Tech portals
-    "wellfound.com",
-    "instahyre.com",
-    "cutshort.io",
-    "hirist.tech"
 ]
 
 # The "Broad Tech" Dragnet
@@ -157,6 +152,10 @@ async def scrape_google_jobs():
                     # Check for CAPTCHA
                     if "sorry/index" in page.url or await page.locator('form[action="/sorry/index"]').count() > 0:
                         print("      ⚠️ CAPTCHA detected! Please solve it in the Chromium window.")
+                        try:
+                            subprocess.run(["notify-send", "--urgency=critical", "🚨 CAPTCHA Alert!", "Google CAPTCHA detected. Please solve it in the Chromium window."], check=False)
+                        except Exception:
+                            pass
                         await page.wait_for_selector('div#search', timeout=0) 
                     
                     try:

@@ -43,6 +43,15 @@ def clean_text(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
+def is_senior_role(text):
+    """Check if the text contains keywords for senior or mid-level roles."""
+    text_lower = text.lower()
+    patterns = [r'\bsenior\b', r'\bsde\s*ii\b', r'\bsde\s*iii\b', r'\bsde\s*2\b', r'\bsde\s*3\b']
+    for p in patterns:
+        if re.search(p, text_lower):
+            return True
+    return False
+
 async def evaluate_job_with_llm(job_title, jd_text):
     """Sends the job description to the local GPU-powered LLM for ranking."""
     
@@ -77,6 +86,8 @@ IGNORE (HARD VETO):
 - Technical support
 - QA / manual testing
 - Roles asking for AutoCAD, MicroStation, SketchUp, or GIS.
+- Senior, Staff, Principal, SDE II, or SDE III roles.
+- IGNORE if it requies more than 2 years of experience.
 
 If and ONLY if the job is NOT in the IGNORE list, rank it using the following:
 
@@ -163,6 +174,16 @@ async def process_and_rank_jobs():
             title = data.get("title", "Unknown")
             print(f"[{index + 1}/{len(fresh_jobs)}] Extracting: {title}")
             
+            if is_senior_role(title):
+                print(f"   ⏭️ Skipped (Senior/SDE II/III detected in title)\n")
+                jobs_db[url]["rank"] = "IGNORE"
+                jobs_db[url]["reason"] = "Senior/SDE II/III role detected in title."
+                
+                # Save DB after skipping so progress isn't lost
+                with open(DB_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(jobs_db, f, indent=4)
+                continue
+            
             try:
                 # Wrap entire job in a 45s timeout so nothing gets stuck
                 async def process_single_job():
@@ -192,6 +213,9 @@ async def process_and_rank_jobs():
                     if len(jd_text) < 100:
                         return "ERROR", "Failed to extract meaningful text."
                     else:
+                        if is_senior_role(jd_text):
+                            return "IGNORE", "Senior/SDE II/III role detected in job description."
+                            
                         print("   🧠 Analyzing JD with Llama 3.1...")
                         return await evaluate_job_with_llm(title, jd_text)
 
