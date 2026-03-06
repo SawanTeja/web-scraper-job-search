@@ -52,9 +52,70 @@ def is_senior_role(text):
             return True
     return False
 
-async def evaluate_job_with_llm(job_title, jd_text):
-    """Sends the job description to the local GPU-powered LLM for ranking."""
+async def extract_job_details_with_llm(job_title, jd_text):
+    """Extracts structured job details using the local LLM."""
     
+    prompt = f"""
+You are a technical recruiter assistant. Extract the job details from the following Job Description.
+
+====================
+JOB
+====================
+Title: {job_title}
+
+Description:
+{jd_text}
+====================
+
+Respond ONLY with a valid JSON object matching EXACTLY this schema. Ensure you use arrays instead of paragraphs for skills, responsibilities, requirements, and nice_to_haves.
+Do not include any other text or markdown formatting outside the JSON block.
+If a field is not mentioned, use an empty string "" or empty array [].
+
+{{
+  "job_name": "",
+  "company": "",
+  "location": "",
+  "salary": "",
+  "job_type": "Internship / Full-time / Contract / etc.",
+  "experience_required": "",
+  "skills_required": [],
+  "skills_preferred": [],
+  "about_job": "",
+  "responsibilities": [],
+  "requirements": [],
+  "nice_to_have": []
+}}
+"""
+
+    try:
+        response = ollama.chat(model='llama3.1', messages=[
+            {'role': 'user', 'content': prompt}
+        ], options={"temperature": 0})
+        
+        result = response['message']['content'].strip()
+        
+        # Strip markdown formatting
+        if result.startswith("```json"):
+            result = result[7:]
+        elif result.startswith("```"):
+            result = result[3:]
+        if result.endswith("```"):
+            result = result[:-3]
+        
+        result = result.strip()
+        return json.loads(result)
+    except Exception as e:
+        print(f"   ⚠️ Failed to extract structured JSON: {e}")
+        return None
+
+async def evaluate_job_with_llm(job_details_dict, raw_jd_text, job_title):
+    """Sends the job description or structured details to the local LLM for ranking."""
+    
+    if job_details_dict:
+        job_info = json.dumps(job_details_dict, indent=2)
+    else:
+        job_info = f"Title: {job_title}\n\nDescription:\n{raw_jd_text}"
+
     prompt = f"""
 You are an experienced technical recruiter.
 
@@ -66,37 +127,36 @@ CANDIDATE PROFILE
 {CANDIDATE_PROFILE}
 
 ====================
-JOB
+JOB DETAILS
 ====================
-Title: {job_title}
-
-Description:
-{jd_text}
+{job_info}
 
 ====================
 RANKING RULES
 ====================
-CRITICAL INSTRUCTION: You MUST evaluate the IGNORE list first. If the job matches ANY of the IGNORE criteria, immediately rank it as IGNORE and stop matching.
+
+CRITICAL INSTRUCTION:
+Evaluate the IGNORE list first. If the job matches ANY IGNORE rule,
+immediately return IGNORE and stop evaluation.
 
 IGNORE (HARD VETO):
-- Transportation engineering, Urban planning, or Traffic operations
-- Civil, Mechanical, or Construction engineering
+- Transportation engineering, Urban planning, Traffic operations
+- Civil, Mechanical, Construction engineering
 - Architecture roles
 - HR / Marketing / Sales
 - Technical support
 - QA / manual testing
-- Roles asking for AutoCAD, MicroStation, SketchUp, or GIS.
-- Senior, Staff, Principal, SDE II, or SDE III roles.
-- IGNORE if it requies more than 2 years of experience.
-
-If and ONLY if the job is NOT in the IGNORE list, rank it using the following:
+- Roles requiring AutoCAD, MicroStation, SketchUp, GIS
+- Titles containing: Senior, Staff, Lead, Principal, Architect, Manager
+- Roles requiring more than 2 years of experience
+- Roles that are NOT internships or entry-level student roles
 
 HIGH:
 - Software Engineering
 - Backend Engineering
 - Full Stack Development
 - Systems Programming
-- C/C++ roles
+- C / C++ roles
 - Node.js / JavaScript backend roles
 - Networking / distributed systems roles
 - Mobile app development roles
@@ -105,20 +165,22 @@ MEDIUM:
 - General developer roles
 - Web development internships
 - Platform engineering roles
-- DevOps roles
+- DevOps roles involving programming
+- AI / ML engineering roles
 
 LOW:
 - Data engineering
 - Data analyst roles
-- DevOps heavy roles
-- Cloud-only infrastructure roles
+- Cloud infrastructure roles
+- DevOps roles focused mostly on operations
 
 CATCH-ALL (DEFAULT):
-- If the job does NOT explicitly fit into HIGH, MEDIUM, or LOW, you MUST rank it as IGNORE. Do not guess or create new categories.
+If the job does NOT clearly match HIGH, MEDIUM, or LOW,
+you MUST return IGNORE.
 
 ====================
 
-Respond ONLY in this format:
+OUTPUT FORMAT:
 
 RANK: HIGH / MEDIUM / LOW / IGNORE
 REASON: One short sentence explaining the decision.
@@ -211,24 +273,30 @@ async def process_and_rank_jobs():
                         jd_text = clean_text(fallback_text)[:6000]
                     
                     if len(jd_text) < 100:
-                        return "ERROR", "Failed to extract meaningful text."
+                        return "ERROR", "Failed to extract meaningful text.", None
                     else:
                         if is_senior_role(jd_text):
-                            return "IGNORE", "Senior/SDE II/III role detected in job description."
+                            return "IGNORE", "Senior/SDE II/III role detected in job description.", None
                             
-                        print("   🧠 Analyzing JD with Llama 3.1...")
-                        return await evaluate_job_with_llm(title, jd_text)
+                        print("   🧠 Extracting structured details with Llama 3.1...")
+                        details = await extract_job_details_with_llm(title, jd_text)
+                        
+                        print("   🧠 Ranking JD with Llama 3.1...")
+                        rank, reason = await evaluate_job_with_llm(details, jd_text, title)
+                        return rank, reason, details
 
-                rank, reason = await asyncio.wait_for(process_single_job(), timeout=45)
+                rank, reason, details = await asyncio.wait_for(process_single_job(), timeout=90)
                 
                 print(f"   📊 Result: {rank} - {reason}\n")
                 jobs_db[url]["rank"] = rank
                 jobs_db[url]["reason"] = reason
+                if details:
+                    jobs_db[url]["details"] = details
                 
             except asyncio.TimeoutError:
-                print(f"   ⏰ TIMEOUT after 45s. Skipping with ERROR tag.\n")
+                print(f"   ⏰ TIMEOUT after 90s. Skipping with ERROR tag.\n")
                 jobs_db[url]["rank"] = "ERROR"
-                jobs_db[url]["reason"] = "Timed out after 45s."
+                jobs_db[url]["reason"] = "Timed out after 90s."
                 
             except Exception as e:
                 print(f"   ❌ Failed: {e}. Skipping.\n")
