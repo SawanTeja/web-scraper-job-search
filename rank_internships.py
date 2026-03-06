@@ -281,7 +281,11 @@ async def process_and_rank_jobs():
                         print("   🧠 Extracting structured details with Llama 3.1...")
                         details = await extract_job_details_with_llm(title, jd_text)
                         
-                        print("   🧠 Ranking JD with Llama 3.1...")
+                        if details:
+                            print("   🧠 Ranking Extracted JSON with Llama 3.1...")
+                        else:
+                            print("   ⚠️ Extraction failed. Ranking RAW Job Description with Llama 3.1...")
+                            
                         rank, reason = await evaluate_job_with_llm(details, jd_text, title)
                         return rank, reason, details
 
