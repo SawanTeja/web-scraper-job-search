@@ -341,10 +341,17 @@ class JobAppWindow(Gtk.ApplicationWindow):
         title_label.set_hexpand(True)
         title_label.set_halign(Gtk.Align.START)
         title_label.set_ellipsize(Pango.EllipsizeMode.END)
-        # Detailed tooltip showing URL + AI Reason
         tooltip_text = f"URL: {link}"
         if reason:
             tooltip_text += f"\n\nAI REASON:\n{reason}"
+        
+        details = data.get("details")
+        if details and isinstance(details, dict):
+            tooltip_text += "\n\nEXTRACTED DETAILS:"
+            for key, val in details.items():
+                if val is not None and val != "" and val != []:
+                    tooltip_text += f"\n• {key.replace('_', ' ').title()}: {val}"
+
         title_label.set_tooltip_text(tooltip_text)
         
         # Dropdown for status (Modern GTK4)
@@ -366,6 +373,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         box.append(status_drop)
         box.append(apply_btn)
         row.set_child(box)
+        
+        # Add click event to open details popup
+        click_gesture = Gtk.GestureClick()
+        click_gesture.set_button(0) # any button
+        click_gesture.connect("released", self.on_job_row_clicked, data, link)
+        row.add_controller(click_gesture)
         
         target_listbox = self.get_listbox_for_status(status)
         target_listbox.append(row)
@@ -411,7 +424,117 @@ class JobAppWindow(Gtk.ApplicationWindow):
         box.append(reason_label)
         
         row.set_child(box)
+        
+        # Add click event to open details popup
+        click_gesture = Gtk.GestureClick()
+        click_gesture.set_button(0) # any button
+        click_gesture.connect("released", self.on_job_row_clicked, data, link)
+        row.add_controller(click_gesture)
+        
         self.prio_listbox.append(row)
+
+    def on_job_row_clicked(self, gesture, n_press, x, y, data, link):
+        """Open a popup window displaying structured job details."""
+        details = data.get("details", {})
+        if not isinstance(details, dict):
+            details = {}
+            
+        title = data.get("title", 'Job Details')
+            
+        dialog = Gtk.Window(title="Job Extract Details", transient_for=self, modal=True)
+        dialog.set_default_size(950, 650)
+        
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
+        main_box.set_margin_top(20)
+        main_box.set_margin_bottom(20)
+        main_box.set_margin_start(20)
+        main_box.set_margin_end(20)
+        
+        # Header Box
+        header_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        
+        title_label = Gtk.Label(label=f"<span size='x-large' weight='bold'>{title}</span>")
+        title_label.set_use_markup(True)
+        title_label.set_halign(Gtk.Align.START)
+        title_label.set_wrap(True)
+        title_label.set_selectable(True)
+        header_box.append(title_label)
+        
+        company = details.get("company")
+        location = details.get("location")
+        jtype = details.get("job_type")
+        salary = details.get("salary")
+        
+        info_str = []
+        if company: info_str.append(f"<b>Company:</b> {company}")
+        if location: info_str.append(f"<b>Location:</b> {location}")
+        if jtype: info_str.append(f"<b>Type:</b> {jtype}")
+        if salary: info_str.append(f"<b>Salary:</b> {salary}")
+        
+        if info_str:
+            info_label = Gtk.Label(label=" | ".join(info_str))
+            info_label.set_use_markup(True)
+            info_label.set_halign(Gtk.Align.START)
+            info_label.set_wrap(True)
+            info_label.set_selectable(True)
+            header_box.append(info_label)
+            
+        url_label = Gtk.Label(label=f"<a href='{link}'>Click here to open Original Job Posting</a>")
+        url_label.set_use_markup(True)
+        url_label.set_halign(Gtk.Align.START)
+        header_box.append(url_label)
+        
+        main_box.append(header_box)
+        main_box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        
+        # Content
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_vexpand(True)
+        
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
+        content_box.set_margin_top(10)
+        content_box.set_margin_bottom(10)
+        content_box.set_margin_start(5)
+        content_box.set_margin_end(15)
+        
+        if details:
+            skip_keys = ["job_name", "company", "location", "job_type", "salary"]
+            # Ordered layout for better readability
+            key_order = ["about_job", "responsibilities", "requirements", "skills_required", "skills_preferred", "nice_to_have"]
+            
+            all_keys = list(details.keys())
+            ordered_keys = [k for k in key_order if k in all_keys] + [k for k in all_keys if k not in key_order]
+            
+            for key in ordered_keys:
+                if key in skip_keys: continue
+                val = details[key]
+                if val is not None and val != "" and val != []:
+                    sec_title = Gtk.Label(label=f"<span size='large' weight='bold'>{key.replace('_', ' ').title()}</span>")
+                    sec_title.set_use_markup(True)
+                    sec_title.set_halign(Gtk.Align.START)
+                    content_box.append(sec_title)
+                    
+                    if isinstance(val, list):
+                        val_str = "• " + "\n• ".join(str(v) for v in val)
+                    else:
+                        val_str = str(val)
+                        
+                    val_label = Gtk.Label(label=val_str)
+                    val_label.set_halign(Gtk.Align.START)
+                    val_label.set_wrap(True)
+                    val_label.set_selectable(True)
+                    content_box.append(val_label)
+        else:
+            no_data = Gtk.Label(label="No structured AI extractions available for this job yet.")
+            no_data.set_halign(Gtk.Align.START)
+            content_box.append(no_data)
+            
+        scrolled.set_child(content_box)
+        main_box.append(scrolled)
+        
+        dialog.set_child(main_box)
+        dialog.present()
 
     def on_status_changed(self, dropdown, pspec, link, row):
         selected_item = dropdown.get_selected_item()

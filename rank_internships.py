@@ -3,9 +3,33 @@ import csv
 import re
 import ollama
 import json
+import os
 from playwright.async_api import async_playwright
 
 DB_FILE = "jobs_db.json"
+PROMPTS_LOG_FILE = "prompts.json"
+
+def log_prompt_to_file(job_title, prompt_type, prompt_text, result_text):
+    """Appends the sent prompt and received result to prompts.json for manual review."""
+    log_entry = {
+        "job_title": job_title,
+        "type": prompt_type,
+        "prompt": prompt_text,
+        "result": result_text
+    }
+    
+    logs = []
+    if os.path.exists(PROMPTS_LOG_FILE):
+        try:
+            with open(PROMPTS_LOG_FILE, 'r', encoding='utf-8') as f:
+                logs = json.load(f)
+        except Exception:
+            pass
+            
+    logs.append(log_entry)
+    
+    with open(PROMPTS_LOG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(logs, f, indent=4)
 
 CANDIDATE_PROFILE = """
 Candidate Background:
@@ -52,10 +76,48 @@ def is_senior_role(text):
             return True
     return False
 
-async def extract_job_details_with_llm(job_title, jd_text):
+def extract_json_from_text(text):
+    try:
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+    except Exception:
+        return None
+    return None
+
+def validate_job_json(data):
+    required_fields = [
+        "job_name",
+        "company",
+        "location",
+        "salary",
+        "job_type",
+        "experience_required",
+        "skills_required",
+        "skills_preferred",
+        "about_job",
+        "responsibilities",
+        "requirements",
+        "nice_to_have"
+    ]
+
+    if not isinstance(data, dict):
+        return False
+
+    for field in required_fields:
+        if field not in data:
+            return False
+
+    return True
+
+async def extract_job_details_with_llm(job_title, jd_text, retries=3):
     """Extracts structured job details using the local LLM."""
     
     prompt = f"""
+If you produce anything other than valid JSON, the system will crash.
+Do not explain anything.
+Only return JSON.
+
 You are a technical recruiter assistant. Extract the job details from the following Job Description.
 
 ====================
@@ -87,26 +149,30 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
 }}
 """
 
-    try:
-        response = ollama.chat(model='llama3.1', messages=[
-            {'role': 'user', 'content': prompt}
-        ], options={"temperature": 0})
-        
-        result = response['message']['content'].strip()
-        
-        # Strip markdown formatting
-        if result.startswith("```json"):
-            result = result[7:]
-        elif result.startswith("```"):
-            result = result[3:]
-        if result.endswith("```"):
-            result = result[:-3]
-        
-        result = result.strip()
-        return json.loads(result)
-    except Exception as e:
-        print(f"   ⚠️ Failed to extract structured JSON: {e}")
-        return None
+    for attempt in range(retries):
+        try:
+            response = ollama.chat(model='llama3.1', messages=[
+                {'role': 'user', 'content': prompt}
+            ], options={"temperature": 0})
+            
+            result = response['message']['content'].strip()
+            
+            if attempt == 0:
+                # Log the prompt only on the first attempt so we don't spam the log with retries
+                log_prompt_to_file(job_title, "extraction", prompt, result)
+            
+            # Use regex to find JSON and parse it
+            data = extract_json_from_text(result)
+            
+            if data and validate_job_json(data):
+                return data
+                
+            print(f"   ⚠️ JSON invalid or missing fields, retry {attempt+1}/{retries}")
+            
+        except Exception as e:
+            print(f"   ⚠️ Attempt {attempt+1} failed: {e}")
+            
+    return None
 
 async def evaluate_job_with_llm(job_details_dict, raw_jd_text, job_title):
     """Sends the job description or structured details to the local LLM for ranking."""
@@ -192,6 +258,8 @@ REASON: One short sentence explaining the decision.
         ], options={"temperature": 0})
         
         result = response['message']['content'].strip()
+        
+        log_prompt_to_file(job_title, "ranking", prompt, result)
         
         rank_match = re.search(r'RANK:\s*(HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
         reason_match = re.search(r'REASON:\s*(.*)', result, re.IGNORECASE)
