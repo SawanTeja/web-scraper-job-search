@@ -69,21 +69,21 @@ Description:
 
 Respond ONLY with a valid JSON object matching EXACTLY this schema. Ensure you use arrays instead of paragraphs for skills, responsibilities, requirements, and nice_to_haves.
 Do not include any other text or markdown formatting outside the JSON block.
-If a field is not mentioned, use an empty string "" or empty array [].
+If a field is not mentioned or you cannot find the data, you MUST use `null`. Do not use empty strings `""` or empty arrays `[]`.
 
 {{
-  "job_name": "",
-  "company": "",
-  "location": "",
-  "salary": "",
-  "job_type": "Internship / Full-time / Contract / etc.",
-  "experience_required": "",
-  "skills_required": [],
-  "skills_preferred": [],
-  "about_job": "",
-  "responsibilities": [],
-  "requirements": [],
-  "nice_to_have": []
+  "job_name": null,
+  "company": null,
+  "location": null,
+  "salary": null,
+  "job_type": null,
+  "experience_required": null,
+  "skills_required": null,
+  "skills_preferred": null,
+  "about_job": null,
+  "responsibilities": null,
+  "requirements": null,
+  "nice_to_have": null
 }}
 """
 

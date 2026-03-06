@@ -163,6 +163,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.sort_btn.connect("clicked", self.on_sort_clicked)
         priority_header.append(self.sort_btn)
         
+        self.reset_rank_btn = Gtk.Button(label="Reset Ranks")
+        self.reset_rank_btn.add_css_class("destructive-action")
+        self.reset_rank_btn.connect("clicked", self.on_reset_rank_clicked)
+        priority_header.append(self.reset_rank_btn)
+        
         self.sort_status_label = Gtk.Label(label="")
         priority_header.append(self.sort_status_label)
         
@@ -579,6 +584,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.status_label.set_text("Scraping failed.")
 
     # --- LLM RANKING LOGIC ---
+    def on_reset_rank_clicked(self, button):
+        count = 0
+        for link, data in self.jobs_db.items():
+            if data.get("status") != "Applied":
+                data["rank"] = "UNKNOWN"
+                data["reason"] = "Reset for re-evaluation"
+                count += 1
+        
+        if count > 0:
+            self.save_db()
+            self.refresh_ui()
+            self.sort_status_label.set_text(f"Reset {count} jobs to UNKNOWN rank.")
+        else:
+            self.sort_status_label.set_text("No jobs to reset.")
+
     def on_sort_clicked(self, button):
         if not os.path.exists(DB_FILE):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
