@@ -136,3 +136,29 @@ By tweaking these guardrails, the AI will accurately isolate your best-fit job o
 - `rank_internships.py`: Uses Llama 3.1 via Ollama to download job URLs, read textual descriptions, and rank them.
 - `jobs_db.json`: The local SQLite-like JSON database where all your applications and URLs are stored. (Auto-generated).
 - `setup.md`: Original quickstart instructions.
+
+---
+
+## Troubleshooting
+
+### `ModuleNotFoundError: No module named 'distutils'` or `AttributeError: 'Version' object has no attribute 'version'`
+If you are using Python 3.12 or newer, you might encounter an error when running `indeed_scraper.py` because the `distutils` module has been removed from the standard library, which breaks the `undetected_chromedriver` package.
+
+**To fix this:**
+Open the patcher file inside your virtual environment. The path usually looks like this:
+`scraper_env/lib64/python3.1X/site-packages/undetected_chromedriver/patcher.py` or `scraper_env/lib/python3.1X/site-packages/undetected_chromedriver/patcher.py`
+
+Replace this import at the top of the file:
+```python
+from distutils.version import LooseVersion
+```
+With this mock class:
+```python
+class LooseVersion:
+    def __init__(self, vstring):
+        self.vstring = str(vstring)
+        self.version = [int(x) if x.isdigit() else x for x in self.vstring.split('.')]
+    def __str__(self):
+        return self.vstring
+```
+Save the file, and the scraper should now boot up without crashing!
