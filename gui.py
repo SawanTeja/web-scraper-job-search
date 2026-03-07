@@ -52,7 +52,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.vbox.append(header_box)
         
         # Mode Toggle
-        mode_model = Gtk.StringList.new(["👔 Internshala/Careers", "🟠 Indeed Search"])
+        mode_model = Gtk.StringList.new([" GLOBAL", " Indeed Search"])
         self.mode_drop = Gtk.DropDown(model=mode_model)
         self.mode_drop.set_selected(0) # Default to internships
         self.mode_drop.connect("notify::selected", self.on_mode_changed)
@@ -317,15 +317,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
         )
         
         # --- UI for Priority (Sorted) ---
-        if self.current_mode == "internships":
-            # Sort logic: HIGH -> MEDIUM -> LOW -> UNKNOWN -> ERROR -> IGNORE
-            def get_rank_weight(rank_str):
-                weights = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNKNOWN": 3, "ERROR": 4, "IGNORE": 5}
-                return weights.get(rank_str, 3)
-    
-            sorted_jobs = sorted(self.jobs_db.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
-            for link, data in sorted_jobs:
-                self.add_priority_row(link, data)
+        # Sort logic: HIGH -> MEDIUM -> LOW -> UNKNOWN -> ERROR -> IGNORE
+        def get_rank_weight(rank_str):
+            weights = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNKNOWN": 3, "ERROR": 4, "IGNORE": 5}
+            return weights.get(rank_str, 3)
+
+        sorted_jobs = sorted(self.jobs_db.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
+        for link, data in sorted_jobs:
+            self.add_priority_row(link, data)
 
     def add_main_job_row(self, link, data):
         title = data.get("title", "Unknown")
@@ -473,6 +472,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
         title_label.set_use_markup(True)
         title_label.set_halign(Gtk.Align.START)
         title_label.set_wrap(True)
+        title_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        title_label.set_max_width_chars(60)
         title_label.set_selectable(True)
         header_box.append(title_label)
         
@@ -492,10 +493,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
             info_label.set_use_markup(True)
             info_label.set_halign(Gtk.Align.START)
             info_label.set_wrap(True)
+            info_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            info_label.set_max_width_chars(60)
             info_label.set_selectable(True)
             header_box.append(info_label)
             
-        url_label = Gtk.Label(label=f"<a href='{link}'>Click here to open Original Job Posting</a>")
+        import html
+        escaped_link = html.escape(link)
+        url_label = Gtk.Label(label=f"<a href='{escaped_link}'>Click here to open Original Job Posting</a>")
         url_label.set_use_markup(True)
         url_label.set_halign(Gtk.Align.START)
         header_box.append(url_label)
@@ -539,6 +544,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     val_label = Gtk.Label(label=val_str)
                     val_label.set_halign(Gtk.Align.START)
                     val_label.set_wrap(True)
+                    val_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+                    val_label.set_max_width_chars(80)
                     val_label.set_selectable(True)
                     content_box.append(val_label)
         else:
@@ -660,11 +667,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # Hide/Show priority tab
         page = self.notebook.get_nth_page(self.priority_page_num)
         if self.current_mode == "indeed":
-            page.set_visible(False)
-            self.notebook.set_current_page(0) # switch to fresh jobs
-            self.ollama_btn.set_visible(False)
-            self.del_ignore_btn.set_visible(False)
-            self.filter_box.set_visible(False)
+            page.set_visible(True)
+            self.ollama_btn.set_visible(True)
+            self.del_ignore_btn.set_visible(True)
+            self.filter_box.set_visible(True)
         else:
             page.set_visible(True)
             self.ollama_btn.set_visible(True)
@@ -675,7 +681,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def on_tab_switched(self, notebook, page, page_num):
         # Refresh UI just in case DB changed between tabs (e.g. status changes impacting Priority tab)
-        if page_num == self.priority_page_num and self.current_mode == "internships":
+        if page_num == self.priority_page_num:
             # Redrawing Priority page to update Status text on it
             self.refresh_ui()
 
@@ -792,7 +798,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3" # Fallback
-            process = subprocess.Popen([venv_python, "rank_internships.py"], cwd=os.getcwd())
+                
+            script_to_run = "rank_internships.py" if self.current_mode == "internships" else "rank_indeed.py"
+            process = subprocess.Popen([venv_python, script_to_run], cwd=os.getcwd())
             process.wait()
             GLib.idle_add(self.on_sort_finished, True)
         except Exception as e:

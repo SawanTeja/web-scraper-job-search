@@ -71,16 +71,24 @@ def scrape_indeed_page_one_only(location="India"):
                     link_el = job.find_element(By.CSS_SELECTOR, "h2.jobTitle a")
                     job_link = link_el.get_attribute("href")
                     
-                    # Split out the query params from the link to get clean link just in case
-                    base_link = job_link.split('?')[0] if '?' in job_link else job_link
+                    # Extract Job Key (jk) from URL for deduplication 
+                    parsed_url = urllib.parse.urlparse(job_link)
+                    query_params = urllib.parse.parse_qs(parsed_url.query)
+                    jk = query_params.get("jk", [""])[0]
                     
-                    # Check against history
-                    if job_link in db_jobs:
+                    if not jk:
+                        jk = job_link[-16:]  # fallback
+                    
+                    # Clean, unique URL using just the job key
+                    job_link_key = f"https://in.indeed.com/viewjob?jk={jk}"
+                    
+                    # Skip if already in database
+                    if job_link_key in db_jobs:
                         continue 
                         
                     # Extract details
                     title_el = job.find_element(By.CSS_SELECTOR, "h2.jobTitle span[title]")
-                    title = title_el.text if title_el else "N/A"
+                    title = title_el.get_attribute("title") if title_el else "N/A"
                     
                     company_el = job.find_element(By.CSS_SELECTOR, "span[data-testid='company-name']")
                     company = company_el.text if company_el else "N/A"
@@ -88,8 +96,50 @@ def scrape_indeed_page_one_only(location="India"):
                     location_el = job.find_element(By.CSS_SELECTOR, "div[data-testid='text-location']")
                     job_location = location_el.text if location_el else "N/A"
                     
-                    # Save into GUI-compatible dict
-                    db_jobs[job_link] = {
+                    # Extract JD by clicking the job card title
+                    jd = "N/A"
+                    try:
+                        # Grab old JD element reference BEFORE clicking (if it exists)
+                        old_jd_el = None
+                        try:
+                            old_jd_el = driver.find_element(By.ID, "jobDescriptionText")
+                        except:
+                            pass
+                        
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", job)
+                        time.sleep(0.5)
+                        
+                        # Click the title span (not the <a> which navigates, not the container which may not trigger)
+                        driver.execute_script("arguments[0].click();", title_el)
+                        
+                        # If we had an old JD element, wait for it to go stale (= DOM refreshed with new content)
+                        if old_jd_el:
+                            try:
+                                WebDriverWait(driver, 5).until(EC.staleness_of(old_jd_el))
+                            except:
+                                pass  # might not go stale if same element is reused, that's ok
+                            time.sleep(1)
+                        else:
+                            time.sleep(2)
+                        
+                        # Check if we accidentally navigated away
+                        if "viewjob" in driver.current_url:
+                            driver.back()
+                            time.sleep(2)
+                        else:
+                            # Now grab the fresh JD element
+                            jd_el = WebDriverWait(driver, 5).until(
+                                EC.presence_of_element_located((By.ID, "jobDescriptionText"))
+                            )
+                            jd = jd_el.text
+                    except Exception as e:
+                        print(f"       [!] Could not extract JD for {title}")
+                        if "viewjob" in driver.current_url:
+                            driver.back()
+                            time.sleep(2)
+                    
+                    # Save into GUI-compatible dict using the clean key
+                    db_jobs[job_link_key] = {
                         "title": title,
                         "status": "New",
                         "added_at": datetime.now(timezone.utc).isoformat(),
@@ -98,7 +148,8 @@ def scrape_indeed_page_one_only(location="India"):
                             "location": job_location,
                             "job_type": "Indeed Search",
                             "salary": "N/A",
-                            "keyword_used": keyword
+                            "keyword_used": keyword,
+                            "jd": jd
                         }
                     }
                     
