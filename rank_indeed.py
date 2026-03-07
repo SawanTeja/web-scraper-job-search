@@ -41,13 +41,14 @@ def process_and_rank_jobs():
 Analyze the following Job Description and answer three simple questions:
 1. Is this an "unpaid" role or internship?
 2. Is the salary or stipend clearly stated to be less than 10,000 (e.g. INR 5,000/month, 8k)?
-3. Does the role explicitly require prior work experience (e.g. "1+ years experience required", "Must have 2 years of experience")?
+3. If the salary is in range ( eg 8k-15k) then check if the lower bound is less than 10k.
+4. Does the role explicitly require prior work experience (e.g. "1+ years experience required", "Must have 2 years of experience")?
 
 If the answer to ANY of those three is YES, you must output:
 RANK: IGNORE
 REASON: [Briefly state why - e.g. "Unpaid internship", "Salary is 5000", or "Requires experience"]
 
-If the answer to BOTH is NO (or if salary information is simply not mentioned), you must output:
+If the answer to ABOVE QUESTIONS are NO (or if salary information is simply not mentioned), you must output:
 RANK: HIGH
 REASON: Meets minimum criteria.
 
