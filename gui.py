@@ -11,7 +11,8 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib, Pango
 
 
-DB_FILE = "jobs_db.json"
+DB_FILE_INTERNSHIPS = "jobs_db.json"
+DB_FILE_INDEED = "indeed_db.json"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
 RANKS = ["HIGH", "MEDIUM", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
 NA_EXPIRY_HOURS = 24
@@ -30,6 +31,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Job Scraper & Tracker", default_width=950, default_height=750)
         
+        self.current_mode = "internships" # "internships" or "indeed"
+
         # Setup CSS
         self.setup_css()
         
@@ -47,6 +50,13 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # --- HEADER / GLOBAL ACTIONS ---
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.vbox.append(header_box)
+        
+        # Mode Toggle
+        mode_model = Gtk.StringList.new(["👔 Internshala/Careers", "🟠 Indeed Search"])
+        self.mode_drop = Gtk.DropDown(model=mode_model)
+        self.mode_drop.set_selected(0) # Default to internships
+        self.mode_drop.connect("notify::selected", self.on_mode_changed)
+        header_box.append(self.mode_drop)
         
         self.scrape_btn = Gtk.Button(label="Scrape Jobs")
         self.scrape_btn.add_css_class("suggested-action")
@@ -84,21 +94,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
         fresh_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         
         # Filter bar
-        filter_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        filter_box.set_margin_top(8)
-        filter_box.set_margin_start(10)
-        filter_box.set_margin_end(10)
+        self.filter_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.filter_box.set_margin_top(8)
+        self.filter_box.set_margin_start(10)
+        self.filter_box.set_margin_end(10)
         filter_label = Gtk.Label(label="Filter by Rank:")
-        filter_box.append(filter_label)
+        self.filter_box.append(filter_label)
         
         self.rank_filter_options = ["ALL"] + RANKS
         filter_model = Gtk.StringList.new(self.rank_filter_options)
         self.rank_filter_drop = Gtk.DropDown(model=filter_model)
         self.rank_filter_drop.set_selected(0)  # Default: ALL
         self.rank_filter_drop.connect("notify::selected", self.on_rank_filter_changed)
-        filter_box.append(self.rank_filter_drop)
+        self.filter_box.append(self.rank_filter_drop)
         
-        fresh_vbox.append(filter_box)
+        fresh_vbox.append(self.filter_box)
         
         self.fresh_scroll = Gtk.ScrolledWindow()
         self.fresh_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -181,7 +191,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.prio_scroll.set_child(self.prio_listbox)
         priority_vbox.append(self.prio_scroll)
         
-        self.notebook.append_page(priority_vbox, Gtk.Label(label="Priority Sorting"))
+        self.priority_page_num = self.notebook.append_page(priority_vbox, Gtk.Label(label="Priority Sorting"))
         
         # Connect tab change signal to trigger special updates if needed
         self.notebook.connect("switch-page", self.on_tab_switched)
@@ -213,16 +223,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
             Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
+    def get_db_file(self):
+        return DB_FILE_INTERNSHIPS if self.current_mode == "internships" else DB_FILE_INDEED
+
     def load_db(self):
-        if os.path.exists(DB_FILE):
+        db_path = self.get_db_file()
+        if os.path.exists(db_path):
             try:
-                with open(DB_FILE, 'r', encoding='utf-8') as f:
+                with open(db_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception: pass
         return {}
 
     def save_db(self):
-        with open(DB_FILE, 'w', encoding='utf-8') as f:
+        db_path = self.get_db_file()
+        with open(db_path, 'w', encoding='utf-8') as f:
             json.dump(self.jobs_db, f, indent=4)
 
 
@@ -302,14 +317,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
         )
         
         # --- UI for Priority (Sorted) ---
-        # Sort logic: HIGH -> MEDIUM -> LOW -> UNKNOWN -> ERROR -> IGNORE
-        def get_rank_weight(rank_str):
-            weights = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNKNOWN": 3, "ERROR": 4, "IGNORE": 5}
-            return weights.get(rank_str, 3)
-
-        sorted_jobs = sorted(self.jobs_db.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
-        for link, data in sorted_jobs:
-            self.add_priority_row(link, data)
+        if self.current_mode == "internships":
+            # Sort logic: HIGH -> MEDIUM -> LOW -> UNKNOWN -> ERROR -> IGNORE
+            def get_rank_weight(rank_str):
+                weights = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNKNOWN": 3, "ERROR": 4, "IGNORE": 5}
+                return weights.get(rank_str, 3)
+    
+            sorted_jobs = sorted(self.jobs_db.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
+            for link, data in sorted_jobs:
+                self.add_priority_row(link, data)
 
     def add_main_job_row(self, link, data):
         title = data.get("title", "Unknown")
@@ -632,25 +648,59 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.jobs_db = self.load_db()
         self.refresh_ui()
         
+    def on_mode_changed(self, dropdown, pspec):
+        selected_idx = dropdown.get_selected()
+        new_mode = "internships" if selected_idx == 0 else "indeed"
+        if new_mode == self.current_mode:
+            return
+            
+        self.current_mode = new_mode
+        self.jobs_db = self.load_db()
+        
+        # Hide/Show priority tab
+        page = self.notebook.get_nth_page(self.priority_page_num)
+        if self.current_mode == "indeed":
+            page.set_visible(False)
+            self.notebook.set_current_page(0) # switch to fresh jobs
+            self.ollama_btn.set_visible(False)
+            self.del_ignore_btn.set_visible(False)
+            self.filter_box.set_visible(False)
+        else:
+            page.set_visible(True)
+            self.ollama_btn.set_visible(True)
+            self.del_ignore_btn.set_visible(True)
+            self.filter_box.set_visible(True)
+            
+        self.refresh_ui()
+
     def on_tab_switched(self, notebook, page, page_num):
         # Refresh UI just in case DB changed between tabs (e.g. status changes impacting Priority tab)
-        if page_num == 5: # Priority page (tab index 5 now)
+        if page_num == self.priority_page_num and self.current_mode == "internships":
             # Redrawing Priority page to update Status text on it
             self.refresh_ui()
 
     def on_scrape_clicked(self, button):
-        dialog = Gtk.MessageDialog(
-            transient_for=self,
-            message_type=Gtk.MessageType.QUESTION,
-            text="Select Scraping Speed",
-            secondary_text="Choose the scraper speed. 'Fast' may encounter more CAPTCHAs requiring manual solving."
-        )
-        dialog.add_button("⚡ Fast", 1)
-        dialog.add_button("🚶 Medium (Default)", 2)
-        dialog.add_button("🌙 Overnight", 3)
-        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dialog.connect("response", self.on_scrape_dialog_response)
-        dialog.present()
+        if self.current_mode == "indeed":
+            # Immediately begin scrape for Indeed
+            self.status_label.set_text("Indeed Scraping started (Check terminal output)...")
+            self.scrape_btn.set_sensitive(False)
+            self.mode_drop.set_sensitive(False)
+            thread = threading.Thread(target=self.run_scraper, args=("indeed_scraper.py",))
+            thread.daemon = True
+            thread.start()
+        else:
+            dialog = Gtk.MessageDialog(
+                transient_for=self,
+                message_type=Gtk.MessageType.QUESTION,
+                text="Select Scraping Speed",
+                secondary_text="Choose the scraper speed. 'Fast' may encounter more CAPTCHAs requiring manual solving."
+            )
+            dialog.add_button("⚡ Fast", 1)
+            dialog.add_button("🚶 Medium (Default)", 2)
+            dialog.add_button("🌙 Overnight", 3)
+            dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+            dialog.connect("response", self.on_scrape_dialog_response)
+            dialog.present()
 
     def on_scrape_dialog_response(self, dialog, response_id):
         dialog.close()
@@ -665,6 +715,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             
         self.status_label.set_text(f"Scraping started ({script_name})... (Check terminal output for progress)")
         self.scrape_btn.set_sensitive(False)
+        self.mode_drop.set_sensitive(False)
         thread = threading.Thread(target=self.run_scraper, args=(script_name,))
         thread.daemon = True
         thread.start()
@@ -698,6 +749,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def on_scrape_finished(self, success):
         self.scrape_btn.set_sensitive(True)
+        self.mode_drop.set_sensitive(True)
         if success:
             # Final reload to catch any stragglers
             self.jobs_db = self.load_db()
@@ -723,8 +775,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text("No jobs to reset.")
 
     def on_sort_clicked(self, button):
-        if not os.path.exists(DB_FILE):
-            self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
+        db_path = self.get_db_file()
+        if not os.path.exists(db_path):
+            self.sort_status_label.set_text(f"No {db_path}. Scrape first!")
             return
             
         self.sort_status_label.set_text("Initializing Llama 3.1 analysis... Check terminal!")

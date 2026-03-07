@@ -1,3 +1,4 @@
 *.csv
 jobs_db.json
 prompts.json
+indeed_db.json

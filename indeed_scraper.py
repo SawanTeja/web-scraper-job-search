@@ -3,7 +3,7 @@ import urllib.parse
 import time
 import random
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -19,26 +19,15 @@ def scrape_indeed_page_one_only(location="India"):
     filter_string = "0kf%3Aattr%2875GKK%7CT9BXE%7CVDTG7%7CZG59D%252COR%29%3B"
     
     filename = "indeed_db.json"
-    history_file = "seen_jobs_history.txt"
     
-    # 1. Load History
-    seen_links = set()
-    if os.path.exists(history_file):
-        with open(history_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                seen_links.add(line.strip())
-        print(f"[*] Loaded {len(seen_links)} previously seen jobs from history.")
-    else:
-        print("[*] No history file found. Starting fresh.")
-        
     # Load existing JSON database
-    db_jobs = []
+    db_jobs = {}
     if os.path.exists(filename):
         with open(filename, 'r', encoding='utf-8') as f:
             try:
                 db_jobs = json.load(f)
             except json.JSONDecodeError:
-                db_jobs = []
+                db_jobs = {}
                 
     session_new_jobs = 0 
     
@@ -82,8 +71,11 @@ def scrape_indeed_page_one_only(location="India"):
                     link_el = job.find_element(By.CSS_SELECTOR, "h2.jobTitle a")
                     job_link = link_el.get_attribute("href")
                     
+                    # Split out the query params from the link to get clean link just in case
+                    base_link = job_link.split('?')[0] if '?' in job_link else job_link
+                    
                     # Check against history
-                    if job_link in seen_links:
+                    if job_link in db_jobs:
                         continue 
                         
                     # Extract details
@@ -96,20 +88,19 @@ def scrape_indeed_page_one_only(location="India"):
                     location_el = job.find_element(By.CSS_SELECTOR, "div[data-testid='text-location']")
                     job_location = location_el.text if location_el else "N/A"
                     
-                    # Save to memory and file
-                    seen_links.add(job_link)
-                    with open(history_file, 'a', encoding='utf-8') as hf:
-                        hf.write(job_link + '\n')
-                        
-                    job_data = {
-                        "Keyword": keyword,
-                        "Title": title,
-                        "Company": company,
-                        "Location": job_location,
-                        "Job Link": job_link,
-                        "Date Added": datetime.now().isoformat()
+                    # Save into GUI-compatible dict
+                    db_jobs[job_link] = {
+                        "title": title,
+                        "status": "New",
+                        "added_at": datetime.now(timezone.utc).isoformat(),
+                        "details": {
+                            "company": company,
+                            "location": job_location,
+                            "job_type": "Indeed Search",
+                            "salary": "N/A",
+                            "keyword_used": keyword
+                        }
                     }
-                    db_jobs.append(job_data)
                     
                     # Save JSON continuously to prevent data loss
                     with open(filename, 'w', encoding='utf-8') as f:
