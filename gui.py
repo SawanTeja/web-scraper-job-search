@@ -11,8 +11,7 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib, Pango
 
 
-DB_FILE_INTERNSHIPS = "jobs_db.json"
-DB_FILE_INDEED = "indeed_db.json"
+DB_FILE = "jobs_db.json"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
 RANKS = ["HIGH", "MEDIUM", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
 NA_EXPIRY_HOURS = 24
@@ -31,7 +30,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Job Scraper & Tracker", default_width=950, default_height=750)
         
-        self.current_mode = "internships" # "internships" or "indeed"
+
 
         # Setup CSS
         self.setup_css()
@@ -51,12 +50,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.vbox.append(header_box)
         
-        # Mode Toggle
-        mode_model = Gtk.StringList.new([" GLOBAL", " Indeed Search"])
-        self.mode_drop = Gtk.DropDown(model=mode_model)
-        self.mode_drop.set_selected(0) # Default to internships
-        self.mode_drop.connect("notify::selected", self.on_mode_changed)
-        header_box.append(self.mode_drop)
+
         
         self.scrape_btn = Gtk.Button(label="Scrape Jobs")
         self.scrape_btn.add_css_class("suggested-action")
@@ -224,7 +218,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         )
 
     def get_db_file(self):
-        return DB_FILE_INTERNSHIPS if self.current_mode == "internships" else DB_FILE_INDEED
+        return DB_FILE
 
     def load_db(self):
         db_path = self.get_db_file()
@@ -655,29 +649,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.jobs_db = self.load_db()
         self.refresh_ui()
         
-    def on_mode_changed(self, dropdown, pspec):
-        selected_idx = dropdown.get_selected()
-        new_mode = "internships" if selected_idx == 0 else "indeed"
-        if new_mode == self.current_mode:
-            return
-            
-        self.current_mode = new_mode
-        self.jobs_db = self.load_db()
-        
-        # Hide/Show priority tab
-        page = self.notebook.get_nth_page(self.priority_page_num)
-        if self.current_mode == "indeed":
-            page.set_visible(True)
-            self.ollama_btn.set_visible(True)
-            self.del_ignore_btn.set_visible(True)
-            self.filter_box.set_visible(True)
-        else:
-            page.set_visible(True)
-            self.ollama_btn.set_visible(True)
-            self.del_ignore_btn.set_visible(True)
-            self.filter_box.set_visible(True)
-            
-        self.refresh_ui()
+
 
     def on_tab_switched(self, notebook, page, page_num):
         # Refresh UI just in case DB changed between tabs (e.g. status changes impacting Priority tab)
@@ -686,27 +658,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.refresh_ui()
 
     def on_scrape_clicked(self, button):
-        if self.current_mode == "indeed":
-            # Immediately begin scrape for Indeed
-            self.status_label.set_text("Indeed Scraping started (Check terminal output)...")
-            self.scrape_btn.set_sensitive(False)
-            self.mode_drop.set_sensitive(False)
-            thread = threading.Thread(target=self.run_scraper, args=("indeed_scraper.py",))
-            thread.daemon = True
-            thread.start()
-        else:
-            dialog = Gtk.MessageDialog(
-                transient_for=self,
-                message_type=Gtk.MessageType.QUESTION,
-                text="Select Scraping Speed",
-                secondary_text="Choose the scraper speed. 'Fast' may encounter more CAPTCHAs requiring manual solving."
-            )
-            dialog.add_button("⚡ Fast", 1)
-            dialog.add_button("🚶 Medium (Default)", 2)
-            dialog.add_button("🌙 Overnight", 3)
-            dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-            dialog.connect("response", self.on_scrape_dialog_response)
-            dialog.present()
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            message_type=Gtk.MessageType.QUESTION,
+            text="Select Scraping Speed",
+            secondary_text="Choose the scraper speed. 'Fast' may encounter more CAPTCHAs requiring manual solving."
+        )
+        dialog.add_button("⚡ Fast", 1)
+        dialog.add_button("🚶 Medium (Default)", 2)
+        dialog.add_button("🌙 Overnight", 3)
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.connect("response", self.on_scrape_dialog_response)
+        dialog.present()
 
     def on_scrape_dialog_response(self, dialog, response_id):
         dialog.close()
@@ -721,7 +684,6 @@ class JobAppWindow(Gtk.ApplicationWindow):
             
         self.status_label.set_text(f"Scraping started ({script_name})... (Check terminal output for progress)")
         self.scrape_btn.set_sensitive(False)
-        self.mode_drop.set_sensitive(False)
         thread = threading.Thread(target=self.run_scraper, args=(script_name,))
         thread.daemon = True
         thread.start()
@@ -735,6 +697,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 venv_python = "python3" # Fallback
             
             process = subprocess.Popen([venv_python, script_name], cwd=os.getcwd())
+
             
             # While scraper runs, periodically sync CSV→DB and trigger ranking
             while process.poll() is None:
@@ -755,7 +718,6 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def on_scrape_finished(self, success):
         self.scrape_btn.set_sensitive(True)
-        self.mode_drop.set_sensitive(True)
         if success:
             # Final reload to catch any stragglers
             self.jobs_db = self.load_db()
@@ -799,7 +761,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if not os.path.exists(venv_python):
                 venv_python = "python3" # Fallback
                 
-            script_to_run = "rank_internships.py" if self.current_mode == "internships" else "rank_indeed.py"
+            script_to_run = "rank_internships.py"
             process = subprocess.Popen([venv_python, script_to_run], cwd=os.getcwd())
             process.wait()
             GLib.idle_add(self.on_sort_finished, True)
