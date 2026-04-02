@@ -1,12 +1,13 @@
 import asyncio
-import csv
 import re
 import ollama
 import json
 import os
 from playwright.async_api import async_playwright
 
-DB_FILE = "jobs_db.json"
+# SQLite DB helper
+from db import get_conn, init_db, load_db, update_job
+
 PROMPTS_LOG_FILE = "prompts.json"
 
 def log_prompt_to_file(job_title, prompt_type, prompt_text, result_text):
@@ -17,7 +18,7 @@ def log_prompt_to_file(job_title, prompt_type, prompt_text, result_text):
         "prompt": prompt_text,
         "result": result_text
     }
-    
+
     logs = []
     if os.path.exists(PROMPTS_LOG_FILE):
         try:
@@ -25,9 +26,9 @@ def log_prompt_to_file(job_title, prompt_type, prompt_text, result_text):
                 logs = json.load(f)
         except Exception:
             pass
-            
+
     logs.append(log_entry)
-    
+
     with open(PROMPTS_LOG_FILE, 'w', encoding='utf-8') as f:
         json.dump(logs, f, indent=4)
 
@@ -112,7 +113,7 @@ def validate_job_json(data):
 
 async def extract_job_details_with_llm(job_title, jd_text, retries=3):
     """Extracts structured job details using the local LLM."""
-    
+
     prompt = f"""
 If you produce anything other than valid JSON, the system will crash.
 Do not explain anything.
@@ -154,29 +155,27 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
             response = ollama.chat(model='llama3.1', messages=[
                 {'role': 'user', 'content': prompt}
             ], options={"temperature": 0})
-            
+
             result = response['message']['content'].strip()
-            
+
             if attempt == 0:
-                # Log the prompt only on the first attempt so we don't spam the log with retries
                 log_prompt_to_file(job_title, "extraction", prompt, result)
-            
-            # Use regex to find JSON and parse it
+
             data = extract_json_from_text(result)
-            
+
             if data and validate_job_json(data):
                 return data
-                
+
             print(f"   ⚠️ JSON invalid or missing fields, retry {attempt+1}/{retries}")
-            
+
         except Exception as e:
             print(f"   ⚠️ Attempt {attempt+1} failed: {e}")
-            
+
     return None
 
 async def evaluate_job_with_llm(job_details_dict, raw_jd_text, job_title):
     """Sends the job description or structured details to the local LLM for ranking."""
-    
+
     if job_details_dict:
         job_info = json.dumps(job_details_dict, indent=2)
     else:
@@ -256,68 +255,60 @@ REASON: One short sentence explaining the decision.
         response = ollama.chat(model='llama3.1', messages=[
             {'role': 'user', 'content': prompt}
         ], options={"temperature": 0})
-        
+
         result = response['message']['content'].strip()
-        
+
         log_prompt_to_file(job_title, "ranking", prompt, result)
-        
+
         rank_match = re.search(r'RANK:\s*(HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
         reason_match = re.search(r'REASON:\s*(.*)', result, re.IGNORECASE)
-        
+
         rank = rank_match.group(1).upper() if rank_match else "UNKNOWN"
         reason = reason_match.group(1) if reason_match else result
-        
+
         return rank, reason
 
     except Exception as e:
         return "ERROR", str(e)
 
 async def process_and_rank_jobs():
-    # Load jobs from DB and only rank "New" (Fresh) ones
-    try:
-        with open(DB_FILE, 'r', encoding='utf-8') as f:
-            jobs_db = json.load(f)
-    except FileNotFoundError:
-        print(f"❌ Could not find {DB_FILE}. Run the scraper first!")
-        return
+    # Open one persistent connection for the whole run
+    conn = get_conn()
+    init_db(conn)
 
-    # Filter: only jobs with status "New" AND rank "UNKNOWN" or "ERROR"
+    # Load only fresh unranked jobs — no need to pull the whole DB into RAM
+    jobs_db = load_db(conn)
     fresh_jobs = {link: data for link, data in jobs_db.items()
                   if data.get("status") == "New" and data.get("rank", "UNKNOWN") in ["UNKNOWN", "ERROR"]}
-    
+
     if not fresh_jobs:
         print("ℹ️  No fresh jobs to rank. All jobs have already been processed.")
+        conn.close()
         return
 
     print(f"🚀 Starting JD extraction and AI ranking for {len(fresh_jobs)} fresh jobs...\n")
 
     async with async_playwright() as p:
-        # Keep headless=True, but add a real user-agent so Cloudflare doesn't block the extraction
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
-        page.set_default_timeout(30000)  # 30s max for any Playwright action
+        page.set_default_timeout(30000)
 
         for index, (url, data) in enumerate(fresh_jobs.items()):
             title = data.get("title", "Unknown")
             print(f"[{index + 1}/{len(fresh_jobs)}] Extracting: {title}")
-            
+
             if is_senior_role(title):
                 print(f"   ⏭️ Skipped (Senior/SDE II/III detected in title)\n")
-                jobs_db[url]["rank"] = "IGNORE"
-                jobs_db[url]["reason"] = "Senior/SDE II/III role detected in title."
-                
-                # Save DB after skipping so progress isn't lost
-                with open(DB_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(jobs_db, f, indent=4)
+                # Write only the changed columns — no full JSON dump
+                update_job(url, conn, rank="IGNORE", reason="Senior/SDE II/III role detected in title.")
+                conn.commit()
                 continue
-            
+
             try:
-                # Wrap entire job in a 45s timeout so nothing gets stuck
                 async def process_single_job():
-                    # 1. Try networkidle first, fall back to domcontentloaded
                     try:
                         await page.goto(url, wait_until="networkidle", timeout=20000)
                     except Exception:
@@ -325,13 +316,11 @@ async def process_and_rank_jobs():
                             await page.goto(url, wait_until="domcontentloaded", timeout=10000)
                         except Exception:
                             await asyncio.sleep(2)
-                    
-                    # 2. Extract text and add a wait for render
+
                     await page.wait_for_timeout(3000)
                     raw_text = await page.locator("body").inner_text()
                     jd_text = clean_text(raw_text)[:6000]
-                    
-                    # 3. Fallback for stubborn JS walls
+
                     if len(jd_text) < 100:
                         fallback_text = await page.evaluate("""() => {
                             return Array.from(document.querySelectorAll('p, li, div, span'))
@@ -339,55 +328,48 @@ async def process_and_rank_jobs():
                                 .join(' ');
                         }""")
                         jd_text = clean_text(fallback_text)[:6000]
-                    
+
                     if len(jd_text) < 100:
                         return "ERROR", "Failed to extract meaningful text.", None
                     else:
                         if is_senior_role(jd_text):
                             return "IGNORE", "Senior/SDE II/III role detected in job description.", None
-                            
+
                         print("   🧠 Extracting structured details with Llama 3.1...")
                         details = await extract_job_details_with_llm(title, jd_text)
-                        
+
                         if details:
                             print("   🧠 Ranking Extracted JSON with Llama 3.1...")
                         else:
                             print("   ⚠️ Extraction failed. Ranking RAW Job Description with Llama 3.1...")
-                            
+
                         rank, reason = await evaluate_job_with_llm(details, jd_text, title)
                         return rank, reason, details
 
                 rank, reason, details = await asyncio.wait_for(process_single_job(), timeout=90)
-                
+
                 print(f"   📊 Result: {rank} - {reason}\n")
-                jobs_db[url]["rank"] = rank
-                jobs_db[url]["reason"] = reason
-                if details:
-                    jobs_db[url]["details"] = details
-                
+                # Targeted column update — no full-dict serialisation
+                update_job(url, conn, rank=rank, reason=reason,
+                           **({"details": details} if details else {}))
+                conn.commit()
+
             except asyncio.TimeoutError:
                 print(f"   ⏰ TIMEOUT after 90s. Skipping with ERROR tag.\n")
-                jobs_db[url]["rank"] = "ERROR"
-                jobs_db[url]["reason"] = "Timed out after 90s."
-                
+                update_job(url, conn, rank="ERROR", reason="Timed out after 90s.")
+                conn.commit()
+
             except Exception as e:
                 print(f"   ❌ Failed: {e}. Skipping.\n")
-                jobs_db[url]["rank"] = "ERROR"
-                jobs_db[url]["reason"] = str(e)[:100]
-            
-            # Save DB after every job so progress isn't lost
-            with open(DB_FILE, 'w', encoding='utf-8') as f:
-                json.dump(jobs_db, f, indent=4)
-                
+                update_job(url, conn, rank="ERROR", reason=str(e)[:100])
+                conn.commit()
+
         await browser.close()
 
-    # Save updated DB with ranks
-    with open(DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(jobs_db, f, indent=4)
+    conn.close()
 
     print("==================================================")
     print(f"✅ Finished! Ranked {len(fresh_jobs)} fresh jobs.")
-    print(f"   Results saved to {DB_FILE}")
     print("==================================================")
 
 if __name__ == "__main__":

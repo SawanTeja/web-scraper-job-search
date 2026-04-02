@@ -2,3 +2,6 @@
 jobs_db.json
 prompts.json
 indeed_db.json
+jobs_db.sqlite
+jobs_db.sqlite-shm
+jobs_db.sqlite-wal
