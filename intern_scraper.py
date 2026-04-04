@@ -6,6 +6,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from playwright.async_api import async_playwright
+from playwright_stealth import Stealth
 
 # The expanded list of ATS, Portals, and Career Pages
 SITES = [
@@ -105,6 +106,7 @@ async def scrape_google_jobs():
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
+        await Stealth().apply_stealth_async(page)
 
         print(f"🚀 Starting the Massive ATS Scraper...")
         print(f"📁 Data will auto-save to {DB_FILE} in real-time.")

@@ -61,11 +61,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.refresh_btn.connect("clicked", self.on_refresh_clicked)
         header_box.append(self.refresh_btn)
 
-        # Ollama GPU toggle
-        self.ollama_btn = Gtk.Button()
-        self.ollama_btn.connect("clicked", self.on_ollama_toggle)
-        header_box.append(self.ollama_btn)
-        self.update_ollama_btn_label()
+
 
         # Delete IGNORE jobs button
         self.del_ignore_btn = Gtk.Button(label="🗑 Delete IGNORE")
@@ -594,49 +590,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         """Re-populate Fresh Jobs when filter changes."""
         self.refresh_ui()
 
-    def is_ollama_running(self):
-        """Check if Ollama systemd service is active."""
-        try:
-            result = subprocess.run(
-                ["systemctl", "is-active", "ollama"],
-                capture_output=True, text=True, timeout=3
-            )
-            return result.stdout.strip() == "active"
-        except Exception:
-            return False
 
-    def update_ollama_btn_label(self):
-        """Update the Ollama button text based on service status."""
-        if self.is_ollama_running():
-            self.ollama_btn.set_label("🟢 Ollama ON")
-            self.ollama_btn.remove_css_class("destructive-action")
-            self.ollama_btn.add_css_class("suggested-action")
-        else:
-            self.ollama_btn.set_label("🔴 Ollama OFF")
-            self.ollama_btn.remove_css_class("suggested-action")
-            self.ollama_btn.add_css_class("destructive-action")
-
-    def on_ollama_toggle(self, button):
-        """Start or stop the Ollama service."""
-        self.ollama_btn.set_sensitive(False)
-        thread = threading.Thread(target=self.run_ollama_toggle)
-        thread.daemon = True
-        thread.start()
-
-    def run_ollama_toggle(self):
-        try:
-            if self.is_ollama_running():
-                subprocess.run(["pkexec", "systemctl", "stop", "ollama"], timeout=30)
-            else:
-                subprocess.run(["pkexec", "systemctl", "start", "ollama"], timeout=30)
-        except Exception as e:
-            print(f"Ollama toggle error: {e}")
-        GLib.idle_add(self.on_ollama_toggle_done)
-
-    def on_ollama_toggle_done(self):
-        self.ollama_btn.set_sensitive(True)
-        self.update_ollama_btn_label()
-        return False
 
     def on_delete_ignore_clicked(self, button):
         """Remove all IGNORE-ranked jobs from the database."""
@@ -746,7 +700,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
             return
 
-        self.sort_status_label.set_text("Initializing Llama 3.1 analysis... Check terminal!")
+        self.sort_status_label.set_text("Initializing Groq AI analysis... Check terminal!")
         self.sort_btn.set_sensitive(False)
         thread = threading.Thread(target=self.run_sorter)
         thread.daemon = True

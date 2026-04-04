@@ -1,9 +1,16 @@
 import asyncio
 import re
-import ollama
 import json
 import os
 from playwright.async_api import async_playwright
+from playwright_stealth import Stealth
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from groq import AsyncGroq
+
+groq_client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 
 # SQLite DB helper
 from db import get_conn, init_db, load_db, update_job
@@ -152,11 +159,13 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
 
     for attempt in range(retries):
         try:
-            response = ollama.chat(model='llama3.1', messages=[
-                {'role': 'user', 'content': prompt}
-            ], options={"temperature": 0})
+            response = await groq_client.chat.completions.create(
+                model='llama-3.3-70b-versatile',
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0
+            )
 
-            result = response['message']['content'].strip()
+            result = response.choices[0].message.content.strip()
 
             if attempt == 0:
                 log_prompt_to_file(job_title, "extraction", prompt, result)
@@ -252,11 +261,13 @@ REASON: One short sentence explaining the decision.
 """
 
     try:
-        response = ollama.chat(model='llama3.1', messages=[
-            {'role': 'user', 'content': prompt}
-        ], options={"temperature": 0})
+        response = await groq_client.chat.completions.create(
+            model='llama-3.3-70b-versatile',
+            messages=[{'role': 'user', 'content': prompt}],
+            temperature=0
+        )
 
-        result = response['message']['content'].strip()
+        result = response.choices[0].message.content.strip()
 
         log_prompt_to_file(job_title, "ranking", prompt, result)
 
@@ -294,6 +305,7 @@ async def process_and_rank_jobs():
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
+        await Stealth().apply_stealth_async(page)
         page.set_default_timeout(30000)
 
         for index, (url, data) in enumerate(fresh_jobs.items()):
@@ -335,13 +347,13 @@ async def process_and_rank_jobs():
                         if is_senior_role(jd_text):
                             return "IGNORE", "Senior/SDE II/III role detected in job description.", None
 
-                        print("   🧠 Extracting structured details with Llama 3.1...")
+                        print("   🧠 Extracting structured details with Groq...")
                         details = await extract_job_details_with_llm(title, jd_text)
 
                         if details:
-                            print("   🧠 Ranking Extracted JSON with Llama 3.1...")
+                            print("   🧠 Ranking Extracted JSON with Groq...")
                         else:
-                            print("   ⚠️ Extraction failed. Ranking RAW Job Description with Llama 3.1...")
+                            print("   ⚠️ Extraction failed. Ranking RAW Job Description with Groq...")
 
                         rank, reason = await evaluate_job_with_llm(details, jd_text, title)
                         return rank, reason, details

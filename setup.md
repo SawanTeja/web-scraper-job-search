@@ -17,26 +17,19 @@ Open your terminal and navigate to your project folder.
    source scraper_env/bin/activate
 
 3. Install the required Python packages:
-   pip install playwright asyncio ollama
+   pip install playwright asyncio groq python-dotenv playwright-stealth
 
 4. Install the Playwright Chromium browser binary:
    playwright install chromium
 
 --------------------------------------------------------------------
-PHASE 2: LOCAL AI SETUP (Do this once)
+PHASE 2: GROQ AI SETUP (Do this once)
 --------------------------------------------------------------------
-We need to install Ollama and download the Llama 3.1 model so your 
-GPU can process the job descriptions locally.
+We will use the Groq Cloud API for fast model inference.
 
-1. Install Ollama:
-   curl -fsSL https://ollama.com/install.sh | sh
-
-2. Start the Ollama background service:
-   # Note: If it says port already in use, it is already running.
-   ollama serve &
-
-3. Download the Llama 3.1 model (4.7GB download):
-   ollama pull llama3.1
+1. Create a `.env` file in the root of your project folder.
+2. Add your Groq API key to it like this:
+   GROQ_API_KEY=your_actual_api_key_here
 
 --------------------------------------------------------------------
 PHASE 3: RUN THE WEB SCRAPER (Run this 1-2 times daily)
@@ -84,16 +77,3 @@ CSV so you only see the good matches, run this quick bash command:
 Now, open high_priority_jobs.csv and start applying!
 ====================================================================
 
-
-To start Ollama:
-
-Bash
-sudo systemctl start ollama
-To stop Ollama (frees up your GPU and RAM):
-
-Bash
-sudo systemctl stop ollama
-To check if it is currently running:
-
-Bash
-systemctl status ollama

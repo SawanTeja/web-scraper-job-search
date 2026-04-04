@@ -4,6 +4,7 @@ import random
 import subprocess
 from datetime import datetime, timezone
 from playwright.async_api import async_playwright
+from playwright_stealth import Stealth
 
 # SQLite DB helper (replaces all json load/save logic)
 from db import get_conn, init_db, insert_or_ignore_job, get_all_urls
@@ -90,6 +91,7 @@ async def scrape_google_jobs():
         browser = await p.chromium.launch(headless=False)
         context = await browser.new_context(user_agent=USER_AGENT)
         page = await context.new_page()
+        await Stealth().apply_stealth_async(page)
 
         async def recycle_context():
             """Close and reopen the browser context to flush Chromium's RAM cache."""
@@ -99,6 +101,7 @@ async def scrape_google_jobs():
             await context.close()
             context = await browser.new_context(user_agent=USER_AGENT)
             page = await context.new_page()
+            await Stealth().apply_stealth_async(page)
 
         print("🚀 Starting the Massive ATS Scraper...")
         print(f"📁 Data will auto-save to jobs_db.sqlite in real-time.\n")

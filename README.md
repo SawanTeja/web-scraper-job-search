@@ -29,7 +29,7 @@ python3 -m venv scraper_env
 source scraper_env/bin/activate
 
 # Install dependencies
-pip install playwright asyncio ollama PyGObject
+pip install playwright asyncio groq python-dotenv playwright-stealth PyGObject
 
 # Install Playwright browser binaries
 playwright install chromium
@@ -37,20 +37,14 @@ playwright install chromium
 
 > **Note**: To run the GUI (`gui.py`), you must be on a Linux system with GTK4 libraries available, or have the relevant GObject/GTK4 bindings installed for your OS. For Windows users, the GUI is unsupported out-of-the-box unless you use WSL (Windows Subsystem for Linux) with GUI support enabled, or use the command-line scripts.
 
-### 2. Local AI Setup (Ollama)
+### 2. Groq AI Setup
 
-This project requires a local GPU or CPU inference engine to evaluate job posts privately. **If you do not have a dedicated GPU or gaming laptop, you can skip this step!** The web scraper works perfectly fine on its own.
+This project uses the Groq Cloud API for fast model inference.
 
+1. Create a `.env` file in the root of your project folder.
+2. Add your Groq API key:
 ```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Start the Ollama background service
-sudo systemctl start ollama
-# Note: On Windows, download the Ollama installer from their website and run it.
-
-# Download the Llama 3.1 model (~4.7GB)
-ollama pull llama3.1
+GROQ_API_KEY=your_actual_api_key_here
 ```
 
 ---
