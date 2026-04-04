@@ -241,6 +241,7 @@ MEDIUM:
 - Platform engineering roles
 - DevOps roles involving programming
 - AI / ML engineering roles
+- Any role explicitly located in the USA and is non-remote. Ignore this rule if no location is provided.
 
 LOW:
 - Data engineering
