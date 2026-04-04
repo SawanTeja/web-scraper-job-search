@@ -39,6 +39,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         # Load DB — returns dict[url -> data] same as before
         self.jobs_db = load_db()
+        self.rendered_jobs = set()
 
         # Main layout
         self.vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -281,6 +282,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.clear_listbox(self.rejected_listbox)
         self.clear_listbox(self.na_listbox)
         self.clear_listbox(self.prio_listbox)
+        self.rendered_jobs.clear()
 
         # Run expiry check before displaying
         self.expire_stale_jobs()
@@ -291,7 +293,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
         for link, data in self.jobs_db.items():
             status = data.get("status", "New")
             self.add_main_job_row(link, data)
+            self.rendered_jobs.add(link)
             counts[status] = counts.get(status, 0) + 1
+
 
         self.status_label.set_text(
             f"Fresh: {counts['New']} | Applied: {counts['Applied']} | "
@@ -664,10 +668,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
             GLib.idle_add(self.on_scrape_finished, False)
 
     def periodic_sync_and_rank(self):
-        """Reload DB from SQLite and refresh UI while scraper is still running."""
-        self.jobs_db = load_db()
-        self.refresh_ui()
-        self.status_label.set_text("Scraping in progress... syncing new jobs live!")
+        """Reload DB from SQLite and incrementally update the UI while scraper is still running."""
+        new_db = self.load_db()
+        added_count = 0
+        for link, data in new_db.items():
+            if link not in self.jobs_db:
+                self.jobs_db[link] = data
+            
+            # If we haven't processed this job for the UI yet (meaning it's new to the UI session)
+            if link not in self.rendered_jobs:
+                self.rendered_jobs.add(link)
+                self.add_main_job_row(link, data)
+                added_count += 1
+                
+        if added_count > 0:
+            self.status_label.set_text(f"Scraping in progress... discovered {added_count} new jobs live!")
         return False
 
     def on_scrape_finished(self, success):
