@@ -39,8 +39,7 @@ SEARCH_QUERIES = [
 TIME_FILTER = "qdr:d"
 MAX_PAGES = 5
 
-# Recycle the Chromium context (flush its RAM cache) every N searches
-CONTEXT_RECYCLE_INTERVAL = 50
+
 
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -93,15 +92,7 @@ async def scrape_google_jobs():
         page = await context.new_page()
         await Stealth().apply_stealth_async(page)
 
-        async def recycle_context():
-            """Close and reopen the browser context to flush Chromium's RAM cache."""
-            nonlocal context, page
-            print("      ♻️  Recycling browser context to free RAM...")
-            await page.close()
-            await context.close()
-            context = await browser.new_context(user_agent=USER_AGENT)
-            page = await context.new_page()
-            await Stealth().apply_stealth_async(page)
+
 
         print("🚀 Starting the Massive ATS Scraper...")
         print(f"📁 Data will auto-save to jobs_db.sqlite in real-time.\n")
@@ -117,12 +108,8 @@ async def scrape_google_jobs():
                 for start in range(0, MAX_PAGES * 10, 10):
                     search_count += 1
 
-                    # PERIODIC CONTEXT RECYCLE — flush Chromium's growing RAM cache
-                    if search_count % CONTEXT_RECYCLE_INTERVAL == 0:
-                        await recycle_context()
-
                     # RANDOM HOMEPAGE DETOUR
-                    elif search_count % random.randint(8, 12) == 0:
+                    if search_count % random.randint(8, 12) == 0:
                         print("      🏠 Taking a detour to Google homepage to act human...")
                         await page.goto("https://www.google.com")
                         await human_scroll_and_move(page)
