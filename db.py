@@ -174,6 +174,18 @@ def delete_jobs_by_rank(rank, conn=None):
     return cur.rowcount
 
 
+def clear_all_jobs(conn=None):
+    """Delete ALL jobs from the database. Returns count of deleted rows."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    cur = conn.execute("DELETE FROM jobs")
+    conn.commit()
+    if close_after:
+        conn.close()
+    return cur.rowcount
+
+
 # ──────────────────────────────────────────────
 #  Migration: JSON → SQLite (run once)
 # ──────────────────────────────────────────────

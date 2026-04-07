@@ -1,6 +1,7 @@
 import asyncio
 import re
 import json
+import time
 import os
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
@@ -84,6 +85,22 @@ def is_senior_role(text):
             return True
     return False
 
+def is_us_job(text):
+    """Deterministically detect US-only jobs before hitting the LLM."""
+    text = text.lower()
+    us_patterns = [
+        "united states", " usa", "u.s.", "u.s.a",
+        "new york", "california", "texas", "washington",
+        "san francisco", "seattle", "los angeles",
+        "boston", "chicago", "austin",
+        # Visa / work-auth keywords
+        "work authorization in the us", "us work permit",
+        "only us candidates", "authorized to work in the us",
+        # Remote-but-US-only patterns
+        "remote (us", "remote - us", "remote us only", "us remote only",
+    ]
+    return any(p in text for p in us_patterns)
+
 def extract_json_from_text(text):
     try:
         match = re.search(r'\{.*\}', text, re.DOTALL)
@@ -101,6 +118,8 @@ def validate_job_json(data):
         "salary",
         "job_type",
         "experience_required",
+        "match_rank",
+        "match_reason",
         "skills_required",
         "skills_preferred",
         "about_job",
@@ -119,14 +138,21 @@ def validate_job_json(data):
     return True
 
 async def extract_job_details_with_llm(job_title, jd_text, retries=3):
-    """Extracts structured job details using the local LLM."""
+    """Extracts structured job details AND ranks the job in a single LLM call."""
 
     prompt = f"""
 If you produce anything other than valid JSON, the system will crash.
 Do not explain anything.
 Only return JSON.
 
-You are a technical recruiter assistant. Extract the job details from the following Job Description.
+You are an expert technical recruiter. Do TWO things at once:
+1. Extract the job details from the Job Description below.
+2. Rank how well this job matches the Candidate Profile using the Ranking Rules.
+
+====================
+CANDIDATE PROFILE
+====================
+{CANDIDATE_PROFILE}
 
 ====================
 JOB
@@ -137,9 +163,46 @@ Description:
 {jd_text}
 ====================
 
-Respond ONLY with a valid JSON object matching EXACTLY this schema. Ensure you use arrays instead of paragraphs for skills, responsibilities, requirements, and nice_to_haves.
-Do not include any other text or markdown formatting outside the JSON block.
-If a field is not mentioned or you cannot find the data, you MUST use `null`. Do not use empty strings `""` or empty arrays `[]`.
+RANKING RULES (apply to match_rank and match_reason fields):
+
+CRITICAL: Evaluate the IGNORE list FIRST. If any IGNORE rule matches, set match_rank to "IGNORE" immediately.
+
+IGNORE (HARD VETO):
+- Transportation engineering, Urban planning, Traffic operations
+- Civil, Mechanical, Construction engineering
+- Architecture roles
+- HR / Marketing / Sales
+- Technical support
+- QA / manual testing
+- Roles requiring AutoCAD, MicroStation, SketchUp, GIS
+- Titles containing: Senior, Staff, Lead, Principal, Architect, Manager
+- Roles requiring more than 2 years of experience
+- Roles that are NOT one of: internship, entry-level, fresher, new grad, junior, or graduate hire
+
+HIGH:
+- Software Engineering internships OR entry-level/fresher full-time roles
+- Backend Engineering internships OR entry-level/fresher full-time roles
+- Full Stack Development internships OR entry-level/fresher full-time roles
+- Systems Programming, C / C++ roles (intern or entry-level)
+- Node.js / JavaScript backend roles (intern or entry-level)
+- Networking / distributed systems roles (intern or entry-level)
+- Mobile app development roles (intern or entry-level)
+
+LOW:
+- General developer roles (intern or entry-level)
+- Web development internships or fresher web roles
+- Platform engineering, DevOps roles involving programming (entry-level)
+- AI / ML engineering roles (intern or entry-level)
+- Data engineering, Data analyst roles (intern or entry-level)
+- Cloud infrastructure, DevOps focused mostly on operations (entry-level)
+
+CATCH-ALL: If the job does NOT clearly match HIGH or LOW — set match_rank to "IGNORE".
+
+====================
+
+Respond ONLY with a valid JSON object matching EXACTLY this schema.
+Use arrays for skills, responsibilities, requirements, nice_to_have.
+If a field is not found, use null. Never use "" or [].
 
 {{
   "job_name": null,
@@ -148,6 +211,8 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
   "salary": null,
   "job_type": null,
   "experience_required": null,
+  "match_rank": "HIGH / LOW / IGNORE",
+  "match_reason": "One short sentence explaining the rank decision.",
   "skills_required": null,
   "skills_preferred": null,
   "about_job": null,
@@ -160,7 +225,7 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
     for attempt in range(retries):
         try:
             response = await groq_client.chat.completions.create(
-                model='llama-3.3-70b-versatile',
+                model='llama-3.1-8b-instant',
                 messages=[{'role': 'user', 'content': prompt}],
                 temperature=0
             )
@@ -168,7 +233,7 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
             result = response.choices[0].message.content.strip()
 
             if attempt == 0:
-                log_prompt_to_file(job_title, "extraction", prompt, result)
+                log_prompt_to_file(job_title, "extraction+ranking", prompt, result)
 
             data = extract_json_from_text(result)
 
@@ -178,110 +243,26 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
             print(f"   ⚠️ JSON invalid or missing fields, retry {attempt+1}/{retries}")
 
         except Exception as e:
+            err_str = str(e)
             print(f"   ⚠️ Attempt {attempt+1} failed: {e}")
 
+            if attempt < retries - 1:
+                # Parse wait time from Groq 429 message if available
+                # e.g. "Please try again in 2.55s"
+                wait_seconds = None
+                match = re.search(r'try again in ([\d.]+)s', err_str)
+                if match:
+                    wait_seconds = float(match.group(1)) + 0.5  # a small buffer
+
+                if wait_seconds is None:
+                    # Fallback: exponential backoff (5s, 10s, 20s ...)
+                    wait_seconds = 5 * (2 ** attempt)
+
+                print(f"   ⏳ Rate limited — waiting {wait_seconds:.1f}s before retry...")
+                await asyncio.sleep(wait_seconds)
+            continue
+
     return None
-
-async def evaluate_job_with_llm(job_details_dict, raw_jd_text, job_title):
-    """Sends the job description or structured details to the local LLM for ranking."""
-
-    if job_details_dict:
-        job_info = json.dumps(job_details_dict, indent=2)
-    else:
-        job_info = f"Title: {job_title}\n\nDescription:\n{raw_jd_text}"
-
-    prompt = f"""
-You are an experienced technical recruiter.
-
-Evaluate how well this internship matches the candidate profile.
-
-====================
-CANDIDATE PROFILE
-====================
-{CANDIDATE_PROFILE}
-
-====================
-JOB DETAILS
-====================
-{job_info}
-
-====================
-RANKING RULES
-====================
-
-CRITICAL INSTRUCTION:
-Evaluate the IGNORE list first. If the job matches ANY IGNORE rule,
-immediately return IGNORE and stop evaluation.
-
-IGNORE (HARD VETO):
-- Transportation engineering, Urban planning, Traffic operations
-- Civil, Mechanical, Construction engineering
-- Architecture roles
-- HR / Marketing / Sales
-- Technical support
-- QA / manual testing
-- Roles requiring AutoCAD, MicroStation, SketchUp, GIS
-- Titles containing: Senior, Staff, Lead, Principal, Architect, Manager
-- Roles requiring more than 2 years of experience
-- Roles that are NOT internships or entry-level student roles
-
-HIGH:
-- Software Engineering
-- Backend Engineering
-- Full Stack Development
-- Systems Programming
-- C / C++ roles
-- Node.js / JavaScript backend roles
-- Networking / distributed systems roles
-- Mobile app development roles
-
-MEDIUM:
-- General developer roles
-- Web development internships
-- Platform engineering roles
-- DevOps roles involving programming
-- AI / ML engineering roles
-- Any role explicitly located in the USA and is non-remote. Ignore this rule if no location is provided.
-
-LOW:
-- Data engineering
-- Data analyst roles
-- Cloud infrastructure roles
-- DevOps roles focused mostly on operations
-
-CATCH-ALL (DEFAULT):
-If the job does NOT clearly match HIGH, MEDIUM, or LOW,
-you MUST return IGNORE.
-
-====================
-
-OUTPUT FORMAT:
-
-RANK: HIGH / MEDIUM / LOW / IGNORE
-REASON: One short sentence explaining the decision.
-"""
-
-    try:
-        response = await groq_client.chat.completions.create(
-            model='llama-3.3-70b-versatile',
-            messages=[{'role': 'user', 'content': prompt}],
-            temperature=0
-        )
-
-        result = response.choices[0].message.content.strip()
-
-        log_prompt_to_file(job_title, "ranking", prompt, result)
-
-        rank_match = re.search(r'RANK:\s*(HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
-        reason_match = re.search(r'REASON:\s*(.*)', result, re.IGNORECASE)
-
-        rank = rank_match.group(1).upper() if rank_match else "UNKNOWN"
-        reason = reason_match.group(1) if reason_match else result
-
-        return rank, reason
-
-    except Exception as e:
-        return "ERROR", str(e)
 
 async def process_and_rank_jobs():
     # Open one persistent connection for the whole run
@@ -332,7 +313,7 @@ async def process_and_rank_jobs():
 
                     await page.wait_for_timeout(3000)
                     raw_text = await page.locator("body").inner_text()
-                    jd_text = clean_text(raw_text)[:6000]
+                    jd_text = clean_text(raw_text)[:3000]
 
                     if len(jd_text) < 100:
                         fallback_text = await page.evaluate("""() => {
@@ -340,7 +321,7 @@ async def process_and_rank_jobs():
                                 .map(el => el.innerText)
                                 .join(' ');
                         }""")
-                        jd_text = clean_text(fallback_text)[:6000]
+                        jd_text = clean_text(fallback_text)[:3000]
 
                     if len(jd_text) < 100:
                         return "ERROR", "Failed to extract meaningful text.", None
@@ -348,15 +329,19 @@ async def process_and_rank_jobs():
                         if is_senior_role(jd_text):
                             return "IGNORE", "Senior/SDE II/III role detected in job description.", None
 
-                        print("   🧠 Extracting structured details with Groq...")
+                        combined_text = f"{title} {jd_text}"
+                        if is_us_job(combined_text):
+                            return "IGNORE", "US-based job.", None
+
+                        print("   🧠 Extracting + ranking with Groq (single call)...")
                         details = await extract_job_details_with_llm(title, jd_text)
 
                         if details:
-                            print("   🧠 Ranking Extracted JSON with Groq...")
+                            rank = details.get("match_rank", "UNKNOWN").upper()
+                            reason = details.get("match_reason", "No reason provided.")
                         else:
-                            print("   ⚠️ Extraction failed. Ranking RAW Job Description with Groq...")
+                            rank, reason = "ERROR", "LLM extraction failed after all retries."
 
-                        rank, reason = await evaluate_job_with_llm(details, jd_text, title)
                         return rank, reason, details
 
                 rank, reason, details = await asyncio.wait_for(process_single_job(), timeout=90)

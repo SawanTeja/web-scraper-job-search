@@ -10,17 +10,16 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib, Pango
 
 # SQLite DB helper
-from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, update_job
+from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job
 
 DB_FILE = "jobs_db.sqlite"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
-RANKS = ["HIGH", "MEDIUM", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
+RANKS = ["HIGH", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
 NA_EXPIRY_HOURS = 24
 
 # Color mapping for ranks
 RANK_COLORS = {
     "HIGH": "#1a531b",   # green
-    "MEDIUM": "#8b7e12", # yellow
     "LOW": "#8c4412",    # orange
     "IGNORE": "#404040", # dark grey
     "ERROR": "#591313",  # red
@@ -69,6 +68,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.del_ignore_btn.add_css_class("destructive-action")
         self.del_ignore_btn.connect("clicked", self.on_delete_ignore_clicked)
         header_box.append(self.del_ignore_btn)
+
+        self.clear_db_btn = Gtk.Button(label="💣 Clear DB")
+        self.clear_db_btn.add_css_class("destructive-action")
+        self.clear_db_btn.connect("clicked", self.on_clear_db_clicked)
+        header_box.append(self.clear_db_btn)
 
         self.status_label = Gtk.Label(label="Ready.")
         self.status_label.set_hexpand(True)
@@ -203,7 +207,6 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 margin-right: 10px;
             }
             .rank-HIGH { background-color: #1a531b; }
-            .rank-MEDIUM { background-color: #8b7e12; }
             .rank-LOW { background-color: #8c4412; }
             .rank-IGNORE { background-color: #404040; }
             .rank-ERROR { background-color: #591313; }
@@ -304,7 +307,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         # --- UI for Priority (Sorted) ---
         def get_rank_weight(rank_str):
-            weights = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNKNOWN": 3, "ERROR": 4, "IGNORE": 5}
+            weights = {"HIGH": 0, "LOW": 1, "UNKNOWN": 2, "ERROR": 3, "IGNORE": 4}
             return weights.get(rank_str, 3)
 
         now = datetime.now(timezone.utc)
@@ -602,12 +605,33 @@ class JobAppWindow(Gtk.ApplicationWindow):
         for link in ignore_links:
             del self.jobs_db[link]
         if ignore_links:
-            # Delete directly in SQLite — no full dump needed
             deleted = delete_jobs_by_rank("IGNORE")
             self.refresh_ui()
             self.status_label.set_text(f"🗑 Deleted {deleted} IGNORE jobs.")
         else:
             self.status_label.set_text("No IGNORE jobs to delete.")
+
+    def on_clear_db_clicked(self, button):
+        """Show confirmation dialog before wiping the entire DB."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            message_type=Gtk.MessageType.WARNING,
+            text="Clear Entire Database?",
+            secondary_text="This will permanently delete ALL jobs from the database. This cannot be undone."
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("💣 Yes, Clear Everything", Gtk.ResponseType.OK)
+        dialog.connect("response", self.on_clear_db_confirmed)
+        dialog.present()
+
+    def on_clear_db_confirmed(self, dialog, response_id):
+        dialog.close()
+        if response_id != Gtk.ResponseType.OK:
+            return
+        deleted = clear_all_jobs()
+        self.jobs_db.clear()
+        self.refresh_ui()
+        self.status_label.set_text(f"💣 Cleared {deleted} jobs from the database.")
 
     def on_refresh_clicked(self, button):
         # Reload DB from SQLite
