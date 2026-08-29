@@ -28,11 +28,15 @@ SITES = [
 
 # The "Broad Tech" Dragnet
 SEARCH_QUERIES = [
-    '(software engineer OR software developer) (intern OR internship) 2026',
-    '(backend OR backend engineer) (intern OR internship)',
-    '(full stack OR fullstack) (intern OR internship)',
-    '(c++ OR systems OR networking) (intern OR internship)',
-    '(node.js OR react OR javascript) (intern OR internship)'
+    '"software engineer" intern',
+    '"software developer" intern',
+    '"backend" intern',
+    '"full stack" intern',
+    'c++ intern',
+    'systems intern',
+    'networking intern',
+    'node.js intern',
+    'react intern'
 ]
 
 TIME_FILTER = "qdr:d"
@@ -46,6 +50,8 @@ def clean_url(raw_url):
         query_params = urllib.parse.parse_qs(parsed.query)
         if 'q' in query_params:
             raw_url = query_params['q'][0]
+    if "google.com/goto" in raw_url:
+        return raw_url # Preserve encrypted google redirects
     return raw_url.split('?')[0]
 
 def load_db():
@@ -155,7 +161,16 @@ async def scrape_google_jobs():
                     if "sorry/index" in page.url or await page.locator('form[action="/sorry/index"]').count() > 0:
                         print("      ⚠️ CAPTCHA detected! Please solve it in the Chromium window.")
                         try:
-                            subprocess.run(["notify-send", "--urgency=critical", "🚨 CAPTCHA Alert!", "Google CAPTCHA detected. Please solve it in the Chromium window."], check=False)
+                            import platform
+                            if platform.system() == "Windows":
+                                import ctypes, threading
+                                threading.Thread(target=lambda: ctypes.windll.user32.MessageBoxW(0, "Google CAPTCHA detected. Please solve it in the Chromium window.", "🚨 CAPTCHA Alert!", 0x30 | 0x0), daemon=True).start()
+                            else:
+                                subprocess.run([
+                                    "notify-send", "--urgency=critical",
+                                    "🚨 CAPTCHA Alert!",
+                                    "Google CAPTCHA detected. Please solve it in the Chromium window."
+                                ], check=False)
                         except Exception:
                             pass
                         await page.wait_for_selector('div#search', timeout=0) 
@@ -183,7 +198,7 @@ async def scrape_google_jobs():
                             raw_url = res['url']
                             title = res['title']
                             
-                            if site in raw_url:
+                            if site in raw_url or "google.com" in raw_url:
                                 final_url = clean_url(raw_url)
                                 if final_url not in unique_jobs:
                                     unique_jobs.add(final_url)

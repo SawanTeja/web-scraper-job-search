@@ -225,7 +225,7 @@ If a field is not found, use null. Never use "" or [].
     for attempt in range(retries):
         try:
             response = await groq_client.chat.completions.create(
-                model='llama-3.1-8b-instant',
+                model='qwen/qwen3.8-27b',
                 messages=[{'role': 'user', 'content': prompt}],
                 temperature=0
             )
