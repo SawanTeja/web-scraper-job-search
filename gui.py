@@ -26,6 +26,10 @@ RANK_COLORS = {
     "UNKNOWN": "#3b3b3b" # grey
 }
 
+# How many rows to render per idle tick (keeps UI responsive)
+BATCH_SIZE = 20
+
+
 class JobAppWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Job Scraper & Tracker", default_width=950, default_height=750)
@@ -39,6 +43,22 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # Load DB — returns dict[url -> data] same as before
         self.jobs_db = load_db()
         self.rendered_jobs = set()
+
+        # Track pending batch render
+        self._batch_queue = []
+        self._batch_source_id = None
+        # Track whether priority tab needs refresh
+        self._prio_dirty = True
+        # Pagination
+        self.page_size = 50
+        self.page_offsets = {
+            "New": self.page_size,
+            "Applied": self.page_size,
+            "Ongoing": self.page_size,
+            "Rejected": self.page_size,
+            "NA": self.page_size,
+            "Priority Sorting": self.page_size,
+        }
 
         # Main layout
         self.vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -278,7 +298,45 @@ class JobAppWindow(Gtk.ApplicationWindow):
         }
         return mapping.get(status, self.fresh_listbox)
 
+    # ──────────────────────────────────────────────
+    #  Batched rendering helpers
+    # ──────────────────────────────────────────────
+    def _cancel_pending_batch(self):
+        """Cancel any in-flight batch rendering."""
+        if self._batch_source_id is not None:
+            GLib.source_remove(self._batch_source_id)
+            self._batch_source_id = None
+        self._batch_queue.clear()
+
+    def _render_batch_tick(self):
+        """Render the next BATCH_SIZE items from the queue. Returns True to keep running."""
+        if not self._batch_queue:
+            self._batch_source_id = None
+            return False  # stop the idle source
+
+        chunk = self._batch_queue[:BATCH_SIZE]
+        self._batch_queue = self._batch_queue[BATCH_SIZE:]
+
+        for render_fn, args in chunk:
+            render_fn(*args)
+
+        if not self._batch_queue:
+            self._batch_source_id = None
+            return False
+        return True  # keep calling
+
+    def _enqueue_rows(self, items):
+        """Add items to the batch queue and start processing if not already running."""
+        self._batch_queue.extend(items)
+        if self._batch_source_id is None and self._batch_queue:
+            self._batch_source_id = GLib.idle_add(self._render_batch_tick)
+
+    # ──────────────────────────────────────────────
+    #  Main refresh — now with pagination + batched rendering
+    # ──────────────────────────────────────────────
     def refresh_ui(self):
+        self._cancel_pending_batch()
+
         self.clear_listbox(self.fresh_listbox)
         self.clear_listbox(self.applied_listbox)
         self.clear_listbox(self.ongoing_listbox)
@@ -291,21 +349,47 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.expire_stale_jobs()
 
         counts = {"New": 0, "Applied": 0, "Ongoing": 0, "Rejected": 0, "NA": 0}
+        grouped_jobs = {"New": [], "Applied": [], "Ongoing": [], "Rejected": [], "NA": []}
 
-        # --- UI for all status tabs ---
         for link, data in self.jobs_db.items():
             status = data.get("status", "New")
-            self.add_main_job_row(link, data)
-            self.rendered_jobs.add(link)
             counts[status] = counts.get(status, 0) + 1
-
+            if status in grouped_jobs:
+                grouped_jobs[status].append((link, data))
 
         self.status_label.set_text(
             f"Fresh: {counts['New']} | Applied: {counts['Applied']} | "
             f"Ongoing: {counts['Ongoing']} | Rejected: {counts['Rejected']} | NA: {counts['NA']}"
         )
 
-        # --- UI for Priority (Sorted) ---
+        # Build batch render queue
+        render_queue = []
+
+        for status, items in grouped_jobs.items():
+            if status == "New":
+                active_filter = self.get_active_rank_filter()
+                if active_filter != "ALL":
+                    items = [(l, d) for l, d in items if d.get("rank", "UNKNOWN") == active_filter]
+
+            limit = self.page_offsets.get(status, self.page_size)
+            for link, data in items[:limit]:
+                render_queue.append((self._create_main_job_row, (link, data)))
+
+            if len(items) > limit:
+                render_queue.append((self._create_load_more_btn, (status, len(items) - limit)))
+
+        # Only render priority tab if it's currently visible
+        current_page = self.notebook.get_current_page()
+        if current_page == self.priority_page_num:
+            self._build_priority_queue(render_queue)
+            self._prio_dirty = False
+        else:
+            self._prio_dirty = True
+
+        self._enqueue_rows(render_queue)
+
+    def _build_priority_queue(self, render_queue):
+        """Append priority-sorted rows to the render queue."""
         def get_rank_weight(rank_str):
             weights = {"HIGH": 0, "LOW": 1, "UNKNOWN": 2, "ERROR": 3, "IGNORE": 4}
             return weights.get(rank_str, 3)
@@ -325,10 +409,41 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 recent_jobs[link] = data
 
         sorted_jobs = sorted(recent_jobs.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
-        for link, data in sorted_jobs:
-            self.add_priority_row(link, data)
+        prio_limit = self.page_offsets.get("Priority Sorting", self.page_size)
 
-    def add_main_job_row(self, link, data):
+        for link, data in sorted_jobs[:prio_limit]:
+            render_queue.append((self._create_priority_row, (link, data)))
+
+        if len(sorted_jobs) > prio_limit:
+            render_queue.append((self._create_prio_load_more_btn, (len(sorted_jobs) - prio_limit,)))
+
+    def _create_load_more_btn(self, status, remaining):
+        target = self.get_listbox_for_status(status)
+        btn_row = Gtk.ListBoxRow()
+        btn = Gtk.Button(label=f"Load More ({remaining} remaining)")
+        btn.add_css_class("pill")
+        btn.set_margin_top(10)
+        btn.set_margin_bottom(10)
+        btn.connect("clicked", lambda b, s=status: self.load_more(s))
+        btn_row.set_child(btn)
+        target.append(btn_row)
+
+    def _create_prio_load_more_btn(self, remaining):
+        btn_row = Gtk.ListBoxRow()
+        btn = Gtk.Button(label=f"Load More ({remaining} remaining)")
+        btn.add_css_class("pill")
+        btn.set_margin_top(10)
+        btn.set_margin_bottom(10)
+        btn.connect("clicked", lambda b: self.load_more("Priority Sorting"))
+        btn_row.set_child(btn)
+        self.prio_listbox.append(btn_row)
+
+    def load_more(self, status):
+        self.page_offsets[status] += self.page_size
+        self.refresh_ui()
+
+    def _create_main_job_row(self, link, data):
+        """Create and append a single main job row."""
         title = data.get("title", "Unknown")
         status = data.get("status", "New")
         rank = data.get("rank", "UNKNOWN")
@@ -340,10 +455,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if active_filter != "ALL" and rank != active_filter:
                 return
 
+        self.rendered_jobs.add(link)
+
         row = Gtk.ListBoxRow()
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        box.set_margin_top(10)
-        box.set_margin_bottom(10)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
         box.set_margin_start(10)
         box.set_margin_end(10)
 
@@ -399,7 +516,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         target_listbox = self.get_listbox_for_status(status)
         target_listbox.append(row)
 
-    def add_priority_row(self, link, data):
+    # Keep old name as alias for compatibility
+    def add_main_job_row(self, link, data):
+        self._create_main_job_row(link, data)
+
+    def _create_priority_row(self, link, data):
+        """Create and append a single priority row."""
         title = data.get("title", "Unknown")
         rank = data.get("rank", "UNKNOWN")
         reason = data.get("reason", "No reason recorded.")
@@ -407,8 +529,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         row = Gtk.ListBoxRow()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        box.set_margin_top(10)
-        box.set_margin_bottom(10)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
         box.set_margin_start(10)
         box.set_margin_end(10)
 
@@ -447,6 +569,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         row.add_controller(click_gesture)
 
         self.prio_listbox.append(row)
+
+    # Keep old name as alias for compatibility
+    def add_priority_row(self, link, data):
+        self._create_priority_row(link, data)
 
     def on_job_row_clicked(self, gesture, n_press, x, y, data, link):
         """Open a popup window displaying structured job details."""
@@ -576,13 +702,25 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         if old_status != new_status:
             GLib.idle_add(self.move_main_row, row, new_status)
+            self._prio_dirty = True
 
     def move_main_row(self, row, new_status):
         parent = row.get_parent()
         if parent: parent.remove(row)
         target_listbox = self.get_listbox_for_status(new_status)
         target_listbox.append(row)
+        self.update_counts()
         return False
+
+    def update_counts(self):
+        counts = {"New": 0, "Applied": 0, "Ongoing": 0, "Rejected": 0, "NA": 0}
+        for data in self.jobs_db.values():
+            st = data.get("status", "New")
+            counts[st] = counts.get(st, 0) + 1
+        self.status_label.set_text(
+            f"Fresh: {counts['New']} | Applied: {counts['Applied']} | "
+            f"Ongoing: {counts['Ongoing']} | Rejected: {counts['Rejected']} | NA: {counts['NA']}"
+        )
 
     def on_apply_clicked(self, button, link):
         try: webbrowser.open(link)
@@ -594,8 +732,23 @@ class JobAppWindow(Gtk.ApplicationWindow):
         return self.rank_filter_options[idx] if idx < len(self.rank_filter_options) else "ALL"
 
     def on_rank_filter_changed(self, dropdown, pspec):
-        """Re-populate Fresh Jobs when filter changes."""
-        self.refresh_ui()
+        """Re-populate only the Fresh Jobs listbox when filter changes."""
+        self._cancel_pending_batch()
+        self.clear_listbox(self.fresh_listbox)
+        self.page_offsets["New"] = self.page_size
+
+        active_filter = self.get_active_rank_filter()
+        items = [(l, d) for l, d in self.jobs_db.items() if d.get("status", "New") == "New"]
+        if active_filter != "ALL":
+            items = [(l, d) for l, d in items if d.get("rank", "UNKNOWN") == active_filter]
+
+        limit = self.page_offsets.get("New", self.page_size)
+        render_queue = []
+        for link, data in items[:limit]:
+            render_queue.append((self._create_main_job_row, (link, data)))
+        if len(items) > limit:
+            render_queue.append((self._create_load_more_btn, ("New", len(items) - limit)))
+        self._enqueue_rows(render_queue)
 
 
 
@@ -639,8 +792,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.refresh_ui()
 
     def on_tab_switched(self, notebook, page, page_num):
-        if page_num == self.priority_page_num:
-            self.refresh_ui()
+        if page_num == self.priority_page_num and self._prio_dirty:
+            # Only rebuild priority list, not everything
+            self._cancel_pending_batch()
+            self.clear_listbox(self.prio_listbox)
+            render_queue = []
+            self._build_priority_queue(render_queue)
+            self._enqueue_rows(render_queue)
+            self._prio_dirty = False
 
     def on_scrape_clicked(self, button):
         dialog = Gtk.MessageDialog(
@@ -695,18 +854,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
         """Reload DB from SQLite and incrementally update the UI while scraper is still running."""
         new_db = self.load_db()
         added_count = 0
+        render_queue = []
         for link, data in new_db.items():
             if link not in self.jobs_db:
                 self.jobs_db[link] = data
             
             # If we haven't processed this job for the UI yet (meaning it's new to the UI session)
             if link not in self.rendered_jobs:
-                self.rendered_jobs.add(link)
-                self.add_main_job_row(link, data)
+                render_queue.append((self._create_main_job_row, (link, data)))
                 added_count += 1
-                
+
+        if render_queue:
+            self._enqueue_rows(render_queue)
         if added_count > 0:
             self.status_label.set_text(f"Scraping in progress... discovered {added_count} new jobs live!")
+            self._prio_dirty = True
         return False
 
     def on_scrape_finished(self, success):

@@ -22,6 +22,11 @@ RANK_COLORS = {
     "UNKNOWN": "#3b3b3b" # grey
 }
 
+# How many rows to render per batch tick (keeps UI responsive)
+BATCH_SIZE = 15
+BATCH_DELAY_MS = 1  # ms between batches
+
+
 class JobAppWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -34,6 +39,17 @@ class JobAppWindow(ctk.CTk):
         init_db()
         self.jobs_db = load_db()
         self.rendered_jobs = set()
+
+        # Track which rows are currently displayed so we can skip re-rendering
+        # Maps link -> (status, rank, widget_reference)
+        self._row_widgets = {}
+        # Pending batch render state
+        self._batch_queue = []
+        self._batch_after_id = None
+        # Track whether priority tab needs refresh
+        self._prio_dirty = True
+        # Track whether a full refresh is already scheduled
+        self._refresh_scheduled = False
 
         # Header Box
         self.header_frame = ctk.CTkFrame(self)
@@ -155,10 +171,51 @@ class JobAppWindow(ctk.CTk):
     def get_listbox_for_status(self, status):
         return self.listboxes.get(status, self.listboxes["New"])
 
+    # ──────────────────────────────────────────────
+    #  Batched rendering helpers
+    # ──────────────────────────────────────────────
+    def _cancel_pending_batch(self):
+        """Cancel any in-flight batch rendering."""
+        if self._batch_after_id is not None:
+            self.after_cancel(self._batch_after_id)
+            self._batch_after_id = None
+        self._batch_queue.clear()
+
+    def _render_batch_tick(self):
+        """Render the next BATCH_SIZE items from the queue."""
+        if not self._batch_queue:
+            self._batch_after_id = None
+            return
+
+        chunk = self._batch_queue[:BATCH_SIZE]
+        self._batch_queue = self._batch_queue[BATCH_SIZE:]
+
+        for render_fn, args in chunk:
+            render_fn(*args)
+
+        if self._batch_queue:
+            self._batch_after_id = self.after(BATCH_DELAY_MS, self._render_batch_tick)
+        else:
+            self._batch_after_id = None
+
+    def _enqueue_rows(self, items):
+        """Add items to the batch queue and start processing if not already running."""
+        self._batch_queue.extend(items)
+        if self._batch_after_id is None and self._batch_queue:
+            self._batch_after_id = self.after(BATCH_DELAY_MS, self._render_batch_tick)
+
+    # ──────────────────────────────────────────────
+    #  Main refresh — now with batched rendering
+    # ──────────────────────────────────────────────
     def refresh_ui(self):
+        # Cancel any in-progress batch rendering from a previous refresh
+        self._cancel_pending_batch()
+
+        # Destroy all existing row widgets
         for listbox in self.listboxes.values():
             self.clear_listbox(listbox)
         self.clear_listbox(self.prio_listbox)
+        self._row_widgets.clear()
         self.rendered_jobs.clear()
 
         self.expire_stale_jobs()
@@ -174,6 +231,9 @@ class JobAppWindow(ctk.CTk):
 
         self.status_label.configure(text=f"Fresh: {counts['New']} | Applied: {counts['Applied']} | Ongoing: {counts['Ongoing']} | Rejected: {counts['Rejected']} | NA: {counts['NA']}")
 
+        # Build a flat list of (render_fn, args) for batch rendering
+        render_queue = []
+
         for status, items in grouped_jobs.items():
             if status == "New":
                 active_filter = self.rank_filter_drop.get()
@@ -182,19 +242,24 @@ class JobAppWindow(ctk.CTk):
                     
             limit = self.page_offsets.get(status, self.page_size)
             for link, data in items[:limit]:
-                self.add_main_job_row(link, data)
-                self.rendered_jobs.add(link)
+                render_queue.append((self._create_main_job_row, (link, data)))
                 
             if len(items) > limit:
-                btn = ctk.CTkButton(
-                    self.get_listbox_for_status(status),
-                    text=f"Load More ({len(items) - limit} remaining)",
-                    command=lambda s=status: self.load_more(s),
-                    fg_color="#3e3e3e",
-                    hover_color="#555555"
-                )
-                btn.pack(pady=10)
+                render_queue.append((self._create_load_more_btn, (status, len(items) - limit)))
 
+        # Only render priority tab if it's currently visible
+        current_tab = self.tabview.get()
+        if current_tab == "Priority Sorting":
+            self._build_priority_queue(render_queue)
+            self._prio_dirty = False
+        else:
+            self._prio_dirty = True
+
+        # Kick off batched rendering
+        self._enqueue_rows(render_queue)
+
+    def _build_priority_queue(self, render_queue):
+        """Append priority-sorted rows to the render queue."""
         def get_rank_weight(rank_str):
             weights = {"HIGH": 0, "LOW": 1, "UNKNOWN": 2, "ERROR": 3, "IGNORE": 4}
             return weights.get(rank_str, 3)
@@ -217,32 +282,46 @@ class JobAppWindow(ctk.CTk):
         prio_limit = self.page_offsets.get("Priority Sorting", self.page_size)
         
         for link, data in sorted_jobs[:prio_limit]:
-            self.add_priority_row(link, data)
+            render_queue.append((self._create_priority_row, (link, data)))
             
         if len(sorted_jobs) > prio_limit:
-            btn = ctk.CTkButton(
-                self.prio_listbox,
-                text=f"Load More ({len(sorted_jobs) - prio_limit} remaining)",
-                command=lambda: self.load_more("Priority Sorting"),
-                fg_color="#3e3e3e",
-                hover_color="#555555"
-            )
-            btn.pack(pady=10)
+            render_queue.append((self._create_prio_load_more_btn, (len(sorted_jobs) - prio_limit,)))
 
-    def add_main_job_row(self, link, data):
+    def _create_load_more_btn(self, status, remaining):
+        btn = ctk.CTkButton(
+            self.get_listbox_for_status(status),
+            text=f"Load More ({remaining} remaining)",
+            command=lambda s=status: self.load_more(s),
+            fg_color="#3e3e3e",
+            hover_color="#555555"
+        )
+        btn.pack(pady=10)
+
+    def _create_prio_load_more_btn(self, remaining):
+        btn = ctk.CTkButton(
+            self.prio_listbox,
+            text=f"Load More ({remaining} remaining)",
+            command=lambda: self.load_more("Priority Sorting"),
+            fg_color="#3e3e3e",
+            hover_color="#555555"
+        )
+        btn.pack(pady=10)
+
+    def _create_main_job_row(self, link, data):
+        """Create and pack a single main job row widget."""
+        self.rendered_jobs.add(link)
         title = data.get("title", "Unknown")
         status = data.get("status", "New")
         rank = data.get("rank", "UNKNOWN")
-        reason = data.get("reason", "")
 
         target_listbox = self.get_listbox_for_status(status)
 
         row_frame = ctk.CTkFrame(target_listbox, corner_radius=5)
-        row_frame.pack(fill="x", pady=5)
+        row_frame.pack(fill="x", pady=2, padx=2)
 
         color = RANK_COLORS.get(rank, RANK_COLORS["UNKNOWN"])
         rank_label = ctk.CTkLabel(row_frame, text=f" {rank} ", fg_color=color, corner_radius=5, font=("Arial", 12, "bold"))
-        rank_label.pack(side="left", padx=10, pady=10)
+        rank_label.pack(side="left", padx=10, pady=8)
 
         title_btn = ctk.CTkButton(row_frame, text=title, fg_color="transparent", hover_color="#2b2b2b", anchor="w", command=lambda: self.on_job_row_clicked(data, link))
         title_btn.pack(side="left", fill="x", expand=True, padx=5)
@@ -254,17 +333,24 @@ class JobAppWindow(ctk.CTk):
         apply_btn = ctk.CTkButton(row_frame, text="Apply", command=lambda: self.on_apply_clicked(link), width=60)
         apply_btn.pack(side="left", padx=10)
 
-    def add_priority_row(self, link, data):
+        self._row_widgets[link] = (status, rank, row_frame)
+
+    # Keep old name as alias for compatibility
+    def add_main_job_row(self, link, data):
+        self._create_main_job_row(link, data)
+
+    def _create_priority_row(self, link, data):
+        """Create and pack a single priority row widget."""
         title = data.get("title", "Unknown")
         rank = data.get("rank", "UNKNOWN")
         reason = data.get("reason", "No reason recorded.")
         status = data.get("status", "New")
 
         row_frame = ctk.CTkFrame(self.prio_listbox, corner_radius=5)
-        row_frame.pack(fill="x", pady=5)
+        row_frame.pack(fill="x", pady=2, padx=2)
 
         top_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
-        top_frame.pack(fill="x", padx=10, pady=(10, 0))
+        top_frame.pack(fill="x", padx=10, pady=(8, 0))
 
         color = RANK_COLORS.get(rank, RANK_COLORS["UNKNOWN"])
         ctk.CTkLabel(top_frame, text=f" {rank} ", fg_color=color, corner_radius=5, font=("Arial", 12, "bold")).pack(side="left", padx=(0, 10))
@@ -273,7 +359,11 @@ class JobAppWindow(ctk.CTk):
 
         ctk.CTkLabel(top_frame, text=f"Status: {status}").pack(side="right")
 
-        ctk.CTkLabel(row_frame, text=reason, justify="left", wraplength=800, text_color="gray").pack(fill="x", padx=10, pady=(5, 10))
+        ctk.CTkLabel(row_frame, text=reason, justify="left", wraplength=800, text_color="gray").pack(fill="x", padx=10, pady=(3, 8))
+
+    # Keep old name as alias for compatibility
+    def add_priority_row(self, link, data):
+        self._create_priority_row(link, data)
 
     def on_job_row_clicked(self, data, link):
         details = data.get("details", {})
@@ -338,10 +428,15 @@ class JobAppWindow(ctk.CTk):
         conn.commit()
         conn.close()
 
+        # Just move the row instead of full refresh
+        row_frame.pack_forget()
+        target_listbox = self.get_listbox_for_status(new_status)
+        row_frame.master = target_listbox
+        # Destroy and re-create just this one row in the target listbox
         row_frame.destroy()
-        self.add_main_job_row(link, self.jobs_db[link])
-        self.rendered_jobs.add(link)
+        self._create_main_job_row(link, self.jobs_db[link])
         self.update_counts()
+        self._prio_dirty = True
 
     def update_counts(self):
         counts = {"New": 0, "Applied": 0, "Ongoing": 0, "Rejected": 0, "NA": 0}
@@ -356,7 +451,22 @@ class JobAppWindow(ctk.CTk):
 
     def on_rank_filter_changed(self, value):
         self.page_offsets["New"] = self.page_size
-        self.refresh_ui()
+        # Only rebuild the Fresh Jobs listbox, not everything
+        self._cancel_pending_batch()
+        self.clear_listbox(self.listboxes["New"])
+
+        active_filter = value
+        items = [(l, d) for l, d in self.jobs_db.items() if d.get("status", "New") == "New"]
+        if active_filter != "ALL":
+            items = [(l, d) for l, d in items if d.get("rank", "UNKNOWN") == active_filter]
+
+        limit = self.page_offsets.get("New", self.page_size)
+        render_queue = []
+        for link, data in items[:limit]:
+            render_queue.append((self._create_main_job_row, (link, data)))
+        if len(items) > limit:
+            render_queue.append((self._create_load_more_btn, ("New", len(items) - limit)))
+        self._enqueue_rows(render_queue)
         
     def load_more(self, status):
         self.page_offsets[status] += self.page_size
@@ -399,8 +509,14 @@ class JobAppWindow(ctk.CTk):
         self.refresh_ui()
 
     def on_tab_switched(self):
-        if self.tabview.get() == "Priority Sorting":
-            self.refresh_ui()
+        if self.tabview.get() == "Priority Sorting" and self._prio_dirty:
+            # Only rebuild priority list, not everything
+            self._cancel_pending_batch()
+            self.clear_listbox(self.prio_listbox)
+            render_queue = []
+            self._build_priority_queue(render_queue)
+            self._enqueue_rows(render_queue)
+            self._prio_dirty = False
 
     def on_scrape_clicked(self):
         dialog = ctk.CTkToplevel(self)
@@ -448,15 +564,18 @@ class JobAppWindow(ctk.CTk):
     def periodic_sync_and_rank(self):
         new_db = load_db()
         added_count = 0
+        render_queue = []
         for link, data in new_db.items():
             if link not in self.jobs_db:
                 self.jobs_db[link] = data
             if link not in self.rendered_jobs:
-                self.rendered_jobs.add(link)
-                self.add_main_job_row(link, data)
+                render_queue.append((self._create_main_job_row, (link, data)))
                 added_count += 1
+        if render_queue:
+            self._enqueue_rows(render_queue)
         if added_count > 0:
             self.status_label.configure(text=f"Scraping in progress... discovered {added_count} new jobs live!")
+            self._prio_dirty = True
             
     def on_scrape_finished(self, success):
         self.scrape_btn.configure(state="normal")
