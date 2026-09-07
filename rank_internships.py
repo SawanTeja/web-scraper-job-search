@@ -154,7 +154,7 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
         try:
             response = ollama.chat(model='qwen2.5:7b', messages=[
                 {'role': 'user', 'content': prompt}
-            ], options={"temperature": 0})
+            ], format='json', options={"temperature": 0})
 
             result = response['message']['content'].strip()
 
@@ -182,73 +182,29 @@ async def evaluate_job_with_llm(job_details_dict, raw_jd_text, job_title):
         job_info = f"Title: {job_title}\n\nDescription:\n{raw_jd_text}"
 
     prompt = f"""
-You are an experienced technical recruiter.
+You are a technical recruiter. Compare the JOB DETAILS against the CANDIDATE PROFILE.
 
-Evaluate how well this internship matches the candidate profile.
-
-====================
-CANDIDATE PROFILE
-====================
+CANDIDATE PROFILE:
 {CANDIDATE_PROFILE}
 
-====================
-JOB DETAILS
-====================
+JOB DETAILS:
 {job_info}
 
-====================
-RANKING RULES
-====================
+INSTRUCTIONS:
+Assign exactly ONE of the following ranks based on the job requirements. Evaluate in this order:
 
-CRITICAL INSTRUCTION:
-Evaluate the IGNORE list first. If the job matches ANY IGNORE rule,
-immediately return IGNORE and stop evaluation.
-
-IGNORE (HARD VETO):
-- Transportation engineering, Urban planning, Traffic operations
-- Civil, Mechanical, Construction engineering
-- Architecture roles
-- HR / Marketing / Sales
-- Technical support
-- QA / manual testing
-- Roles requiring AutoCAD, MicroStation, SketchUp, GIS
-- Titles containing: Senior, Staff, Lead, Principal, Architect, Manager
-- Roles requiring more than 2 years of experience
-- Roles that are NOT internships or entry-level student roles
-
-HIGH:
-- Software Engineering
-- Backend Engineering
-- Full Stack Development
-- Systems Programming
-- C / C++ roles
-- Node.js / JavaScript backend roles
-- Networking / distributed systems roles
-- Mobile app development roles
-
-MEDIUM:
-- General developer roles
-- Web development internships
-- Platform engineering roles
-- DevOps roles involving programming
-- AI / ML engineering roles
-
-LOW:
-- Data engineering
-- Data analyst roles
-- Cloud infrastructure roles
-- DevOps roles focused mostly on operations
-
-CATCH-ALL (DEFAULT):
-If the job does NOT clearly match HIGH, MEDIUM, or LOW,
-you MUST return IGNORE.
-
-====================
+1. IGNORE:
+   - Senior, Lead, Manager, or non-internship/non-entry level roles.
+   - Requires >2 years of experience.
+   - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation).
+2. HIGH: Software Engineering, Backend, Full Stack, C/C++, Node.js, Systems, Mobile.
+3. MEDIUM: General Web Dev, Platform, AI/ML, DevOps (programming-focused).
+4. LOW: Data Analyst, Data Engineering, Cloud/IT operations.
+5. If none of the above match, default to IGNORE.
 
 OUTPUT FORMAT:
-
-RANK: HIGH / MEDIUM / LOW / IGNORE
-REASON: One short sentence explaining the decision.
+RANK: <HIGH|MEDIUM|LOW|IGNORE>
+REASON: <1 short sentence explaining why>
 """
 
     try:
@@ -293,10 +249,15 @@ async def process_and_rank_jobs():
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
-        page = await context.new_page()
-        page.set_default_timeout(30000)
 
         for index, (url, data) in enumerate(fresh_jobs.items()):
+            # Recreate context periodically to prevent memory leaks from cache/storage accumulation
+            if index > 0 and index % 50 == 0:
+                await context.close()
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                )
+                
             title = data.get("title", "Unknown")
             print(f"[{index + 1}/{len(fresh_jobs)}] Extracting: {title}")
 
@@ -306,6 +267,9 @@ async def process_and_rank_jobs():
                 update_job(url, conn, rank="IGNORE", reason="Senior/SDE II/III role detected in title.")
                 conn.commit()
                 continue
+                
+            page = await context.new_page()
+            page.set_default_timeout(30000)
 
             try:
                 async def process_single_job():
@@ -318,7 +282,7 @@ async def process_and_rank_jobs():
                             await asyncio.sleep(2)
 
                     await page.wait_for_timeout(3000)
-                    raw_text = await page.locator("body").inner_text()
+                    raw_text = await page.inner_text("body", timeout=10000)
                     jd_text = clean_text(raw_text)[:6000]
 
                     if len(jd_text) < 100:
@@ -363,7 +327,12 @@ async def process_and_rank_jobs():
                 print(f"   ❌ Failed: {e}. Skipping.\n")
                 update_job(url, conn, rank="ERROR", reason=str(e)[:100])
                 conn.commit()
+                
+            finally:
+                # Ensure the page is closed to free memory
+                await page.close()
 
+        await context.close()
         await browser.close()
 
     conn.close()
