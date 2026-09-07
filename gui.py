@@ -32,7 +32,11 @@ BATCH_SIZE = 20
 
 class JobAppWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Job Scraper & Tracker", default_width=950, default_height=750)
+        super().__init__(application=app, title="Job Scraper & Ranker")
+        self.set_default_size(1000, 700)
+        
+        # Ensure we clean up any child processes when closed
+        self.connect("close-request", self.on_close_request)
 
         # Ensure DB exists with correct schema
         init_db()
@@ -197,6 +201,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.sort_btn.connect("clicked", self.on_sort_clicked)
         priority_header.append(self.sort_btn)
 
+        self.stop_sort_btn = Gtk.Button(label="🛑 Stop Ranking")
+        self.stop_sort_btn.add_css_class("destructive-action")
+        self.stop_sort_btn.connect("clicked", self.on_stop_sort_clicked)
+        self.stop_sort_btn.set_sensitive(False)
+        priority_header.append(self.stop_sort_btn)
+
         self.reset_rank_btn = Gtk.Button(label="Reset Ranks")
         self.reset_rank_btn.add_css_class("destructive-action")
         self.reset_rank_btn.connect("clicked", self.on_reset_rank_clicked)
@@ -224,6 +234,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.backfill_added_at()
         self.expire_stale_jobs()
         self.refresh_ui()
+
+    def on_close_request(self, window):
+        """Called when the window is closed to ensure background tasks are killed."""
+        if hasattr(self, 'rank_process') and self.rank_process:
+            self.rank_process.terminate()
+            self.rank_process = None
+        
+        # Clean up stop.flag if it was left around
+        import os
+        if os.path.exists("stop.flag"):
+            try:
+                os.remove("stop.flag")
+            except:
+                pass
+        return False  # Propagate the close event
 
     def setup_css(self):
         css_provider = Gtk.CssProvider()
@@ -805,10 +830,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
             import json
             try:
                 url = "http://localhost:11434/api/generate"
-                data = json.dumps({"model": "qwen2.5:14b", "keep_alive": "1h"}).encode("utf-8")
+                data = json.dumps({"model": "gemma2:9b", "keep_alive": "1h"}).encode("utf-8")
                 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
                 urllib.request.urlopen(req, timeout=120)
-                GLib.idle_add(self.status_label.set_text, "✅ AI Model (qwen2.5:14b) loaded into GPU VRAM!")
+                GLib.idle_add(self.status_label.set_text, "✅ AI Model (gemma2:9b) loaded into GPU VRAM!")
             except Exception as e:
                 GLib.idle_add(self.status_label.set_text, f"⚠️ Failed to load AI: {e}")
             GLib.idle_add(self.load_ai_btn.set_sensitive, True)
@@ -950,6 +975,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         else:
             self.sort_status_label.set_text("No jobs to reset.")
 
+    def on_stop_sort_clicked(self, button):
+        with open("stop.flag", "w") as f:
+            f.write("stop")
+        self.sort_status_label.set_text("🛑 Stopping... Please wait for current job to finish.")
+        self.stop_sort_btn.set_sensitive(False)
+
     def on_sort_clicked(self, button):
         if not os.path.exists(DB_FILE):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
@@ -957,6 +988,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         self.sort_status_label.set_text("Initializing Local AI analysis... Check terminal!")
         self.sort_btn.set_sensitive(False)
+        self.stop_sort_btn.set_sensitive(True)
         thread = threading.Thread(target=self.run_sorter)
         thread.daemon = True
         thread.start()
@@ -967,8 +999,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
-            process = subprocess.Popen([venv_python, "rank_internships.py"], cwd=os.getcwd())
-            process.wait()
+            self.rank_process = subprocess.Popen([venv_python, "rank_internships.py"], cwd=os.getcwd())
+            self.rank_process.wait()
+            self.rank_process = None
             GLib.idle_add(self.on_sort_finished, True)
         except Exception as e:
             print(f"Error running sorter: {e}")
@@ -976,12 +1009,16 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def on_sort_finished(self, success):
         self.sort_btn.set_sensitive(True)
+        self.stop_sort_btn.set_sensitive(False)
         if success:
             self.sort_status_label.set_text("Ranking finished!")
             self.jobs_db = load_db()
             self.refresh_ui()
         else:
-            self.sort_status_label.set_text("Ranking script failed.")
+            self.sort_status_label.set_text("Ranking script failed or was stopped.")
+            # Reload db anyway in case it was stopped mid-way so we see the progress
+            self.jobs_db = load_db()
+            self.refresh_ui()
 
 
 class JobApp(Gtk.Application):

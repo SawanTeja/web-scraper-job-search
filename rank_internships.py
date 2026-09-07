@@ -99,7 +99,9 @@ def validate_job_json(data):
         "about_job",
         "responsibilities",
         "requirements",
-        "nice_to_have"
+        "nice_to_have",
+        "ranking_reasoning",
+        "final_rank"
     ]
 
     if not isinstance(data, dict):
@@ -111,15 +113,18 @@ def validate_job_json(data):
 
     return True
 
-async def extract_job_details_with_llm(job_title, jd_text, retries=3):
-    """Extracts structured job details using the local LLM."""
+async def process_and_rank_job_with_llm(job_title, jd_text, retries=3):
+    """Extracts structured job details and ranks the job using the local LLM in a single pass."""
 
     prompt = f"""
 If you produce anything other than valid JSON, the system will crash.
 Do not explain anything.
 Only return JSON.
 
-You are a technical recruiter assistant. Extract the job details from the following Job Description.
+You are a technical recruiter. Your task is to extract job details AND rank the job against the CANDIDATE PROFILE in a single pass.
+
+CANDIDATE PROFILE:
+{CANDIDATE_PROFILE}
 
 ====================
 JOB
@@ -129,6 +134,19 @@ Title: {job_title}
 Description:
 {jd_text}
 ====================
+
+INSTRUCTIONS for Ranking:
+Assign exactly ONE of the following ranks based on the job requirements. Evaluate in this order:
+
+1. IGNORE:
+   - Senior, Lead, Manager, or non-internship/non-entry level roles.
+   - Requires >2 years of experience.
+   - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation).
+   - Jobs located in the USA (this includes ANY US state or city like California, CA, New York, NY, Texas, TX, Seattle, SF, etc. You must filter these out!).
+2. HIGH: Software Engineering, Backend, Full Stack, C/C++, Node.js, Systems, Mobile.
+3. MEDIUM: General Web Dev, Platform, AI/ML, DevOps (programming-focused).
+4. LOW: Data Analyst, Data Engineering, Cloud/IT operations.
+5. If none of the above match, default to IGNORE.
 
 Respond ONLY with a valid JSON object matching EXACTLY this schema. Ensure you use arrays instead of paragraphs for skills, responsibilities, requirements, and nice_to_haves.
 Do not include any other text or markdown formatting outside the JSON block.
@@ -146,20 +164,22 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
   "about_job": null,
   "responsibilities": null,
   "requirements": null,
-  "nice_to_have": null
+  "nice_to_have": null,
+  "ranking_reasoning": "...",
+  "final_rank": "HIGH|MEDIUM|LOW|IGNORE"
 }}
 """
 
     for attempt in range(retries):
         try:
-            response = ollama.chat(model='qwen2.5:14b', messages=[
+            response = ollama.chat(model='gemma2:9b', messages=[
                 {'role': 'user', 'content': prompt}
             ], format='json', options={"temperature": 0, "num_ctx": 8192})
 
             result = response['message']['content'].strip()
 
             if attempt == 0:
-                log_prompt_to_file(job_title, "extraction", prompt, result)
+                log_prompt_to_file(job_title, "extraction_and_ranking", prompt, result)
 
             data = extract_json_from_text(result)
 
@@ -173,62 +193,13 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
 
     return None
 
-async def evaluate_job_with_llm(job_details_dict, raw_jd_text, job_title):
-    """Sends the job description or structured details to the local LLM for ranking."""
-
-    if job_details_dict:
-        job_info = json.dumps(job_details_dict, indent=2)
-    else:
-        job_info = f"Title: {job_title}\n\nDescription:\n{raw_jd_text}"
-
-    prompt = f"""
-You are a technical recruiter. Compare the JOB DETAILS against the CANDIDATE PROFILE.
-
-CANDIDATE PROFILE:
-{CANDIDATE_PROFILE}
-
-JOB DETAILS:
-{job_info}
-
-INSTRUCTIONS:
-Assign exactly ONE of the following ranks based on the job requirements. Evaluate in this order:
-
-1. IGNORE:
-   - Senior, Lead, Manager, or non-internship/non-entry level roles.
-   - Requires >2 years of experience.
-   - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation).
-   - Jobs located in the USA (this includes ANY US state or city like California, CA, New York, NY, Texas, TX, Seattle, SF, etc. You must filter these out!).
-2. HIGH: Software Engineering, Backend, Full Stack, C/C++, Node.js, Systems, Mobile.
-3. MEDIUM: General Web Dev, Platform, AI/ML, DevOps (programming-focused).
-4. LOW: Data Analyst, Data Engineering, Cloud/IT operations.
-5. If none of the above match, default to IGNORE.
-
-OUTPUT FORMAT:
-REASON: <1-2 sentences explaining your thought process>
-RANK: <HIGH|MEDIUM|LOW|IGNORE>
-"""
-
-    try:
-        response = ollama.chat(model='qwen2.5:14b', messages=[
-            {'role': 'user', 'content': prompt}
-        ], options={"temperature": 0, "num_ctx": 8192})
-
-        result = response['message']['content'].strip()
-
-        log_prompt_to_file(job_title, "ranking", prompt, result)
-
-        reason_match = re.search(r'REASON:\s*(.*?)(?=\nRANK:|$)', result, re.IGNORECASE | re.DOTALL)
-        rank_match = re.search(r'RANK:\s*(HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
-
-        reason = reason_match.group(1).strip() if reason_match else result
-        rank = rank_match.group(1).upper() if rank_match else "UNKNOWN"
-
-        return rank, reason
-
-    except Exception as e:
-        return "ERROR", str(e)
-
 async def process_and_rank_jobs():
+    if os.path.exists("stop.flag"):
+        try:
+            os.remove("stop.flag")
+        except Exception:
+            pass
+
     # Open one persistent connection for the whole run
     conn = get_conn()
     init_db(conn)
@@ -252,6 +223,14 @@ async def process_and_rank_jobs():
         )
 
         for index, (url, data) in enumerate(fresh_jobs.items()):
+            if os.path.exists("stop.flag"):
+                print("🛑 Pause requested. Exiting gracefully...")
+                try:
+                    os.remove("stop.flag")
+                except Exception:
+                    pass
+                break
+
             # Recreate context periodically to prevent memory leaks from cache/storage accumulation
             if index > 0 and index % 50 == 0:
                 await context.close()
@@ -300,15 +279,17 @@ async def process_and_rank_jobs():
                         if is_senior_role(jd_text):
                             return "IGNORE", "Senior/SDE II/III role detected in job description.", None
 
-                        print("   🧠 Extracting structured details with Llama 3.1...")
-                        details = await extract_job_details_with_llm(title, jd_text)
+                        print("   🧠 Extracting details and ranking with gemma2:9b...")
+                        result_data = await process_and_rank_job_with_llm(title, jd_text)
 
-                        if details:
-                            print("   🧠 Ranking Extracted JSON with Llama 3.1...")
+                        if result_data:
+                            reason = result_data.pop("ranking_reasoning", "No reason provided")
+                            rank = result_data.pop("final_rank", "UNKNOWN").upper()
+                            details = result_data
                         else:
-                            print("   ⚠️ Extraction failed. Ranking RAW Job Description with Llama 3.1...")
+                            print("   ⚠️ LLM failed to return valid JSON.")
+                            return "ERROR", "Failed to extract and rank job correctly.", None
 
-                        rank, reason = await evaluate_job_with_llm(details, jd_text, title)
                         return rank, reason, details
 
                 rank, reason, details = await asyncio.wait_for(process_single_job(), timeout=90)
