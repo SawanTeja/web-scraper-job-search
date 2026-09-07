@@ -152,9 +152,9 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
 
     for attempt in range(retries):
         try:
-            response = ollama.chat(model='qwen2.5:7b', messages=[
+            response = ollama.chat(model='qwen2.5:14b', messages=[
                 {'role': 'user', 'content': prompt}
-            ], format='json', options={"temperature": 0})
+            ], format='json', options={"temperature": 0, "num_ctx": 8192})
 
             result = response['message']['content'].strip()
 
@@ -197,30 +197,31 @@ Assign exactly ONE of the following ranks based on the job requirements. Evaluat
    - Senior, Lead, Manager, or non-internship/non-entry level roles.
    - Requires >2 years of experience.
    - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation).
+   - Jobs located in the USA (this includes ANY US state or city like California, CA, New York, NY, Texas, TX, Seattle, SF, etc. You must filter these out!).
 2. HIGH: Software Engineering, Backend, Full Stack, C/C++, Node.js, Systems, Mobile.
 3. MEDIUM: General Web Dev, Platform, AI/ML, DevOps (programming-focused).
 4. LOW: Data Analyst, Data Engineering, Cloud/IT operations.
 5. If none of the above match, default to IGNORE.
 
 OUTPUT FORMAT:
+REASON: <1-2 sentences explaining your thought process>
 RANK: <HIGH|MEDIUM|LOW|IGNORE>
-REASON: <1 short sentence explaining why>
 """
 
     try:
-        response = ollama.chat(model='qwen2.5:7b', messages=[
+        response = ollama.chat(model='qwen2.5:14b', messages=[
             {'role': 'user', 'content': prompt}
-        ], options={"temperature": 0})
+        ], options={"temperature": 0, "num_ctx": 8192})
 
         result = response['message']['content'].strip()
 
         log_prompt_to_file(job_title, "ranking", prompt, result)
 
+        reason_match = re.search(r'REASON:\s*(.*?)(?=\nRANK:|$)', result, re.IGNORECASE | re.DOTALL)
         rank_match = re.search(r'RANK:\s*(HIGH|MEDIUM|LOW|IGNORE)', result, re.IGNORECASE)
-        reason_match = re.search(r'REASON:\s*(.*)', result, re.IGNORECASE)
 
+        reason = reason_match.group(1).strip() if reason_match else result
         rank = rank_match.group(1).upper() if rank_match else "UNKNOWN"
-        reason = reason_match.group(1) if reason_match else result
 
         return rank, reason
 

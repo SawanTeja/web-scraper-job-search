@@ -805,10 +805,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
             import json
             try:
                 url = "http://localhost:11434/api/generate"
-                data = json.dumps({"model": "qwen2.5:7b", "keep_alive": "1h"}).encode("utf-8")
+                data = json.dumps({"model": "qwen2.5:14b", "keep_alive": "1h"}).encode("utf-8")
                 req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
                 urllib.request.urlopen(req, timeout=120)
-                GLib.idle_add(self.status_label.set_text, "✅ AI Model (qwen2.5:7b) loaded into GPU VRAM!")
+                GLib.idle_add(self.status_label.set_text, "✅ AI Model (qwen2.5:14b) loaded into GPU VRAM!")
             except Exception as e:
                 GLib.idle_add(self.status_label.set_text, f"⚠️ Failed to load AI: {e}")
             GLib.idle_add(self.load_ai_btn.set_sensitive, True)
