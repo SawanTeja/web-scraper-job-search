@@ -94,6 +94,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.clear_db_btn.connect("clicked", self.on_clear_db_clicked)
         header_box.append(self.clear_db_btn)
 
+        self.load_ai_btn = Gtk.Button(label="⚡ Load AI")
+        self.load_ai_btn.add_css_class("suggested-action")
+        self.load_ai_btn.connect("clicked", self.on_load_ai_clicked)
+        header_box.append(self.load_ai_btn)
+
+        self.offload_ai_btn = Gtk.Button(label="🧠 Offload AI")
+        self.offload_ai_btn.connect("clicked", self.on_offload_ai_clicked)
+        header_box.append(self.offload_ai_btn)
+
         self.status_label = Gtk.Label(label="Ready.")
         self.status_label.set_hexpand(True)
         self.status_label.set_halign(Gtk.Align.END)
@@ -786,6 +795,51 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.refresh_ui()
         self.status_label.set_text(f"💣 Cleared {deleted} jobs from the database.")
 
+    def on_load_ai_clicked(self, button):
+        """Sends a request to load the model into VRAM so it doesn't timeout later."""
+        self.status_label.set_text("⏳ Loading AI model into memory (this may take a minute)...")
+        self.load_ai_btn.set_sensitive(False)
+        
+        def run_load():
+            import urllib.request
+            import json
+            try:
+                url = "http://localhost:11434/api/generate"
+                data = json.dumps({"model": "qwen2.5:7b", "keep_alive": "1h"}).encode("utf-8")
+                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=120)
+                GLib.idle_add(self.status_label.set_text, "✅ AI Model (qwen2.5:7b) loaded into GPU VRAM!")
+            except Exception as e:
+                GLib.idle_add(self.status_label.set_text, f"⚠️ Failed to load AI: {e}")
+            GLib.idle_add(self.load_ai_btn.set_sensitive, True)
+
+        threading.Thread(target=run_load, daemon=True).start()
+
+    def on_offload_ai_clicked(self, button):
+        """Sends a keep_alive=0 request to Ollama to unload models from VRAM."""
+        self.status_label.set_text("⏳ Offloading AI models...")
+        self.offload_ai_btn.set_sensitive(False)
+
+        def run_offload():
+            import urllib.request
+            import json
+            def offload(model_name):
+                try:
+                    url = "http://localhost:11434/api/generate"
+                    data = json.dumps({"model": model_name, "keep_alive": 0}).encode("utf-8")
+                    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(req, timeout=5)
+                except Exception:
+                    pass
+
+            for model in ["qwen2.5", "qwen2.5:7b", "qwen2.5:14b", "llama3.1", "gemma2:9b"]:
+                offload(model)
+                
+            GLib.idle_add(self.status_label.set_text, "✅ AI Models offloaded from memory.")
+            GLib.idle_add(self.offload_ai_btn.set_sensitive, True)
+
+        threading.Thread(target=run_offload, daemon=True).start()
+
     def on_refresh_clicked(self, button):
         # Reload DB from SQLite
         self.jobs_db = load_db()
@@ -901,7 +955,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
             return
 
-        self.sort_status_label.set_text("Initializing Groq AI analysis... Check terminal!")
+        self.sort_status_label.set_text("Initializing Local AI analysis... Check terminal!")
         self.sort_btn.set_sensitive(False)
         thread = threading.Thread(target=self.run_sorter)
         thread.daemon = True

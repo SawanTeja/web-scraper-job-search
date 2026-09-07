@@ -19,25 +19,36 @@ SITES = [
     "smartrecruiters.com",
 
     # Enterprise ATS
-    # "myworkdayjobs.com", #uncomment if you want to scrape myworkdays
+    "myworkdayjobs.com", #uncomment if you want to scrape myworkdays
     "icims.com",
     "jobvite.com",
     "bamboohr.com",
     "breezy.hr",
     "recruitee.com",
+
+    "successfactors.com",
+    "oraclecloud.com",
+    "taleo.net",
+    "phenom.com",
+    "eightfold.ai",
+    "avature.net",
+    "jibeapply.com",
+    "pinpointhq.com",
+    "teamtailor.com",
 ]
 
 # The "Broad Tech" Dragnet
 SEARCH_QUERIES = [
-    '(software engineer OR software developer) (intern OR internship)',
-    '(backend OR backend engineer) (intern OR internship)',
-    '(full stack OR fullstack) (intern OR internship)',
-    '(c++ OR systems OR networking) (intern OR internship)',
-    '(node.js OR react OR javascript) (intern OR internship)'
+    'Software',
+    'C++',
+    'Java',
+    'Javascript',
+    'React',
+    'Node.js'
 ]
 
 TIME_FILTER = "qdr:d"
-MAX_PAGES = 5
+MAX_PAGES = 10
 
 
 
