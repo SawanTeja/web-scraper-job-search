@@ -1,12 +1,68 @@
 import asyncio
 import re
-import ollama
 import json
 import os
+import random
 from playwright.async_api import async_playwright
+from playwright_stealth import Stealth
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from groq import AsyncGroq
+import groq
 
 # SQLite DB helper
 from db import get_conn, init_db, load_db, update_job
+
+# --- GROQ ROTATION MANAGER ---
+class GroqManager:
+    def __init__(self):
+        keys = []
+        for i in range(1, 10):
+            k = os.environ.get(f"GROQ_API_KEY_{i}")
+            if k:
+                keys.append(k)
+        
+        # Fallback to standard GROQ_API_KEY if no numbered ones exist
+        if not keys and os.environ.get("GROQ_API_KEY"):
+            keys.append(os.environ.get("GROQ_API_KEY"))
+
+        if not keys:
+            print("❌ ERROR: No GROQ_API_KEY_1, GROQ_API_KEY_2, etc. found in .env!")
+            exit(1)
+            
+        self.clients = [AsyncGroq(api_key=k) for k in keys]
+        self.current_idx = 0
+        print(f"🔑 Loaded {len(self.clients)} Groq API keys for rotation.")
+
+    def get_client(self):
+        return self.clients[self.current_idx]
+
+    def rotate(self):
+        self.current_idx = (self.current_idx + 1) % len(self.clients)
+        print(f"🔄 Swapped to Groq API Key #{self.current_idx + 1}")
+
+    async def chat_completion(self, model, messages, temperature=0, retries=3):
+        for attempt in range(retries):
+            client = self.get_client()
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature
+                )
+                return response
+            except groq.RateLimitError as e:
+                print(f"   ⚠️ Rate limit exceeded on Key #{self.current_idx + 1}. Rotating...")
+                self.rotate()
+                await asyncio.sleep(1) # Small pause before retrying on new key
+            except Exception as e:
+                print(f"   ⚠️ API Error: {e}. Retrying {attempt+1}/{retries}...")
+                await asyncio.sleep(2)
+        return None
+
+groq_manager = GroqManager()
 
 PROMPTS_LOG_FILE = "prompts.json"
 
@@ -99,9 +155,7 @@ def validate_job_json(data):
         "about_job",
         "responsibilities",
         "requirements",
-        "nice_to_have",
-        "ranking_reasoning",
-        "final_rank"
+        "nice_to_have"
     ]
 
     if not isinstance(data, dict):
@@ -113,18 +167,14 @@ def validate_job_json(data):
 
     return True
 
-async def process_and_rank_job_with_llm(job_title, jd_text, retries=3):
-    """Extracts structured job details and ranks the job using the local LLM in a single pass."""
-
+async def extract_job_details_with_llm(job_title, jd_text, retries=3):
+    """Extracts structured data from the job description using Llama-3.1-8B-Instant."""
     prompt = f"""
 If you produce anything other than valid JSON, the system will crash.
 Do not explain anything.
 Only return JSON.
 
-You are a technical recruiter. Your task is to extract job details AND rank the job against the CANDIDATE PROFILE in a single pass.
-
-CANDIDATE PROFILE:
-{CANDIDATE_PROFILE}
+You are a technical recruiter. Your task is to extract job details from the following Job Description (JD).
 
 ====================
 JOB
@@ -135,21 +185,7 @@ Description:
 {jd_text}
 ====================
 
-INSTRUCTIONS for Ranking:
-Assign exactly ONE of the following ranks based on the job requirements. Evaluate in this order:
-
-1. IGNORE:
-   - Senior, Lead, Manager, or non-internship/non-entry level roles.
-   - Requires >2 years of experience.
-   - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation).
-   - Jobs located in the USA (this includes ANY US state or city like California, CA, New York, NY, Texas, TX, Seattle, SF, etc. You must filter these out!).
-2. HIGH: Software Engineering, Backend, Full Stack, C/C++, Node.js, Systems, Mobile.
-3. MEDIUM: General Web Dev, Platform, AI/ML, DevOps (programming-focused).
-4. LOW: Data Analyst, Data Engineering, Cloud/IT operations.
-5. If none of the above match, default to IGNORE.
-
 Respond ONLY with a valid JSON object matching EXACTLY this schema. Ensure you use arrays instead of paragraphs for skills, responsibilities, requirements, and nice_to_haves.
-Do not include any other text or markdown formatting outside the JSON block.
 If a field is not mentioned or you cannot find the data, you MUST use `null`. Do not use empty strings `""` or empty arrays `[]`.
 
 {{
@@ -164,34 +200,93 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
   "about_job": null,
   "responsibilities": null,
   "requirements": null,
-  "nice_to_have": null,
-  "ranking_reasoning": "...",
-  "final_rank": "HIGH|MEDIUM|LOW|IGNORE"
+  "nice_to_have": null
 }}
 """
 
-    for attempt in range(retries):
-        try:
-            response = ollama.chat(model='gemma2:9b', messages=[
-                {'role': 'user', 'content': prompt}
-            ], format='json', options={"temperature": 0, "num_ctx": 8192})
+    response = await groq_manager.chat_completion(
+        model='qwen/qwen3.8-27b',
+        messages=[{'role': 'user', 'content': prompt}]
+    )
 
-            result = response['message']['content'].strip()
+    if not response:
+        return None
 
-            if attempt == 0:
-                log_prompt_to_file(job_title, "extraction_and_ranking", prompt, result)
+    result = response.choices[0].message.content.strip()
+    log_prompt_to_file(job_title, "extraction", prompt, result)
+    data = extract_json_from_text(result)
 
-            data = extract_json_from_text(result)
+    if data and validate_job_json(data):
+        return data
+    else:
+        print(f"   ⚠️ JSON invalid or missing fields during extraction.")
+        return None
 
-            if data and validate_job_json(data):
-                return data
+async def evaluate_job_with_llm(job_details_json, jd_text, job_title):
+    """Evaluates the extracted job details or raw text against the candidate profile using Llama-3.3-70B-Versatile."""
+    
+    if job_details_json:
+        job_info_str = json.dumps(job_details_json, indent=2)
+        info_type = "JSON Details"
+    else:
+        job_info_str = jd_text
+        info_type = "Raw Description"
 
-            print(f"   ⚠️ JSON invalid or missing fields, retry {attempt+1}/{retries}")
+    prompt = f"""
+You are an expert technical recruiter matching candidates to jobs.
+Evaluate the job against the candidate profile.
 
-        except Exception as e:
-            print(f"   ⚠️ Attempt {attempt+1} failed: {e}")
+CANDIDATE PROFILE:
+{CANDIDATE_PROFILE}
 
-    return None
+====================
+JOB ({info_type})
+====================
+Title: {job_title}
+{job_info_str}
+====================
+
+INSTRUCTIONS:
+Assign exactly ONE of the following ranks based on the job requirements. Evaluate in this order:
+
+1. IGNORE:
+   - Senior, Lead, Manager, or non-internship/non-entry level roles.
+   - Requires >2 years of experience.
+   - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation).
+   - Jobs located in the USA (this includes ANY US state or city like California, CA, New York, NY, Texas, TX, Seattle, SF, etc. You must filter these out!).
+2. HIGH: Software Engineering, Backend, Full Stack, C/C++, Node.js, Systems, Mobile.
+3. MEDIUM: General Web Dev, Platform, AI/ML, DevOps (programming-focused).
+4. LOW: Data Analyst, Data Engineering, Cloud/IT operations.
+5. If none of the above match, default to IGNORE.
+
+Respond exactly in this format on two lines:
+RANK: <HIGH|MEDIUM|LOW|IGNORE>
+REASON: One short sentence explaining the decision.
+"""
+
+    response = await groq_manager.chat_completion(
+        model='qwen/qwen3.8-27b',
+        messages=[{'role': 'user', 'content': prompt}]
+    )
+
+    if not response:
+        return "ERROR", "Failed to get ranking from API."
+
+    result = response.choices[0].message.content.strip()
+    log_prompt_to_file(job_title, "ranking", prompt, result)
+
+    rank = "UNKNOWN"
+    reason = ""
+    for line in result.split('\n'):
+        if line.startswith("RANK:"):
+            rank = line.replace("RANK:", "").strip().upper()
+        elif line.startswith("REASON:"):
+            reason = line.replace("REASON:", "").strip()
+
+    if rank not in ["HIGH", "MEDIUM", "LOW", "IGNORE"]:
+        rank = "UNKNOWN"
+
+    return rank, reason
 
 async def process_and_rank_jobs():
     if os.path.exists("stop.flag"):
@@ -200,11 +295,9 @@ async def process_and_rank_jobs():
         except Exception:
             pass
 
-    # Open one persistent connection for the whole run
     conn = get_conn()
     init_db(conn)
 
-    # Load only fresh unranked jobs — no need to pull the whole DB into RAM
     jobs_db = load_db(conn)
     fresh_jobs = {link: data for link, data in jobs_db.items()
                   if data.get("status") == "New" and data.get("rank", "UNKNOWN") in ["UNKNOWN", "ERROR"]}
@@ -221,7 +314,7 @@ async def process_and_rank_jobs():
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
-
+        
         for index, (url, data) in enumerate(fresh_jobs.items()):
             if os.path.exists("stop.flag"):
                 print("🛑 Pause requested. Exiting gracefully...")
@@ -231,7 +324,6 @@ async def process_and_rank_jobs():
                     pass
                 break
 
-            # Recreate context periodically to prevent memory leaks from cache/storage accumulation
             if index > 0 and index % 50 == 0:
                 await context.close()
                 context = await browser.new_context(
@@ -243,12 +335,12 @@ async def process_and_rank_jobs():
 
             if is_senior_role(title):
                 print(f"   ⏭️ Skipped (Senior/SDE II/III detected in title)\n")
-                # Write only the changed columns — no full JSON dump
                 update_job(url, conn, rank="IGNORE", reason="Senior/SDE II/III role detected in title.")
                 conn.commit()
                 continue
                 
             page = await context.new_page()
+            await Stealth().apply_stealth_async(page)
             page.set_default_timeout(30000)
 
             try:
@@ -279,49 +371,40 @@ async def process_and_rank_jobs():
                         if is_senior_role(jd_text):
                             return "IGNORE", "Senior/SDE II/III role detected in job description.", None
 
-                        print("   🧠 Extracting details and ranking with gemma2:9b...")
-                        result_data = await process_and_rank_job_with_llm(title, jd_text)
+                        print("   🧠 Extracting structured details with Groq (qwen3.8-27b)...")
+                        details = await extract_job_details_with_llm(title, jd_text)
 
-                        if result_data:
-                            reason = result_data.pop("ranking_reasoning", "No reason provided")
-                            rank = result_data.pop("final_rank", "UNKNOWN").upper()
-                            details = result_data
+                        if details:
+                            print("   🧠 Ranking Extracted JSON with Groq (qwen3.8-27b)...")
                         else:
-                            print("   ⚠️ LLM failed to return valid JSON.")
-                            return "ERROR", "Failed to extract and rank job correctly.", None
+                            print("   ⚠️ Extraction failed. Ranking RAW Job Description with Groq (qwen3.8-27b)...")
 
+                        rank, reason = await evaluate_job_with_llm(details, jd_text, title)
                         return rank, reason, details
 
                 rank, reason, details = await asyncio.wait_for(process_single_job(), timeout=90)
 
                 print(f"   📊 Result: {rank} - {reason}\n")
-                # Targeted column update — no full-dict serialisation
                 update_job(url, conn, rank=rank, reason=reason,
                            **({"details": details} if details else {}))
                 conn.commit()
 
             except asyncio.TimeoutError:
-                print(f"   ⏰ TIMEOUT after 90s. Skipping with ERROR tag.\n")
-                update_job(url, conn, rank="ERROR", reason="Timed out after 90s.")
+                print(f"   ⚠️ Timeout error: Took too long to process.\n")
+                update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.")
                 conn.commit()
-
             except Exception as e:
-                print(f"   ❌ Failed: {e}. Skipping.\n")
-                update_job(url, conn, rank="ERROR", reason=str(e)[:100])
+                print(f"   ⚠️ Error: {e}\n")
+                update_job(url, conn, rank="ERROR", reason=f"Exception: {str(e)}")
                 conn.commit()
-                
             finally:
-                # Ensure the page is closed to free memory
                 await page.close()
 
         await context.close()
         await browser.close()
-
+    
     conn.close()
-
-    print("==================================================")
-    print(f"✅ Finished! Ranked {len(fresh_jobs)} fresh jobs.")
-    print("==================================================")
+    print("✅ All jobs processed!")
 
 if __name__ == "__main__":
     asyncio.run(process_and_rank_jobs())
