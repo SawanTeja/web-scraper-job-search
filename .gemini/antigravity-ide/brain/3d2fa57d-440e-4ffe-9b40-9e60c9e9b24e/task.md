@@ -1,0 +1,3 @@
+- `[x]` Update `intern_scraper.py`
+- `[x]` Update `intern_scraper_fast.py`
+- `[x]` Update `intern_scraper_overnight.py`

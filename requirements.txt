@@ -1,0 +1,5 @@
+playwright
+groq
+python-dotenv
+playwright-stealth
+customtkinter

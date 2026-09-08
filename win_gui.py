@@ -4,10 +4,36 @@ import subprocess
 import threading
 import webbrowser
 import html
+import tkinter as tk
 from datetime import datetime, timezone, timedelta
 import customtkinter as ctk
 
 from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job
+
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+
+    def enter(self, event=None):
+        if not self.text: return
+        x = event.x_root + 15 if event else self.widget.winfo_rootx() + 25
+        y = event.y_root + 10 if event else self.widget.winfo_rooty() + 20
+        self.tooltip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify='left',
+                         background="#2b2b2b", foreground="white", relief='solid', borderwidth=1,
+                         font=("Arial", 10, "normal"))
+        label.pack(ipadx=4, ipady=4)
+
+    def leave(self, event=None):
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
 
 DB_FILE = "jobs_db.sqlite"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
@@ -33,6 +59,7 @@ class JobAppWindow(ctk.CTk):
 
         self.title("Job Scraper & Tracker (Windows)")
         self.geometry("950x750")
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
@@ -106,6 +133,10 @@ class JobAppWindow(ctk.CTk):
         self.sort_btn = ctk.CTkButton(self.prio_header, text="AI Rank/Sort Jobs", command=self.on_sort_clicked, fg_color="#2b6b3e", hover_color="#215230")
         self.sort_btn.pack(side="left", padx=5)
         
+        self.stop_sort_btn = ctk.CTkButton(self.prio_header, text="🛑 Stop Ranking", command=self.on_stop_sort_clicked, fg_color="#b32929", hover_color="#8a1f1f")
+        self.stop_sort_btn.pack(side="left", padx=5)
+        self.stop_sort_btn.configure(state="disabled")
+
         self.reset_rank_btn = ctk.CTkButton(self.prio_header, text="Reset Ranks", command=self.on_reset_rank_clicked, fg_color="#b32929", hover_color="#8a1f1f")
         self.reset_rank_btn.pack(side="left", padx=5)
         
@@ -130,6 +161,18 @@ class JobAppWindow(ctk.CTk):
         self.backfill_added_at()
         self.expire_stale_jobs()
         self.refresh_ui()
+
+    def on_closing(self):
+        if hasattr(self, 'rank_process') and self.rank_process:
+            self.rank_process.terminate()
+            self.rank_process = None
+        
+        if os.path.exists("stop.flag"):
+            try:
+                os.remove("stop.flag")
+            except:
+                pass
+        self.destroy()
 
     def save_db(self):
         save_db(self.jobs_db)
@@ -313,6 +356,7 @@ class JobAppWindow(ctk.CTk):
         title = data.get("title", "Unknown")
         status = data.get("status", "New")
         rank = data.get("rank", "UNKNOWN")
+        reason = data.get("reason", "")
 
         target_listbox = self.get_listbox_for_status(status)
 
@@ -325,6 +369,17 @@ class JobAppWindow(ctk.CTk):
 
         title_btn = ctk.CTkButton(row_frame, text=title, fg_color="transparent", hover_color="#2b2b2b", anchor="w", command=lambda: self.on_job_row_clicked(data, link))
         title_btn.pack(side="left", fill="x", expand=True, padx=5)
+
+        tooltip_text = f"URL: {link}"
+        if reason:
+            tooltip_text += f"\n\nAI REASON:\n{reason}"
+        details = data.get("details")
+        if details and isinstance(details, dict):
+            tooltip_text += "\n\nEXTRACTED DETAILS:"
+            for key, val in details.items():
+                if val is not None and val != "" and val != []:
+                    tooltip_text += f"\n• {key.replace('_', ' ').title()}: {val}"
+        ToolTip(title_btn, tooltip_text)
 
         status_drop = ctk.CTkOptionMenu(row_frame, values=STATUSES, command=lambda v, l=link, r=row_frame: self.on_status_changed(v, l, r))
         status_drop.set(status)
@@ -469,8 +524,63 @@ class JobAppWindow(ctk.CTk):
         self._enqueue_rows(render_queue)
         
     def load_more(self, status):
+        old_limit = self.page_offsets[status]
         self.page_offsets[status] += self.page_size
-        self.refresh_ui()
+        new_limit = self.page_offsets[status]
+
+        items = []
+        if status == "Priority Sorting":
+            now = datetime.now(timezone.utc)
+            recent_jobs = {}
+            for link, data in self.jobs_db.items():
+                added_at_str = data.get("added_at")
+                if added_at_str:
+                    try:
+                        added_at = datetime.fromisoformat(added_at_str)
+                        if (now - added_at) <= timedelta(hours=NA_EXPIRY_HOURS):
+                            recent_jobs[link] = data
+                    except ValueError:
+                        recent_jobs[link] = data
+                else:
+                    recent_jobs[link] = data
+
+            def get_rank_weight(rank_str):
+                weights = {"HIGH": 0, "LOW": 1, "UNKNOWN": 2, "ERROR": 3, "IGNORE": 4}
+                return weights.get(rank_str, 3)
+
+            items = sorted(recent_jobs.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
+        else:
+            active_filter = "ALL"
+            if status == "New":
+                active_filter = self.rank_filter_drop.get()
+
+            for link, data in self.jobs_db.items():
+                if data.get("status", "New") == status:
+                    if status == "New" and active_filter != "ALL":
+                        if data.get("rank", "UNKNOWN") != active_filter:
+                            continue
+                    items.append((link, data))
+
+        target_listbox = self.prio_listbox if status == "Priority Sorting" else self.get_listbox_for_status(status)
+        for child in reversed(target_listbox.winfo_children()):
+            if isinstance(child, ctk.CTkButton) and "Load More" in child.cget("text"):
+                child.destroy()
+                break
+
+        render_queue = []
+        for link, data in items[old_limit:new_limit]:
+            if status == "Priority Sorting":
+                render_queue.append((self._create_priority_row, (link, data)))
+            else:
+                render_queue.append((self._create_main_job_row, (link, data)))
+
+        if len(items) > new_limit:
+            if status == "Priority Sorting":
+                render_queue.append((self._create_prio_load_more_btn, (len(items) - new_limit,)))
+            else:
+                render_queue.append((self._create_load_more_btn, (status, len(items) - new_limit)))
+
+        self._enqueue_rows(render_queue)
 
     def on_delete_ignore_clicked(self):
         ignore_links = [link for link, data in self.jobs_db.items() if data.get("rank") == "IGNORE"]
@@ -545,10 +655,17 @@ class JobAppWindow(ctk.CTk):
 
     def run_scraper(self, script_name="intern_scraper.py"):
         import time
+        import sys
         try:
-            venv_python = os.path.join(os.getcwd(), "scraper_env", "Scripts", "python.exe")
-            if not os.path.exists(venv_python):
-                venv_python = "python"
+            venv_python = None
+            possible_paths = ["Scripts/python.exe"] if os.name == "nt" else ["bin/python"]
+            for path in possible_paths:
+                full_path = os.path.join(os.getcwd(), "scraper_env", *path.split("/"))
+                if os.path.exists(full_path):
+                    venv_python = full_path
+                    break
+            if not venv_python:
+                venv_python = sys.executable
                 
             process = subprocess.Popen([venv_python, script_name], cwd=os.getcwd())
             
@@ -600,25 +717,40 @@ class JobAppWindow(ctk.CTk):
         else:
             self.sort_status_label.configure(text="No jobs to reset.")
 
+    def on_stop_sort_clicked(self):
+        with open("stop.flag", "w") as f:
+            f.write("stop")
+        self.sort_status_label.configure(text="🛑 Stopping... Please wait for current job to finish.")
+        self.stop_sort_btn.configure(state="disabled")
+
     def on_sort_clicked(self):
         if not os.path.exists(DB_FILE):
             self.sort_status_label.configure(text=f"No {DB_FILE}. Scrape first!")
             return
             
-        self.sort_status_label.configure(text="Initializing Groq AI analysis... Check terminal!")
+        self.sort_status_label.configure(text="Initializing Local AI analysis... Check terminal!")
         self.sort_btn.configure(state="disabled")
+        self.stop_sort_btn.configure(state="normal")
         thread = threading.Thread(target=self.run_sorter)
         thread.daemon = True
         thread.start()
 
     def run_sorter(self):
+        import sys
         try:
-            venv_python = os.path.join(os.getcwd(), "scraper_env", "Scripts", "python.exe")
-            if not os.path.exists(venv_python):
-                venv_python = "python"
+            venv_python = None
+            possible_paths = ["Scripts/python.exe"] if os.name == "nt" else ["bin/python"]
+            for path in possible_paths:
+                full_path = os.path.join(os.getcwd(), "scraper_env", *path.split("/"))
+                if os.path.exists(full_path):
+                    venv_python = full_path
+                    break
+            if not venv_python:
+                venv_python = sys.executable
                 
-            process = subprocess.Popen([venv_python, "rank_internships.py"], cwd=os.getcwd())
-            process.wait()
+            self.rank_process = subprocess.Popen([venv_python, "rank_internships.py"], cwd=os.getcwd())
+            self.rank_process.wait()
+            self.rank_process = None
             self.after(0, lambda: self.on_sort_finished(True))
         except Exception as e:
             print(f"Error running sorter: {e}")
@@ -626,12 +758,15 @@ class JobAppWindow(ctk.CTk):
 
     def on_sort_finished(self, success):
         self.sort_btn.configure(state="normal")
+        self.stop_sort_btn.configure(state="disabled")
         if success:
             self.sort_status_label.configure(text="Ranking finished!")
             self.jobs_db = load_db()
             self.refresh_ui()
         else:
-            self.sort_status_label.configure(text="Ranking script failed.")
+            self.sort_status_label.configure(text="Ranking script failed or was stopped.")
+            self.jobs_db = load_db()
+            self.refresh_ui()
 
 if __name__ == "__main__":
     app = JobAppWindow()

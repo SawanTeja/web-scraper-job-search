@@ -19,32 +19,20 @@ SITES = [
     "smartrecruiters.com",
 
     # Enterprise ATS
-    "myworkdayjobs.com", #uncomment if you want to scrape myworkdays
+    # "myworkdayjobs.com", #uncomment if you want to scrape myworkdays
     "icims.com",
     "jobvite.com",
     "bamboohr.com",
-    "breezy.hr",
-    "recruitee.com",
-
     "successfactors.com",
-    "oraclecloud.com",
     "taleo.net",
-    "phenom.com",
-    "eightfold.ai",
-    "avature.net",
-    "jibeapply.com",
-    "pinpointhq.com",
-    "teamtailor.com",
+    "oraclecloud.com",
 ]
 
 # The "Broad Tech" Dragnet
 SEARCH_QUERIES = [
     'Software',
-    'C++',
-    'Java',
-    'Javascript',
-    'React',
-    'Node.js'
+    'C++ OR Java',
+    'Javascript OR React OR Node.js'
 ]
 
 TIME_FILTER = "qdr:d"
@@ -100,9 +88,18 @@ async def scrape_google_jobs():
     print(f"📦 {len(unique_jobs)} existing jobs loaded (will skip duplicates).\n")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(user_agent=USER_AGENT)
-        page = await context.new_page()
+        import os
+        user_data_dir = os.path.join(os.getcwd(), "browser_cache")
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=False,
+            user_agent=USER_AGENT,
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/New_York",
+            args=["--disable-blink-features=AutomationControlled", "--start-maximized"]
+        )
+        page = context.pages[0] if context.pages else await context.new_page()
         await Stealth().apply_stealth_async(page)
 
 

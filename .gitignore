@@ -6,3 +6,6 @@ jobs_db.sqlite
 jobs_db.sqlite-shm
 jobs_db.sqlite-wal
 .env
+__pycache__/
+browser_cache/
+scraper_env/

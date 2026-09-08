@@ -107,11 +107,18 @@ async def scrape_google_jobs():
     new_jobs_added = 0
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        import os
+        user_data_dir = os.path.join(os.getcwd(), "browser_cache")
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=False,
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/New_York",
+            args=["--disable-blink-features=AutomationControlled", "--start-maximized"]
         )
-        page = await context.new_page()
+        page = context.pages[0] if context.pages else await context.new_page()
         await Stealth().apply_stealth_async(page)
 
         print(f"🚀 Starting the Massive ATS Scraper...")
