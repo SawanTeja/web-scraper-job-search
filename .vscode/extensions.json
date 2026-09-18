@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-playwright.playwright",
+    "qwtel.sqlite-viewer",
+    "mikestead.dotenv"
+  ]
+}
