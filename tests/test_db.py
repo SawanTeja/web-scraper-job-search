@@ -10,11 +10,18 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from src.core.db import (
-    init_db, insert_or_ignore_job, save_company,
-    get_all_companies, get_company_stats, delete_company,
-    delete_jobs_by_rank, get_all_urls
-)
+try:
+    from src.core.db import (
+        init_db, insert_or_ignore_job, save_company,
+        get_all_companies, get_company_stats, delete_company,
+        delete_jobs_by_rank, get_all_urls
+    )
+except ImportError:
+    from core.db import (
+        init_db, insert_or_ignore_job, save_company,
+        get_all_companies, get_company_stats, delete_company,
+        delete_jobs_by_rank, get_all_urls
+    )
 
 
 class TestDatabase(unittest.TestCase):
@@ -30,7 +37,6 @@ class TestDatabase(unittest.TestCase):
         added = save_company("Stripe", "greenhouse", "stripe", "https://boards.greenhouse.io/stripe", conn=self.conn)
         self.assertTrue(added)
 
-        # Duplicate company should not be added
         dup = save_company("Stripe Inc", "greenhouse", "stripe", "https://boards.greenhouse.io/stripe", conn=self.conn)
         self.assertFalse(dup)
 
@@ -41,7 +47,6 @@ class TestDatabase(unittest.TestCase):
         stats = get_company_stats(conn=self.conn)
         self.assertEqual(stats["total_companies"], 1)
 
-        # Delete company
         deleted = delete_company(comps[0]["id"], conn=self.conn)
         self.assertEqual(deleted, 1)
         self.assertEqual(len(get_all_companies(conn=self.conn)), 0)
@@ -58,17 +63,14 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(inserted)
         self.assertIn(url, get_all_urls(conn=self.conn))
 
-        # Delete job by rank
         self.conn.execute("UPDATE jobs SET rank='IGNORE' WHERE url=?", (url,))
         self.conn.commit()
         deleted = delete_jobs_by_rank("IGNORE", conn=self.conn)
         self.assertEqual(deleted, 1)
 
-        # Must not be in jobs table
         row = self.conn.execute("SELECT * FROM jobs WHERE url=?", (url,)).fetchone()
         self.assertIsNone(row)
 
-        # Must be archived in deleted_urls to prevent resurrection
         tombstone = self.conn.execute("SELECT * FROM deleted_urls WHERE url=?", (url,)).fetchone()
         self.assertIsNotNone(tombstone)
         self.assertIn(url, get_all_urls(conn=self.conn))

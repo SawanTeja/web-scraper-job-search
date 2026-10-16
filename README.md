@@ -146,29 +146,34 @@ The codebase is organized into clean, modular packages under `src/` with root en
 web-scraper-job-search/
 ├── src/
 │   ├── core/
-│   │   ├── db.py                   # SQLite engine, schemas, migrations, tombstones
-│   │   └── job_filter.py           # Deterministic pre-filter (US, Senior, Non-Tech)
+│   │   ├── __init__.py
+│   │   └── db.py                   # SQLite engine, schemas, migrations, tombstones
 │   ├── scrapers/
+│   │   ├── __init__.py
 │   │   ├── ats_parser.py           # Deterministic ATS URL & platform detection
 │   │   ├── ats_scraper.py          # High-speed direct ATS scraping pool
-│   │   ├── intern_scraper.py       # Google Playwright scraper (Medium)
+│   │   ├── intern_scraper.py       # Google Playwright scraper (Standard)
 │   │   ├── intern_scraper_fast.py  # Google Playwright scraper (Fast)
 │   │   └── intern_scraper_overnight.py # Google Playwright scraper (Overnight)
 │   ├── ranking/
+│   │   ├── __init__.py
+│   │   ├── job_filter.py           # Deterministic pre-filter (US, Senior, Non-Tech)
 │   │   ├── rank_internships.py     # Groq LLM AI ranker with key rotation
 │   │   └── reset_ranks.py          # Utility to reset ranks for re-evaluation
-│   └── ui/
-│       ├── gui_gtk.py              # Linux GTK4 GUI dashboard
-│       └── gui_ctk.py              # Windows CustomTkinter GUI dashboard
+│   └── gui/
+│       ├── __init__.py
+│       ├── gui.py                  # Linux GTK4 GUI dashboard
+│       └── win_gui.py              # Windows CustomTkinter GUI dashboard
 ├── tests/
 │   ├── test_db.py                  # Unit tests for SQLite DB & deletions
 │   ├── test_ats_parser.py          # Unit tests for ATS platform detection
 │   └── test_job_filter.py          # Unit tests for deterministic filters
-├── gui.py                          # Linux GTK4 entrypoint
-├── win_gui.py                      # Windows CustomTkinter entrypoint
-├── ats_scraper.py                  # Direct ATS scraper entrypoint
-├── rank_internships.py             # AI ranking CLI entrypoint
-├── job_filter.py                   # Deterministic filter CLI entrypoint
+├── main.py                         # Unified CLI / GUI launcher entrypoint
+├── gui.py                          # Linux GTK4 launcher shim
+├── win_gui.py                      # Windows CustomTkinter launcher shim
+├── ats_scraper.py                  # Direct ATS scraper launcher shim
+├── rank_internships.py             # AI ranking CLI launcher shim
+├── job_filter.py                   # Deterministic filter CLI launcher shim
 └── requirements.txt
 ```
 

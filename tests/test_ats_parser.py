@@ -9,7 +9,10 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from src.scrapers.ats_parser import parse_ats_info, clean_company_name_from_title
+try:
+    from src.scrapers.ats_parser import parse_ats_info, clean_company_name_from_title
+except ImportError:
+    from scrapers.ats_parser import parse_ats_info, clean_company_name_from_title
 
 
 class TestATSParser(unittest.TestCase):
