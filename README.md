@@ -138,13 +138,39 @@ By tweaking these guardrails, the AI will accurately isolate your best-fit job o
 
 ---
 
-## File Structure
+## Project Architecture & Structure
 
-- `gui.py`: The GTK4 application dashboard tying the database, scraper, and AI together.
-- `intern_scraper.py`: The Playwright bot that scrapes Google searches for job board links.
-- `rank_internships.py`: Uses Llama 3.1 via Ollama to download job URLs, read textual descriptions, and rank them.
-- `jobs_db.json`: The local SQLite-like JSON database where all your applications and URLs are stored. (Auto-generated).
-- `setup.md`: Original quickstart instructions.
+The codebase is organized into clean, modular packages under `src/` with root entrypoints for seamless execution and backwards compatibility:
+
+```
+web-scraper-job-search/
+├── src/
+│   ├── core/
+│   │   ├── db.py                   # SQLite engine, schemas, migrations, tombstones
+│   │   └── job_filter.py           # Deterministic pre-filter (US, Senior, Non-Tech)
+│   ├── scrapers/
+│   │   ├── ats_parser.py           # Deterministic ATS URL & platform detection
+│   │   ├── ats_scraper.py          # High-speed direct ATS scraping pool
+│   │   ├── intern_scraper.py       # Google Playwright scraper (Medium)
+│   │   ├── intern_scraper_fast.py  # Google Playwright scraper (Fast)
+│   │   └── intern_scraper_overnight.py # Google Playwright scraper (Overnight)
+│   ├── ranking/
+│   │   ├── rank_internships.py     # Groq LLM AI ranker with key rotation
+│   │   └── reset_ranks.py          # Utility to reset ranks for re-evaluation
+│   └── ui/
+│       ├── gui_gtk.py              # Linux GTK4 GUI dashboard
+│       └── gui_ctk.py              # Windows CustomTkinter GUI dashboard
+├── tests/
+│   ├── test_db.py                  # Unit tests for SQLite DB & deletions
+│   ├── test_ats_parser.py          # Unit tests for ATS platform detection
+│   └── test_job_filter.py          # Unit tests for deterministic filters
+├── gui.py                          # Linux GTK4 entrypoint
+├── win_gui.py                      # Windows CustomTkinter entrypoint
+├── ats_scraper.py                  # Direct ATS scraper entrypoint
+├── rank_internships.py             # AI ranking CLI entrypoint
+├── job_filter.py                   # Deterministic filter CLI entrypoint
+└── requirements.txt
+```
 
 ---
 

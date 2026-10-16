@@ -1,0 +1,78 @@
+"""
+Unit tests for core database functionality and persistent tombstone tables.
+"""
+import unittest
+import sqlite3
+import os
+import sys
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from src.core.db import (
+    init_db, insert_or_ignore_job, save_company,
+    get_all_companies, get_company_stats, delete_company,
+    delete_jobs_by_rank, get_all_urls
+)
+
+
+class TestDatabase(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        init_db(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_company_lifecycle(self):
+        added = save_company("Stripe", "greenhouse", "stripe", "https://boards.greenhouse.io/stripe", conn=self.conn)
+        self.assertTrue(added)
+
+        # Duplicate company should not be added
+        dup = save_company("Stripe Inc", "greenhouse", "stripe", "https://boards.greenhouse.io/stripe", conn=self.conn)
+        self.assertFalse(dup)
+
+        comps = get_all_companies(conn=self.conn)
+        self.assertEqual(len(comps), 1)
+        self.assertEqual(comps[0]["name"], "Stripe Inc")
+
+        stats = get_company_stats(conn=self.conn)
+        self.assertEqual(stats["total_companies"], 1)
+
+        # Delete company
+        deleted = delete_company(comps[0]["id"], conn=self.conn)
+        self.assertEqual(deleted, 1)
+        self.assertEqual(len(get_all_companies(conn=self.conn)), 0)
+
+    def test_job_tombstone_archiving(self):
+        url = "https://boards.greenhouse.io/stripe/jobs/101"
+        inserted = insert_or_ignore_job(
+            url=url,
+            title="Software Engineer Intern",
+            status="New",
+            rank="UNKNOWN",
+            conn=self.conn
+        )
+        self.assertTrue(inserted)
+        self.assertIn(url, get_all_urls(conn=self.conn))
+
+        # Delete job by rank
+        self.conn.execute("UPDATE jobs SET rank='IGNORE' WHERE url=?", (url,))
+        self.conn.commit()
+        deleted = delete_jobs_by_rank("IGNORE", conn=self.conn)
+        self.assertEqual(deleted, 1)
+
+        # Must not be in jobs table
+        row = self.conn.execute("SELECT * FROM jobs WHERE url=?", (url,)).fetchone()
+        self.assertIsNone(row)
+
+        # Must be archived in deleted_urls to prevent resurrection
+        tombstone = self.conn.execute("SELECT * FROM deleted_urls WHERE url=?", (url,)).fetchone()
+        self.assertIsNotNone(tombstone)
+        self.assertIn(url, get_all_urls(conn=self.conn))
+
+
+if __name__ == "__main__":
+    unittest.main()

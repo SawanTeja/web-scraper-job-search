@@ -1,11 +1,31 @@
-*.csv
+# Gemini & IDE configs
+.gemini/
+.vscode/
+.idea/
+
+# Environment & Dependencies
+scraper_env/
+.env
+venv/
+env/
+
+# Python cache & artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Databases & local data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 jobs_db.json
 prompts.json
 indeed_db.json
-jobs_db.sqlite
-jobs_db.sqlite-shm
-jobs_db.sqlite-wal
-.env
-__pycache__/
+*.csv
+
+# Logs & temporary runtime files
+*.log
+error.log
+stop.flag
 browser_cache/
-scraper_env/
