@@ -69,18 +69,49 @@ def save_db(db):
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(db, f, indent=4)
 
+from ats_parser import parse_ats_info
+from db import save_company, get_conn, insert_or_ignore_job
+
 def add_job_to_db(db, title, url):
     """Add a job directly to the DB if it doesn't already exist. Returns True if new."""
     if url in db:
         return False
+    
+    # Fast regex check only (no network delay during Google scrape)
+    ats_info = parse_ats_info(url, title=title, resolve_google=False)
+    comp_name = ats_info.get("company_name") if ats_info else None
+    plat = ats_info.get("ats_platform") if ats_info else None
+    if ats_info:
+        try:
+            save_company(
+                name=comp_name,
+                ats_platform=plat,
+                identifier=ats_info["identifier"],
+                career_url=ats_info["career_url"]
+            )
+        except Exception:
+            pass
+
     db[url] = {
         "title": title,
         "status": "New",
         "rank": "UNKNOWN",
         "reason": "",
-        "added_at": datetime.now(timezone.utc).isoformat()
+        "added_at": datetime.now(timezone.utc).isoformat(),
+        "company": comp_name,
+        "ats_platform": plat
     }
     save_db(db)
+
+    # Mirror to SQLite
+    try:
+        conn = get_conn()
+        insert_or_ignore_job(url, title, conn, company=comp_name, ats_platform=plat)
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
     return True
 
 # --- Anti-CAPTCHA Mouse and Scroll Function ---

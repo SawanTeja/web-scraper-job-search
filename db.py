@@ -28,24 +28,55 @@ def get_conn():
 # ──────────────────────────────────────────────
 #  Schema
 # ──────────────────────────────────────────────
+#  Schema
+# ──────────────────────────────────────────────
 def init_db(conn=None):
-    """Create the jobs table if it doesn't exist."""
+    """Create the jobs and companies tables if they don't exist, and add new columns."""
     close_after = conn is None
     if conn is None:
         conn = get_conn()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
-            url        TEXT PRIMARY KEY,
-            title      TEXT,
-            status     TEXT DEFAULT 'New',
-            rank       TEXT DEFAULT 'UNKNOWN',
-            reason     TEXT DEFAULT '',
-            added_at   TEXT,
-            details    TEXT DEFAULT NULL   -- JSON blob for AI-extracted fields
+            url          TEXT PRIMARY KEY,
+            title        TEXT,
+            status       TEXT DEFAULT 'New',
+            rank         TEXT DEFAULT 'UNKNOWN',
+            reason       TEXT DEFAULT '',
+            added_at     TEXT,
+            details      TEXT DEFAULT NULL,   -- JSON blob for AI-extracted fields
+            company      TEXT DEFAULT NULL,
+            ats_platform TEXT DEFAULT NULL
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON jobs(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_rank   ON jobs(rank)")
+
+    # Ensure optional columns exist if upgrading an older DB
+    try:
+        conn.execute("ALTER TABLE jobs ADD COLUMN company TEXT DEFAULT NULL")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE jobs ADD COLUMN ats_platform TEXT DEFAULT NULL")
+    except Exception:
+        pass
+
+    # Companies table for direct ATS scraping
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS companies (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            name            TEXT,
+            ats_platform    TEXT NOT NULL,
+            identifier      TEXT NOT NULL,
+            career_url      TEXT NOT NULL,
+            last_scraped_at TEXT DEFAULT NULL,
+            job_count       INTEGER DEFAULT 0,
+            created_at      TEXT,
+            UNIQUE(ats_platform, identifier)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_ats ON companies(ats_platform)")
+
     conn.commit()
     if close_after:
         conn.close()
@@ -93,10 +124,153 @@ def load_db(conn=None):
 
 
 # ──────────────────────────────────────────────
+#  Company helpers
+# ──────────────────────────────────────────────
+def save_company(name, ats_platform, identifier, career_url, conn=None):
+    """
+    Insert a company and its ATS platform.
+    Strictly prevents duplicates: if (ats_platform, identifier) or career_url already exists,
+    it will never insert a duplicate company entry.
+    """
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+
+    identifier_norm = identifier.lower().strip()
+    career_url_norm = career_url.strip().rstrip("/")
+
+    # Check if already exists by (ats_platform, identifier) OR career_url
+    row = conn.execute(
+        "SELECT id, name FROM companies WHERE (ats_platform=? AND identifier=?) OR career_url=?",
+        (ats_platform, identifier_norm, career_url_norm)
+    ).fetchone()
+
+    if row:
+        # Already exists — update name if new name is cleaner, but never duplicate
+        if name and (not row["name"] or row["name"] == identifier_norm.title()):
+            conn.execute("UPDATE companies SET name=? WHERE id=?", (name, row["id"]))
+            conn.commit()
+        if close_after:
+            conn.close()
+        return False
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("""
+        INSERT INTO companies (name, ats_platform, identifier, career_url, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (name or identifier_norm.title(), ats_platform, identifier_norm, career_url_norm, now))
+    conn.commit()
+    if close_after:
+        conn.close()
+    return True
+
+
+def get_all_companies(conn=None):
+    """Return all saved companies as a list of dicts."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    rows = conn.execute("SELECT * FROM companies ORDER BY name ASC").fetchall()
+    result = [dict(r) for r in rows]
+    if close_after:
+        conn.close()
+    return result
+
+
+def get_company_count(conn=None):
+    """Return the total number of saved companies."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    row = conn.execute("SELECT count(*) as cnt FROM companies").fetchone()
+    count = row["cnt"] if row else 0
+    if close_after:
+        conn.close()
+    return count
+
+
+def update_company_scraped(ats_platform, identifier, job_count, conn=None):
+    """Update last_scraped_at timestamp and job count for a company."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("""
+        UPDATE companies
+        SET last_scraped_at = ?, job_count = ?
+        WHERE ats_platform = ? AND identifier = ?
+    """, (now, job_count, ats_platform, identifier))
+    conn.commit()
+    if close_after:
+        conn.close()
+
+
+def extract_companies_from_existing_jobs(conn=None, max_workers=25, limit=None):
+    """
+    Backfill utility: inspects jobs already in SQLite, resolves redirect URLs,
+    extracts company & ATS info, and populates the companies table.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from ats_parser import parse_ats_info
+
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+
+    query = "SELECT url, title, details FROM jobs"
+    if limit:
+        query += f" LIMIT {int(limit)}"
+    rows = conn.execute(query).fetchall()
+
+    def process_row(r):
+        url, title, det_raw = r["url"], r["title"], r["details"]
+        human_name = None
+        if det_raw:
+            try:
+                det = json.loads(det_raw)
+                human_name = det.get("company")
+            except Exception:
+                pass
+
+        info = parse_ats_info(url, title=title or human_name, resolve_google=True)
+        if info:
+            if human_name:
+                info["company_name"] = human_name
+            return url, info
+        return url, None
+
+    print(f"🔄 Scanning {len(rows)} jobs to extract saved companies...")
+    saved_count = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for orig_url, info in executor.map(process_row, rows):
+            if info:
+                save_company(
+                    name=info["company_name"],
+                    ats_platform=info["ats_platform"],
+                    identifier=info["identifier"],
+                    career_url=info["career_url"],
+                    conn=conn
+                )
+                # Also tag the job row if not already tagged
+                conn.execute(
+                    "UPDATE jobs SET company=?, ats_platform=? WHERE url=?",
+                    (info["company_name"], info["ats_platform"], orig_url)
+                )
+                saved_count += 1
+
+    conn.commit()
+    total_companies = get_company_count(conn)
+    print(f"✅ Extracted companies from {saved_count} jobs. Total unique companies saved: {total_companies}")
+    if close_after:
+        conn.close()
+    return total_companies
+
+
+# ──────────────────────────────────────────────
 #  Write helpers
 # ──────────────────────────────────────────────
 def insert_or_ignore_job(url, title, conn, status="New", rank="UNKNOWN",
-                          reason="", added_at=None):
+                          reason="", added_at=None, company=None, ats_platform=None):
     """
     Insert a new job row. Does nothing if the URL already exists.
     Returns True if a new row was inserted, False otherwise.
@@ -105,10 +279,10 @@ def insert_or_ignore_job(url, title, conn, status="New", rank="UNKNOWN",
         added_at = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
         """
-        INSERT OR IGNORE INTO jobs (url, title, status, rank, reason, added_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO jobs (url, title, status, rank, reason, added_at, company, ats_platform)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (url, title, status, rank, reason, added_at)
+        (url, title, status, rank, reason, added_at, company, ats_platform)
     )
     return cur.rowcount > 0
 
@@ -116,7 +290,7 @@ def insert_or_ignore_job(url, title, conn, status="New", rank="UNKNOWN",
 def update_job(url, conn, **kwargs):
     """
     Update one or more columns for an existing job row.
-    Accepted kwargs: title, status, rank, reason, added_at, details.
+    Accepted kwargs: title, status, rank, reason, added_at, details, company, ats_platform.
     'details' may be a dict (will be JSON-serialised) or a string.
     """
     if not kwargs:
@@ -144,8 +318,8 @@ def save_db(db_dict, conn=None):
         conn.execute(
             """
             INSERT OR REPLACE INTO jobs
-                (url, title, status, rank, reason, added_at, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (url, title, status, rank, reason, added_at, details, company, ats_platform)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 url,
@@ -155,6 +329,8 @@ def save_db(db_dict, conn=None):
                 data.get("reason", ""),
                 data.get("added_at", datetime.now(timezone.utc).isoformat()),
                 details,
+                data.get("company"),
+                data.get("ats_platform"),
             )
         )
     conn.commit()

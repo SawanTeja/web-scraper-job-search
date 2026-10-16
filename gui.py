@@ -10,7 +10,7 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib, Pango
 
 # SQLite DB helper
-from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job
+from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job, get_company_count
 
 DB_FILE = "jobs_db.sqlite"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
@@ -80,6 +80,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.scrape_btn.add_css_class("suggested-action")
         self.scrape_btn.connect("clicked", self.on_scrape_clicked)
         header_box.append(self.scrape_btn)
+
+        self.scrape_ats_btn = Gtk.Button(label="🏢 Scrape Companies")
+        self.scrape_ats_btn.add_css_class("suggested-action")
+        self.scrape_ats_btn.connect("clicked", self.on_scrape_ats_clicked)
+        header_box.append(self.scrape_ats_btn)
 
         self.refresh_btn = Gtk.Button(label="Refresh Everything")
         self.refresh_btn.connect("clicked", self.on_refresh_clicked)
@@ -904,6 +909,41 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.status_label.set_text("Scraping finished!")
         else:
             self.status_label.set_text("Scraping failed.")
+
+    def on_scrape_ats_clicked(self, button):
+        self.status_label.set_text("Scraping saved company ATS boards... (Check terminal output for progress)")
+        self.scrape_ats_btn.set_sensitive(False)
+        thread = threading.Thread(target=self.run_ats_scraper_thread)
+        thread.daemon = True
+        thread.start()
+
+    def run_ats_scraper_thread(self):
+        import time
+        try:
+            venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
+            if not os.path.exists(venv_python):
+                venv_python = "python3"
+
+            process = subprocess.Popen([venv_python, "ats_scraper.py"], cwd=os.getcwd())
+
+            while process.poll() is None:
+                time.sleep(5)
+                GLib.idle_add(self.periodic_sync_and_rank)
+
+            GLib.idle_add(self.on_ats_scrape_finished, process.returncode == 0)
+        except Exception as e:
+            print(f"Error running ATS scraper: {e}")
+            GLib.idle_add(self.on_ats_scrape_finished, False)
+
+    def on_ats_scrape_finished(self, success):
+        self.scrape_ats_btn.set_sensitive(True)
+        if success:
+            self.jobs_db = load_db()
+            self.refresh_ui()
+            comp_cnt = get_company_count()
+            self.status_label.set_text(f"ATS Scraping finished! ({comp_cnt} companies saved)")
+        else:
+            self.status_label.set_text("ATS Scraping failed.")
 
     # --- LLM RANKING LOGIC ---
     def on_reset_rank_clicked(self, button):

@@ -7,7 +7,8 @@ from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
 # SQLite DB helper (replaces all json load/save logic)
-from db import get_conn, init_db, insert_or_ignore_job, get_all_urls
+from db import get_conn, init_db, insert_or_ignore_job, get_all_urls, save_company
+from ats_parser import parse_ats_info
 
 # The expanded list of ATS, Portals, and Career Pages
 SITES = [
@@ -194,8 +195,27 @@ async def scrape_google_jobs():
                                 final_url = clean_url(raw_url)
                                 if final_url not in unique_jobs:
                                     unique_jobs.add(final_url)
-                                    # Write directly to SQLite — no dict, no JSON dump
-                                    inserted = insert_or_ignore_job(final_url, title, conn)
+                                    
+                                    # Fast regex check only (no network delay during Google scrape)
+                                    ats_info = parse_ats_info(final_url, title=title, resolve_google=False)
+                                    comp_name = ats_info.get("company_name") if ats_info else None
+                                    plat = ats_info.get("ats_platform") if ats_info else None
+                                    
+                                    if ats_info:
+                                        save_company(
+                                            name=comp_name,
+                                            ats_platform=plat,
+                                            identifier=ats_info["identifier"],
+                                            career_url=ats_info["career_url"],
+                                            conn=conn
+                                        )
+
+                                    # Write directly to SQLite
+                                    inserted = insert_or_ignore_job(
+                                        final_url, title, conn,
+                                        company=comp_name,
+                                        ats_platform=plat
+                                    )
                                     if inserted:
                                         new_jobs_found += 1
                                         new_jobs_added += 1

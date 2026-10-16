@@ -51,27 +51,40 @@ GROQ_API_KEY=your_actual_api_key_here
 
 ## How to Use
 
-### 1. Using the Scraper ONLY (No ML / No GPU Required!)
-If you just want to automate the job search and fetch links without AI ranking, you can simply run the scraper script! It requires zero heavy ML hardware and works on any basic laptop.
+### 1. Using the Scrapers
+- **Direct ATS Scraper (Fastest, No Google rate limits)**:
+  Scrapes saved companies' career boards directly across Greenhouse, Lever, Ashby, SmartRecruiters, Workday, etc.:
+  ```bash
+  python ats_scraper.py
+  ```
+  *(To backfill companies from your existing database, run `python ats_scraper.py --backfill`)*
 
-```bash
-python intern_scraper.py
-```
-This will silently crawl for new roles and save all links directly into the `jobs_db.json` file. You can then open this JSON file to view your fresh job leads!
+- **Google Discovery Scraper**:
+  Discovers new companies and job links via Google searches and automatically saves the company ATS platform for direct future scraping:
+  ```bash
+  python intern_scraper_fast.py  # Fast
+  python intern_scraper.py       # Medium
+  ```
 
 ### 2. The Dashboard (GUI)
 Run the graphical interface to manage everything from one place:
 
 ```bash
+# On Linux (GTK4):
 python gui.py
-```
-- **Scrape Jobs**: Click the "Scrape Jobs" button to start fetching new roles in the background.
-- **AI Rank/Sort Jobs**: Once jobs are found, head to the "Priority Sorting" tab and click the AI Rank button to evaluate new listings using Llama 3.1.
-- **Track Status**: Move jobs between `New`, `Applied`, `Ongoing`, `Rejected`, and `NA`.
 
-### 2. Running Scripts Manually
-Alternatively, you can run the sub-scripts via terminal:
-- **Scraper**: `python intern_scraper.py`
+# On Windows:
+python win_gui.py
+```
+- **Scrape Companies**: Click the "🏢 Scrape Companies" button to instantly scrape all saved companies' ATS boards directly (bypasses Google rate limits).
+- **Scrape Jobs**: Click "Scrape Jobs" to run the Google discovery scraper.
+- **AI Rank/Sort Jobs**: Head to the "Priority Sorting" tab and click the AI Rank button to evaluate fresh job listings using LLM.
+- **Track Status**: Move jobs between `New`, `Applied`, `Ongoing`, `Rejected`, and `NA` (with auto-expiry of stale 'New' jobs after 24 hours).
+
+### 3. Running Scripts Manually
+Alternatively, you can run individual scripts via terminal:
+- **ATS Scraper**: `python ats_scraper.py`
+- **Google Scraper**: `python intern_scraper_fast.py`
 - **Ranker**: `python rank_internships.py`
 
 ---

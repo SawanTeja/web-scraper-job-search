@@ -8,7 +8,7 @@ import tkinter as tk
 from datetime import datetime, timezone, timedelta
 import customtkinter as ctk
 
-from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job
+from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job, get_company_count
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -84,6 +84,9 @@ class JobAppWindow(ctk.CTk):
 
         self.scrape_btn = ctk.CTkButton(self.header_frame, text="Scrape Jobs", command=self.on_scrape_clicked, fg_color="#2b6b3e", hover_color="#215230")
         self.scrape_btn.pack(side="left", padx=5)
+
+        self.scrape_ats_btn = ctk.CTkButton(self.header_frame, text="🏢 Scrape Companies", command=self.on_scrape_ats_clicked, fg_color="#2b6b3e", hover_color="#215230")
+        self.scrape_ats_btn.pack(side="left", padx=5)
 
         self.refresh_btn = ctk.CTkButton(self.header_frame, text="Refresh Everything", command=self.on_refresh_clicked)
         self.refresh_btn.pack(side="left", padx=5)
@@ -702,6 +705,48 @@ class JobAppWindow(ctk.CTk):
             self.status_label.configure(text="Scraping finished!")
         else:
             self.status_label.configure(text="Scraping failed.")
+
+    def on_scrape_ats_clicked(self):
+        self.status_label.configure(text="Scraping saved company ATS boards...")
+        self.scrape_ats_btn.configure(state="disabled")
+        thread = threading.Thread(target=self.run_ats_scraper_thread)
+        thread.daemon = True
+        thread.start()
+
+    def run_ats_scraper_thread(self):
+        import time
+        import sys
+        try:
+            venv_python = None
+            possible_paths = ["Scripts/python.exe"] if os.name == "nt" else ["bin/python"]
+            for path in possible_paths:
+                full_path = os.path.join(os.getcwd(), "scraper_env", *path.split("/"))
+                if os.path.exists(full_path):
+                    venv_python = full_path
+                    break
+            if not venv_python:
+                venv_python = sys.executable
+
+            process = subprocess.Popen([venv_python, "ats_scraper.py"], cwd=os.getcwd())
+
+            while process.poll() is None:
+                time.sleep(5)
+                self.after(0, self.periodic_sync_and_rank)
+
+            self.after(0, lambda: self.on_ats_scrape_finished(process.returncode == 0))
+        except Exception as e:
+            print(f"Error running ATS scraper: {e}")
+            self.after(0, lambda: self.on_ats_scrape_finished(False))
+
+    def on_ats_scrape_finished(self, success):
+        self.scrape_ats_btn.configure(state="normal")
+        if success:
+            self.jobs_db = load_db()
+            self.refresh_ui()
+            comp_cnt = get_company_count()
+            self.status_label.configure(text=f"ATS Scraping finished! ({comp_cnt} companies saved)")
+        else:
+            self.status_label.configure(text="ATS Scraping failed.")
 
     def on_reset_rank_clicked(self):
         count = 0
