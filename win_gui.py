@@ -91,6 +91,9 @@ class JobAppWindow(ctk.CTk):
         self.refresh_btn = ctk.CTkButton(self.header_frame, text="Refresh Everything", command=self.on_refresh_clicked)
         self.refresh_btn.pack(side="left", padx=5)
 
+        self.fast_filter_btn = ctk.CTkButton(self.header_frame, text="⚡ Filter US/Senior", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
+        self.fast_filter_btn.pack(side="left", padx=5)
+
         self.del_ignore_btn = ctk.CTkButton(self.header_frame, text="🗑 Delete IGNORE", command=self.on_delete_ignore_clicked, fg_color="#b32929", hover_color="#8a1f1f")
         self.del_ignore_btn.pack(side="left", padx=5)
 
@@ -142,7 +145,10 @@ class JobAppWindow(ctk.CTk):
 
         self.reset_rank_btn = ctk.CTkButton(self.prio_header, text="Reset Ranks", command=self.on_reset_rank_clicked, fg_color="#b32929", hover_color="#8a1f1f")
         self.reset_rank_btn.pack(side="left", padx=5)
-        
+
+        self.prio_filter_btn = ctk.CTkButton(self.prio_header, text="⚡ Filter US/Senior", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
+        self.prio_filter_btn.pack(side="left", padx=5)
+
         self.sort_status_label = ctk.CTkLabel(self.prio_header, text="")
         self.sort_status_label.pack(side="left", padx=5)
         
@@ -745,8 +751,43 @@ class JobAppWindow(ctk.CTk):
             self.refresh_ui()
             comp_cnt = get_company_count()
             self.status_label.configure(text=f"ATS Scraping finished! ({comp_cnt} companies saved)")
-        else:
-            self.status_label.configure(text="ATS Scraping failed.")
+    # --- DETERMINISTIC PRE-FILTER LOGIC (ZERO TOKENS) ---
+    def on_fast_filter_clicked(self):
+        self.status_label.configure(text="⚡ Running fast deterministic pre-filter...")
+        self.fast_filter_btn.configure(state="disabled")
+        if hasattr(self, 'prio_filter_btn'):
+            self.prio_filter_btn.configure(state="disabled")
+
+        def worker():
+            try:
+                from job_filter import apply_deterministic_filter_to_db
+                stats = apply_deterministic_filter_to_db(only_unknown=False, move_to_na=True)
+                def update_gui():
+                    self.jobs_db = load_db()
+                    self.page_offsets["New"] = self.page_size
+                    self.refresh_ui()
+                    self.fast_filter_btn.configure(state="normal")
+                    if hasattr(self, 'prio_filter_btn'):
+                        self.prio_filter_btn.configure(state="normal")
+                    fresh_count = sum(1 for d in self.jobs_db.values() if d.get('status') == 'New')
+                    msg = (f"⚡ Filtered out {stats['total_ignored']} jobs "
+                           f"({stats.get('us_ignored', 0)} US, {stats.get('senior_ignored', 0)} Senior/Lead, {stats.get('non_tech_ignored', 0)} Non-tech) "
+                           f"-> Moved to NA! | Fresh remaining: {fresh_count}")
+                    self.status_label.configure(text=msg)
+                    if hasattr(self, 'sort_status_label'):
+                        self.sort_status_label.configure(text=msg)
+                self.after(0, update_gui)
+            except Exception as e:
+                print(f"Error in deterministic filter worker: {e}")
+                def on_err():
+                    self.fast_filter_btn.configure(state="normal")
+                    if hasattr(self, 'prio_filter_btn'):
+                        self.prio_filter_btn.configure(state="normal")
+                    self.status_label.configure(text=f"⚠️ Filter error: {e}")
+                self.after(0, on_err)
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
 
     def on_reset_rank_clicked(self):
         count = 0

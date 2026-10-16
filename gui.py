@@ -90,6 +90,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.refresh_btn.connect("clicked", self.on_refresh_clicked)
         header_box.append(self.refresh_btn)
 
+        self.fast_filter_btn = Gtk.Button(label="⚡ Filter US/Senior")
+        self.fast_filter_btn.connect("clicked", self.on_fast_filter_clicked)
+        header_box.append(self.fast_filter_btn)
+
 
 
         # Delete IGNORE jobs button
@@ -207,6 +211,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.reset_rank_btn.add_css_class("destructive-action")
         self.reset_rank_btn.connect("clicked", self.on_reset_rank_clicked)
         priority_header.append(self.reset_rank_btn)
+
+        self.prio_filter_btn = Gtk.Button(label="⚡ Filter US/Senior")
+        self.prio_filter_btn.connect("clicked", self.on_fast_filter_clicked)
+        priority_header.append(self.prio_filter_btn)
 
         self.sort_status_label = Gtk.Label(label="")
         priority_header.append(self.sort_status_label)
@@ -942,8 +950,43 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.refresh_ui()
             comp_cnt = get_company_count()
             self.status_label.set_text(f"ATS Scraping finished! ({comp_cnt} companies saved)")
-        else:
-            self.status_label.set_text("ATS Scraping failed.")
+    # --- DETERMINISTIC PRE-FILTER LOGIC (ZERO TOKENS) ---
+    def on_fast_filter_clicked(self, button):
+        self.status_label.set_text("⚡ Running fast deterministic pre-filter...")
+        self.fast_filter_btn.set_sensitive(False)
+        if hasattr(self, 'prio_filter_btn'):
+            self.prio_filter_btn.set_sensitive(False)
+
+        def worker():
+            try:
+                from job_filter import apply_deterministic_filter_to_db
+                stats = apply_deterministic_filter_to_db(only_unknown=False, move_to_na=True)
+                def update_gui():
+                    self.jobs_db = load_db()
+                    self.page_offsets["New"] = self.page_size
+                    self.refresh_ui()
+                    self.fast_filter_btn.set_sensitive(True)
+                    if hasattr(self, 'prio_filter_btn'):
+                        self.prio_filter_btn.set_sensitive(True)
+                    fresh_count = sum(1 for d in self.jobs_db.values() if d.get('status') == 'New')
+                    msg = (f"⚡ Filtered out {stats['total_ignored']} jobs "
+                           f"({stats.get('us_ignored', 0)} US, {stats.get('senior_ignored', 0)} Senior/Lead, {stats.get('non_tech_ignored', 0)} Non-tech) "
+                           f"-> Moved to NA! | Fresh remaining: {fresh_count}")
+                    self.status_label.set_text(msg)
+                    if hasattr(self, 'sort_status_label'):
+                        self.sort_status_label.set_text(msg)
+                GLib.idle_add(update_gui)
+            except Exception as e:
+                print(f"Error in deterministic filter worker: {e}")
+                def on_err():
+                    self.fast_filter_btn.set_sensitive(True)
+                    if hasattr(self, 'prio_filter_btn'):
+                        self.prio_filter_btn.set_sensitive(True)
+                    self.status_label.set_text(f"⚠️ Filter error: {e}")
+                GLib.idle_add(on_err)
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
 
     # --- LLM RANKING LOGIC ---
     def on_reset_rank_clicked(self, button):

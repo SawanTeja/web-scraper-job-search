@@ -77,15 +77,17 @@ python gui.py
 python win_gui.py
 ```
 - **Scrape Companies**: Click the "🏢 Scrape Companies" button to instantly scrape all saved companies' ATS boards directly (bypasses Google rate limits).
+- **Filter US/Senior Jobs**: Click "⚡ Filter US/Senior" to instantly auto-ignore US-based, Senior/Lead/Manager, and non-tech roles in <1s (uses 0 AI tokens!).
 - **Scrape Jobs**: Click "Scrape Jobs" to run the Google discovery scraper.
-- **AI Rank/Sort Jobs**: Head to the "Priority Sorting" tab and click the AI Rank button to evaluate fresh job listings using LLM.
+- **AI Rank/Sort Jobs**: Head to the "Priority Sorting" tab and click the AI Rank button to evaluate remaining fresh candidate listings using LLM.
 - **Track Status**: Move jobs between `New`, `Applied`, `Ongoing`, `Rejected`, and `NA` (with auto-expiry of stale 'New' jobs after 24 hours).
 
 ### 3. Running Scripts Manually
 Alternatively, you can run individual scripts via terminal:
-- **ATS Scraper**: `python ats_scraper.py`
+- **Fast Deterministic Pre-Filter (0 AI tokens)**: `python job_filter.py`
+- **ATS Direct Scraper**: `python ats_scraper.py`
 - **Google Scraper**: `python intern_scraper_fast.py`
-- **Ranker**: `python rank_internships.py`
+- **AI Ranker**: `python rank_internships.py`
 
 ---
 

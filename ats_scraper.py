@@ -207,9 +207,12 @@ def fetch_breezy_jobs(identifier: str) -> list[dict]:
             items = json.loads(r.read().decode("utf-8"))
             for item in items:
                 jid = item.get("id")
+                loc_dict = item.get("location") or {}
+                loc_name = loc_dict.get("name") or loc_dict.get("city") or ""
                 results.append({
                     "title": item.get("name", "Unknown Title").strip(),
-                    "url": f"https://{identifier}.breezy.hr/p/{jid}"
+                    "url": f"https://{identifier}.breezy.hr/p/{jid}",
+                    "location": loc_name or ""
                 })
     except Exception:
         pass
@@ -225,9 +228,11 @@ def fetch_recruitee_jobs(identifier: str) -> list[dict]:
         with urllib.request.urlopen(req, timeout=8) as r:
             data = json.loads(r.read().decode("utf-8"))
             for item in data.get("offers", []):
+                loc = item.get("location") or item.get("city") or ""
                 results.append({
                     "title": item.get("title", "Unknown Title").strip(),
-                    "url": item.get("careers_url", "")
+                    "url": item.get("careers_url", ""),
+                    "location": loc or ""
                 })
     except Exception:
         pass
@@ -248,9 +253,14 @@ def fetch_workable_jobs(identifier: str) -> list[dict]:
             data = json.loads(r.read().decode("utf-8"))
             for item in data.get("results", []):
                 shortcode = item.get("shortcode", "")
+                loc_dict = item.get("location") or {}
+                city = loc_dict.get("city", "") if isinstance(loc_dict, dict) else ""
+                country = loc_dict.get("country", "") if isinstance(loc_dict, dict) else ""
+                loc = f"{city}, {country}".strip(", ")
                 results.append({
                     "title": item.get("title", "Unknown Title").strip(),
-                    "url": f"https://apply.workable.com/{identifier}/j/{shortcode}/"
+                    "url": f"https://apply.workable.com/{identifier}/j/{shortcode}/",
+                    "location": loc or ""
                 })
     except Exception:
         pass
@@ -366,16 +376,27 @@ def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
                     continue
 
                 known_urls.add(url)
+                location = job.get("location", "")
+                
+                # Check deterministic ignore (US-based, Senior/Lead, Non-tech)
+                from job_filter import evaluate_deterministic_ignore
+                should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
+                initial_rank = "IGNORE" if should_ignore else "UNKNOWN"
+                initial_status = "NA" if should_ignore else "New"
+                initial_reason = f"[Deterministic] {ignore_reason}" if should_ignore else ""
+                details_blob = {"location": location} if location else None
+
                 inserted = insert_or_ignore_job(
                     url=url,
                     title=f"{comp_name} - {title}" if comp_name not in title else title,
                     conn=conn,
-                    status="New",
-                    rank="UNKNOWN",
-                    reason="",
+                    status=initial_status,
+                    rank=initial_rank,
+                    reason=initial_reason,
                     added_at=now_iso,
                     company=comp_name,
-                    ats_platform=platform
+                    ats_platform=platform,
+                    details=details_blob
                 )
                 if inserted:
                     new_for_company += 1

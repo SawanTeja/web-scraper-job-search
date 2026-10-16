@@ -298,6 +298,12 @@ async def process_and_rank_jobs():
     conn = get_conn()
     init_db(conn)
 
+    # 1. Deterministic Pre-Filter: eliminates US-based, Senior, and Non-tech roles (0 AI tokens)
+    from job_filter import apply_deterministic_filter_to_db, evaluate_deterministic_ignore
+    filter_stats = apply_deterministic_filter_to_db(conn=conn, only_unknown=True)
+    if filter_stats["total_ignored"] > 0:
+        print(f"🧹 Deterministic Pre-Filter: Auto-ignored {filter_stats['total_ignored']} jobs ({filter_stats['senior_ignored']} Senior, {filter_stats['non_tech_ignored']} Non-tech, {filter_stats['us_ignored']} US) - 0 tokens used!")
+
     jobs_db = load_db(conn)
     fresh_jobs = {link: data for link, data in jobs_db.items()
                   if data.get("status") == "New" and data.get("rank", "UNKNOWN") in ["UNKNOWN", "ERROR"]}
@@ -307,7 +313,7 @@ async def process_and_rank_jobs():
         conn.close()
         return
 
-    print(f"🚀 Starting JD extraction and AI ranking for {len(fresh_jobs)} fresh jobs...\n")
+    print(f"🚀 Starting JD extraction and AI ranking for {len(fresh_jobs)} fresh candidate jobs...\n")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -333,9 +339,11 @@ async def process_and_rank_jobs():
             title = data.get("title", "Unknown")
             print(f"[{index + 1}/{len(fresh_jobs)}] Extracting: {title}")
 
-            if is_senior_role(title):
-                print(f"   ⏭️ Skipped (Senior/SDE II/III detected in title)\n")
-                update_job(url, conn, rank="IGNORE", reason="Senior/SDE II/III role detected in title.")
+            # Deterministic pre-check on title (Senior, SDE 2/3, Non-tech, US)
+            should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title)
+            if should_ignore:
+                print(f"   ⏭️ Skipped ([Deterministic] {ignore_reason})\n")
+                update_job(url, conn, rank="IGNORE", reason=f"[Deterministic] {ignore_reason}")
                 conn.commit()
                 continue
                 
@@ -368,8 +376,10 @@ async def process_and_rank_jobs():
                     if len(jd_text) < 100:
                         return "ERROR", "Failed to extract meaningful text.", None
                     else:
-                        if is_senior_role(jd_text):
-                            return "IGNORE", "Senior/SDE II/III role detected in job description.", None
+                        # Deterministic check on full JD text (US location, Senior/experience, Non-tech)
+                        should_ignore, jd_ignore_reason = evaluate_deterministic_ignore(title=title, jd_text=jd_text)
+                        if should_ignore:
+                            return "IGNORE", f"[Deterministic] {jd_ignore_reason}", None
 
                         print("   🧠 Extracting structured details with Groq (qwen3.8-27b)...")
                         details = await extract_job_details_with_llm(title, jd_text)

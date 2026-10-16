@@ -270,19 +270,20 @@ def extract_companies_from_existing_jobs(conn=None, max_workers=25, limit=None):
 #  Write helpers
 # ──────────────────────────────────────────────
 def insert_or_ignore_job(url, title, conn, status="New", rank="UNKNOWN",
-                          reason="", added_at=None, company=None, ats_platform=None):
+                          reason="", added_at=None, company=None, ats_platform=None, details=None):
     """
     Insert a new job row. Does nothing if the URL already exists.
     Returns True if a new row was inserted, False otherwise.
     """
     if added_at is None:
         added_at = datetime.now(timezone.utc).isoformat()
+    details_str = json.dumps(details) if isinstance(details, dict) else details
     cur = conn.execute(
         """
-        INSERT OR IGNORE INTO jobs (url, title, status, rank, reason, added_at, company, ats_platform)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO jobs (url, title, status, rank, reason, added_at, details, company, ats_platform)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (url, title, status, rank, reason, added_at, company, ats_platform)
+        (url, title, status, rank, reason, added_at, details_str, company, ats_platform)
     )
     return cur.rowcount > 0
 
