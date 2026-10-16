@@ -376,11 +376,6 @@ async def process_and_rank_jobs():
                     if len(jd_text) < 100:
                         return "ERROR", "Failed to extract meaningful text.", None
                     else:
-                        # Deterministic check on full JD text (US location, Senior/experience, Non-tech)
-                        should_ignore, jd_ignore_reason = evaluate_deterministic_ignore(title=title, jd_text=jd_text)
-                        if should_ignore:
-                            return "IGNORE", f"[Deterministic] {jd_ignore_reason}", None
-
                         print("   🧠 Extracting structured details with Groq (qwen3.8-27b)...")
                         details = await extract_job_details_with_llm(title, jd_text)
 

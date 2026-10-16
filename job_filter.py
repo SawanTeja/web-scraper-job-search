@@ -65,7 +65,7 @@ NON_TECH_PATTERNS = [
     r"\b(?:receptionist|office manager|executive assistant|administrative assistant|front desk)\b",
     r"\b(?:warehouse|store associate|driver|delivery|barista|cook|chef|cashier|retail)\b",
     r"\b(?:civil engineer|mechanical engineer|structural engineer|construction|technician|electrician|facilities|hvac)\b",
-    r"\b(?:geolog(?:y|ist|ical)|geotechnical|asbestos|metallurg(?:y|ical)|mining|environmental|hydrolog(?:y|ist))\b",
+    r"\b(?:geolog(?:y|ist|ical)|geotechnical|asbestos|metallurg(?:y|ical)|mining\s+engineer|environmental|hydrolog(?:y|ist))\b",
     r"\b(?:fire\s+engineer|fire\s+safety|safety\s+officer|security\s+officer|security\s+guard|health\s+and\s+safety|ehs)\b",
     r"\b(?:traffic\s+engineer|process\s+engineer|field\s+service|warranty|surveyor|surveying)\b",
     r"\b(?:graphic\s+designer|visual\s+designer|video\s+editor)\b",
@@ -140,7 +140,7 @@ US_STATE_ABBR_REGEX = re.compile(r"(?:,\s*|\s+)(" + "|".join(US_STATE_ABBRS) + r
 # ──────────────────────────────────────────────
 
 def is_senior_or_lead(title: str, jd_text: str = "") -> tuple[bool, str]:
-    """Returns (True, reason) if role is Senior/Lead/Manager/SDE 2/SDE 3/Staff/etc."""
+    """Returns (True, reason) if role is Senior/Lead/Manager/SDE 2/SDE 3/Staff/etc. from title."""
     if title:
         # Check direct and normalized (replace underscores/slashes with space)
         clean_title = re.sub(r"[_/\\]+", " ", title)
@@ -148,32 +148,16 @@ def is_senior_or_lead(title: str, jd_text: str = "") -> tuple[bool, str]:
         if m:
             return True, f"Senior/Lead level detected in title: '{m.group(0)}'"
 
-    if jd_text:
-        # Check title pattern in first 500 chars of JD
-        m = SENIOR_TITLE_REGEX.search(jd_text[:500])
-        if m:
-            return True, f"Senior/Lead level detected in header: '{m.group(0)}'"
-
-        # Check experience requirement in JD
-        m = EXPERIENCE_REGEX.search(jd_text)
-        if m:
-            return True, f"Experience requirement detected (>2 years): '{m.group(0)}'"
-
     return False, ""
 
 
 def is_non_tech(title: str, jd_text: str = "") -> tuple[bool, str]:
-    """Returns (True, reason) if role is non-technical (Sales, HR, Marketing, etc.)."""
+    """Returns (True, reason) if role is non-technical (Sales, HR, Marketing, etc.) from title."""
     if title:
         clean_title = re.sub(r"[_/\\]+", " ", title)
         m = NON_TECH_REGEX.search(title) or NON_TECH_REGEX.search(clean_title)
         if m:
             return True, f"Non-tech role detected in title: '{m.group(0)}'"
-
-    if jd_text:
-        m = NON_TECH_REGEX.search(jd_text[:400])
-        if m:
-            return True, f"Non-tech role detected in JD: '{m.group(0)}'"
 
     return False, ""
 

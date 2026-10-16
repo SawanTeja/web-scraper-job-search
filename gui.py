@@ -7,10 +7,16 @@ import webbrowser
 from datetime import datetime, timezone, timedelta
 
 gi.require_version('Gtk', '4.0')
-from gi.repository import Gtk, GLib, Pango
+from gi.repository import Gtk, GLib, Pango, Gdk
 
 # SQLite DB helper
-from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job, get_company_count
+from db import (
+    get_conn, init_db, load_db, save_db, delete_jobs_by_rank,
+    clear_all_jobs, update_job, get_company_count, get_all_companies,
+    delete_company, get_company_stats, save_company,
+    clear_all_companies, clear_everything
+)
+from ats_parser import parse_ats_info
 
 DB_FILE = "jobs_db.sqlite"
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
@@ -85,6 +91,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.scrape_ats_btn.add_css_class("suggested-action")
         self.scrape_ats_btn.connect("clicked", self.on_scrape_ats_clicked)
         header_box.append(self.scrape_ats_btn)
+
+        self.view_companies_btn = Gtk.Button(label="📋 Saved Companies")
+        self.view_companies_btn.connect("clicked", self.on_view_companies_clicked)
+        header_box.append(self.view_companies_btn)
 
         self.refresh_btn = Gtk.Button(label="Refresh Everything")
         self.refresh_btn.connect("clicked", self.on_refresh_clicked)
@@ -269,6 +279,42 @@ class JobAppWindow(Gtk.ApplicationWindow):
             .rank-IGNORE { background-color: #404040; }
             .rank-ERROR { background-color: #591313; }
             .rank-UNKNOWN { background-color: #3b3b3b; }
+            .platform-pill {
+                padding: 2px 7px;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 11px;
+                color: white;
+            }
+            .platform-greenhouse { background-color: #0b7a42; }
+            .platform-lever { background-color: #1f6feb; }
+            .platform-ashby { background-color: #8250df; }
+            .platform-smartrecruiters { background-color: #b07204; }
+            .platform-workday { background-color: #cf222e; }
+            .platform-breezy { background-color: #0969da; }
+            .platform-workable { background-color: #1a7f37; }
+            .platform-bamboohr { background-color: #2da44e; }
+            .platform-jobvite { background-color: #9a6700; }
+            .platform-recruitee { background-color: #545d68; }
+            .platform-ats { background-color: #444c56; }
+            .stats-banner {
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 6px;
+                padding: 8px 12px;
+            }
+            .company-row {
+                padding: 6px 10px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            }
+            .company-title {
+                font-weight: bold;
+                font-size: 14px;
+            }
+            .dim-label {
+                opacity: 0.7;
+                font-size: 12px;
+            }
         """
         css_provider.load_from_data(css)
         Gtk.StyleContext.add_provider_for_display(
@@ -803,26 +849,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.status_label.set_text("No IGNORE jobs to delete.")
 
     def on_clear_db_clicked(self, button):
-        """Show confirmation dialog before wiping the entire DB."""
-        dialog = Gtk.MessageDialog(
-            transient_for=self,
-            message_type=Gtk.MessageType.WARNING,
-            text="Clear Entire Database?",
-            secondary_text="This will permanently delete ALL jobs from the database. This cannot be undone."
-        )
-        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dialog.add_button("💣 Yes, Clear Everything", Gtk.ResponseType.OK)
-        dialog.connect("response", self.on_clear_db_confirmed)
-        dialog.present()
-
-    def on_clear_db_confirmed(self, dialog, response_id):
-        dialog.close()
-        if response_id != Gtk.ResponseType.OK:
-            return
-        deleted = clear_all_jobs()
-        self.jobs_db.clear()
-        self.refresh_ui()
-        self.status_label.set_text(f"💣 Cleared {deleted} jobs from the database.")
+        """Show clear database options window."""
+        win = ClearDbWindow(self)
+        win.present()
 
     def on_refresh_clicked(self, button):
         # Reload DB from SQLite
@@ -950,6 +979,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.refresh_ui()
             comp_cnt = get_company_count()
             self.status_label.set_text(f"ATS Scraping finished! ({comp_cnt} companies saved)")
+
+    def on_view_companies_clicked(self, button):
+        if not hasattr(self, "companies_win") or self.companies_win is None:
+            self.companies_win = CompaniesWindow(self)
+        self.companies_win.present()
+
     # --- DETERMINISTIC PRE-FILTER LOGIC (ZERO TOKENS) ---
     def on_fast_filter_clicked(self, button):
         self.status_label.set_text("⚡ Running fast deterministic pre-filter...")
@@ -1048,6 +1083,488 @@ class JobAppWindow(Gtk.ApplicationWindow):
             # Reload db anyway in case it was stopped mid-way so we see the progress
             self.jobs_db = load_db()
             self.refresh_ui()
+
+
+class ClearDbWindow(Gtk.Window):
+    def __init__(self, parent_win):
+        super().__init__(title="Clear Database Options")
+        self.set_default_size(520, 380)
+        self.set_transient_for(parent_win)
+        self.set_modal(True)
+        self.parent_win = parent_win
+
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        vbox.set_margin_top(20)
+        vbox.set_margin_bottom(20)
+        vbox.set_margin_start(20)
+        vbox.set_margin_end(20)
+        self.set_child(vbox)
+
+        # Title
+        title_lbl = Gtk.Label()
+        title_lbl.set_markup("<b><span size='large'>Clear Database Options</span></b>")
+        title_lbl.set_halign(Gtk.Align.START)
+        vbox.append(title_lbl)
+
+        sub_lbl = Gtk.Label(label="Choose what you want to remove from your database:")
+        sub_lbl.set_halign(Gtk.Align.START)
+        sub_lbl.add_css_class("dim-label")
+        vbox.append(sub_lbl)
+
+        # Option 1: Delete all saved companies only
+        opt1_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        btn_companies = Gtk.Button(label="🏢 Delete All Saved Companies Only")
+        btn_companies.connect("clicked", self.on_clear_companies)
+        opt1_box.append(btn_companies)
+        lbl1 = Gtk.Label(label="Removes all saved companies from ATS pool. Scraped jobs and rank data are kept.")
+        lbl1.add_css_class("dim-label")
+        lbl1.set_halign(Gtk.Align.START)
+        lbl1.set_wrap(True)
+        opt1_box.append(lbl1)
+        vbox.append(opt1_box)
+
+        # Option 2: Delete all scraped jobs only
+        opt2_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        btn_jobs = Gtk.Button(label="💼 Delete All Scraped Jobs Only")
+        btn_jobs.connect("clicked", self.on_clear_jobs)
+        opt2_box.append(btn_jobs)
+        lbl2 = Gtk.Label(label="Removes all scraped job postings and rankings. Saved companies pool is kept.")
+        lbl2.add_css_class("dim-label")
+        lbl2.set_halign(Gtk.Align.START)
+        lbl2.set_wrap(True)
+        opt2_box.append(lbl2)
+        vbox.append(opt2_box)
+
+        # Option 3: Delete everything
+        opt3_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        btn_all = Gtk.Button(label="💣 Delete Everything (Jobs + Companies + ATS Data)")
+        btn_all.add_css_class("destructive-action")
+        btn_all.connect("clicked", self.on_clear_everything)
+        opt3_box.append(btn_all)
+        lbl3 = Gtk.Label(label="Complete wipe: deletes all jobs, all saved companies, and archived URL history.")
+        lbl3.add_css_class("dim-label")
+        lbl3.set_halign(Gtk.Align.START)
+        lbl3.set_wrap(True)
+        opt3_box.append(lbl3)
+        vbox.append(opt3_box)
+
+        # Cancel button
+        cancel_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        cancel_box.set_halign(Gtk.Align.END)
+        cancel_box.set_margin_top(10)
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda b: self.close())
+        cancel_box.append(cancel_btn)
+        vbox.append(cancel_box)
+
+    def on_clear_companies(self, button):
+        deleted = clear_all_companies()
+        if hasattr(self.parent_win, "companies_win") and self.parent_win.companies_win:
+            self.parent_win.companies_win.load_data()
+        self.parent_win.status_label.set_text(
+            f"🏢 Cleared all {deleted} saved companies from ATS pool. Jobs kept."
+        )
+        self.close()
+
+    def on_clear_jobs(self, button):
+        deleted = clear_all_jobs()
+        self.parent_win.jobs_db.clear()
+        self.parent_win.refresh_ui()
+        self.parent_win.status_label.set_text(
+            f"💼 Cleared {deleted} jobs from database. Saved companies kept."
+        )
+        self.close()
+
+    def on_clear_everything(self, button):
+        res = clear_everything()
+        self.parent_win.jobs_db.clear()
+        self.parent_win.refresh_ui()
+        if hasattr(self.parent_win, "companies_win") and self.parent_win.companies_win:
+            self.parent_win.companies_win.load_data()
+        self.parent_win.status_label.set_text(
+            f"💣 Wiped database! ({res['jobs']} jobs, {res['companies']} companies, {res['deleted_urls']} archived URLs)"
+        )
+        self.close()
+
+
+class AddCompanyWindow(Gtk.Window):
+    def __init__(self, parent_win):
+        super().__init__(title="➕ Add ATS Career Board")
+        self.set_default_size(520, 260)
+        self.set_transient_for(parent_win)
+        self.set_modal(True)
+        self.parent_win = parent_win
+
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        vbox.set_margin_top(16)
+        vbox.set_margin_bottom(16)
+        vbox.set_margin_start(16)
+        vbox.set_margin_end(16)
+        self.set_child(vbox)
+
+        header = Gtk.Label()
+        header.set_markup("<b><span size='large'>Add Company to ATS Scraping Pool</span></b>")
+        header.set_halign(Gtk.Align.START)
+        vbox.append(header)
+
+        sub_label = Gtk.Label(
+            label="Paste any job URL or career page from Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, etc."
+        )
+        sub_label.set_wrap(True)
+        sub_label.set_max_width_chars(55)
+        sub_label.set_halign(Gtk.Align.START)
+        sub_label.add_css_class("dim-label")
+        vbox.append(sub_label)
+
+        # URL Entry
+        url_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        url_lbl = Gtk.Label(label="Job or Career Board URL:")
+        url_lbl.set_halign(Gtk.Align.START)
+        url_box.append(url_lbl)
+        self.url_entry = Gtk.Entry()
+        self.url_entry.set_placeholder_text("https://boards.greenhouse.io/stripe or job posting URL")
+        self.url_entry.connect("activate", lambda e: self.on_save())
+        url_box.append(self.url_entry)
+        vbox.append(url_box)
+
+        # Optional Name Entry
+        name_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        name_lbl = Gtk.Label(label="Company Name (Optional):")
+        name_lbl.set_halign(Gtk.Align.START)
+        name_box.append(name_lbl)
+        self.name_entry = Gtk.Entry()
+        self.name_entry.set_placeholder_text("Leave blank to detect automatically")
+        self.name_entry.connect("activate", lambda e: self.on_save())
+        name_box.append(self.name_entry)
+        vbox.append(name_box)
+
+        # Status Label
+        self.status_label = Gtk.Label(label="")
+        self.status_label.set_halign(Gtk.Align.START)
+        self.status_label.set_wrap(True)
+        vbox.append(self.status_label)
+
+        # Buttons
+        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_box.set_halign(Gtk.Align.END)
+        btn_box.set_margin_top(8)
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda b: self.close())
+        btn_box.append(cancel_btn)
+
+        save_btn = Gtk.Button(label="Save & Track")
+        save_btn.add_css_class("suggested-action")
+        save_btn.connect("clicked", lambda b: self.on_save())
+        btn_box.append(save_btn)
+
+        vbox.append(btn_box)
+
+    def on_save(self):
+        url = self.url_entry.get_text().strip()
+        custom_name = self.name_entry.get_text().strip()
+        if not url:
+            self.status_label.set_markup("<span color='#cf222e'>Please enter a URL.</span>")
+            return
+
+        res = parse_ats_info(url, resolve_google=False)
+        if not res:
+            self.status_label.set_markup(
+                "<span color='#cf222e'>❌ Could not detect ATS platform.<br/>Supported: Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, Recruitee</span>"
+            )
+            return
+
+        ats = res["ats_platform"]
+        ident = res["identifier"]
+        career_url = res["career_url"]
+        comp_name = custom_name or res.get("company_name") or res.get("name") or ident.title()
+
+        saved = save_company(comp_name, ats, ident, career_url)
+        if saved:
+            self.parent_win.load_data()
+            self.close()
+        else:
+            self.status_label.set_markup(
+                f"<span color='#d29922'>⚠️ Company <b>@{ident}</b> ({ats.upper()}) already exists in your pool.</span>"
+            )
+
+
+class CompaniesWindow(Gtk.Window):
+    def __init__(self, parent):
+        super().__init__(title="Saved Companies (ATS Scraping Pool)")
+        self.set_default_size(950, 680)
+        self.set_transient_for(parent)
+        self.parent_window = parent
+
+        self.connect("close-request", self.on_close_request)
+
+        self.all_companies = []
+        self.filtered_companies = []
+
+        # Root box
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        vbox.set_margin_top(12)
+        vbox.set_margin_bottom(12)
+        vbox.set_margin_start(12)
+        vbox.set_margin_end(12)
+        self.set_child(vbox)
+
+        # Header controls
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        vbox.append(header_box)
+
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_placeholder_text("🔍 Search company name, ATS platform, or handle...")
+        self.search_entry.set_hexpand(True)
+        self.search_entry.connect("search-changed", self.on_search_changed)
+        header_box.append(self.search_entry)
+
+        platform_lbl = Gtk.Label(label="Platform:")
+        header_box.append(platform_lbl)
+
+        self.platform_options = [
+            "ALL", "greenhouse", "lever", "ashby", "smartrecruiters",
+            "workday", "breezy", "workable", "bamboohr", "jobvite", "recruitee"
+        ]
+        self.platform_model = Gtk.StringList.new([p.upper() for p in self.platform_options])
+        self.platform_drop = Gtk.DropDown(model=self.platform_model)
+        self.platform_drop.set_selected(0)
+        self.platform_drop.connect("notify::selected", self.on_platform_changed)
+        header_box.append(self.platform_drop)
+
+        self.add_btn = Gtk.Button(label="➕ Add Company")
+        self.add_btn.add_css_class("suggested-action")
+        self.add_btn.connect("clicked", self.on_add_company_clicked)
+        header_box.append(self.add_btn)
+
+        self.refresh_btn = Gtk.Button(label="🔄 Refresh")
+        self.refresh_btn.connect("clicked", self.on_refresh_clicked)
+        header_box.append(self.refresh_btn)
+
+        self.clear_all_companies_btn = Gtk.Button(label="🗑 Clear All")
+        self.clear_all_companies_btn.add_css_class("destructive-action")
+        self.clear_all_companies_btn.set_tooltip_text("Remove all saved companies from ATS scraping pool")
+        self.clear_all_companies_btn.connect("clicked", self.on_clear_all_companies_clicked)
+        header_box.append(self.clear_all_companies_btn)
+
+        # Stats Banner
+        self.stats_banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self.stats_banner.add_css_class("stats-banner")
+        self.stats_label = Gtk.Label(label="Loading stats...")
+        self.stats_label.set_hexpand(True)
+        self.stats_label.set_halign(Gtk.Align.START)
+        self.stats_banner.append(self.stats_label)
+        vbox.append(self.stats_banner)
+
+        # Scrolled List
+        self.scroll = Gtk.ScrolledWindow()
+        self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroll.set_vexpand(True)
+        self.listbox = Gtk.ListBox()
+        self.listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.listbox.add_css_class("boxed-list")
+        self.scroll.set_child(self.listbox)
+        vbox.append(self.scroll)
+
+        # Initial Load
+        self.load_data()
+
+    def on_close_request(self, window):
+        if hasattr(self.parent_window, "companies_win"):
+            self.parent_window.companies_win = None
+        return False
+
+    def load_data(self):
+        self.all_companies = get_all_companies()
+        stats = get_company_stats()
+
+        total_c = stats.get("total_companies", 0)
+        total_j = stats.get("total_jobs", 0)
+        plat_strs = [f"{p.upper()}: {cnt}" for p, cnt in stats.get("platforms", {}).items()]
+        breakdown = "  •  ".join(plat_strs)
+
+        self.stats_label.set_markup(
+            f"<b>{total_c}</b> Companies in Pool  •  <b>{total_j}</b> Jobs Scraped   |   {breakdown}"
+        )
+        self.apply_filter()
+
+    def on_search_changed(self, entry):
+        self.apply_filter()
+
+    def on_platform_changed(self, dropdown, pspec):
+        self.apply_filter()
+
+    def on_refresh_clicked(self, button):
+        self.load_data()
+
+    def on_clear_all_companies_clicked(self, button):
+        count = len(self.all_companies)
+        if count == 0:
+            return
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            message_type=Gtk.MessageType.WARNING,
+            text="Delete ALL Saved Companies?",
+            secondary_text=f"This will permanently delete all {count} companies from your ATS scraping pool.\nExisting scraped jobs will remain in your database."
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("🗑 Yes, Delete All", Gtk.ResponseType.OK)
+
+        def on_response(diag, resp):
+            diag.close()
+            if resp == Gtk.ResponseType.OK:
+                deleted = clear_all_companies()
+                self.load_data()
+                if hasattr(self.parent_window, "status_label"):
+                    self.parent_window.status_label.set_text(
+                        f"🗑 Cleared all {deleted} companies from scraping pool. Jobs kept."
+                    )
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def on_add_company_clicked(self, button):
+        add_win = AddCompanyWindow(self)
+        add_win.present()
+
+    def apply_filter(self):
+        query = self.search_entry.get_text().strip().lower()
+        selected_idx = self.platform_drop.get_selected()
+        selected_platform = self.platform_options[selected_idx].lower()
+
+        filtered = []
+        for c in self.all_companies:
+            name = (c.get("name") or "").lower()
+            ats = (c.get("ats_platform") or "").lower()
+            ident = (c.get("identifier") or "").lower()
+            url = (c.get("career_url") or "").lower()
+
+            if selected_platform != "all" and ats != selected_platform:
+                continue
+
+            if query and query not in name and query not in ats and query not in ident and query not in url:
+                continue
+
+            filtered.append(c)
+
+        self.filtered_companies = filtered
+        self.render_companies()
+
+    def render_companies(self):
+        # Clear existing rows
+        while True:
+            child = self.listbox.get_first_child()
+            if child is None:
+                break
+            self.listbox.remove(child)
+
+        if not self.filtered_companies:
+            empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            empty_box.set_margin_top(40)
+            empty_box.set_margin_bottom(40)
+            empty_box.set_valign(Gtk.Align.CENTER)
+            empty_box.set_halign(Gtk.Align.CENTER)
+            empty_lbl = Gtk.Label()
+            empty_lbl.set_markup("<span size='large' color='#8b949e'>No saved companies match your search or filter.</span>")
+            empty_box.append(empty_lbl)
+            self.listbox.append(empty_box)
+            return
+
+        for c in self.filtered_companies:
+            row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+            row_box.add_css_class("company-row")
+
+            # Left/Info column
+            info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            info_box.set_hexpand(True)
+
+            top_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            name_text = c.get("name") or c.get("identifier", "").title()
+            name_lbl = Gtk.Label(label=name_text)
+            name_lbl.add_css_class("company-title")
+            name_lbl.set_halign(Gtk.Align.START)
+            top_box.append(name_lbl)
+
+            ats = (c.get("ats_platform") or "ats").lower()
+            badge = Gtk.Label(label=ats.upper())
+            badge.add_css_class("platform-pill")
+            badge.add_css_class(f"platform-{ats}")
+            top_box.append(badge)
+
+            ident_lbl = Gtk.Label(label=f"@{c.get('identifier', '')}")
+            ident_lbl.add_css_class("dim-label")
+            top_box.append(ident_lbl)
+
+            info_box.append(top_box)
+
+            bottom_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            career_url = c.get("career_url") or ""
+            url_lbl = Gtk.Label(label=career_url)
+            url_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            url_lbl.set_max_width_chars(65)
+            url_lbl.set_halign(Gtk.Align.START)
+            url_lbl.add_css_class("dim-label")
+            bottom_box.append(url_lbl)
+
+            last_scraped = c.get("last_scraped_at")
+            if last_scraped:
+                try:
+                    dt = datetime.fromisoformat(last_scraped)
+                    scraped_str = f"Scraped: {dt.strftime('%b %d, %H:%M')}"
+                except Exception:
+                    scraped_str = f"Scraped: {last_scraped[:16]}"
+            else:
+                scraped_str = "Never scraped"
+
+            job_cnt = c.get("job_count", 0) or 0
+            meta_lbl = Gtk.Label(label=f"•  {scraped_str}  •  {job_cnt} active jobs")
+            meta_lbl.add_css_class("dim-label")
+            bottom_box.append(meta_lbl)
+
+            info_box.append(bottom_box)
+            row_box.append(info_box)
+
+            # Action buttons on right
+            btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            btn_box.set_halign(Gtk.Align.END)
+            btn_box.set_valign(Gtk.Align.CENTER)
+
+            open_btn = Gtk.Button(label="🌐 Open Board")
+            open_btn.connect("clicked", lambda b, u=career_url: webbrowser.open(u))
+            btn_box.append(open_btn)
+
+            del_btn = Gtk.Button(label="🗑 Remove")
+            del_btn.add_css_class("destructive-action")
+            del_btn.set_tooltip_text("Delete company from pool")
+            del_btn.connect("clicked", lambda b, comp=c: self.confirm_delete_company(comp))
+            btn_box.append(del_btn)
+
+            row_box.append(btn_box)
+            self.listbox.append(row_box)
+
+    def confirm_delete_company(self, comp):
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            message_type=Gtk.MessageType.WARNING,
+            text=f"Delete '{comp.get('name')}'?",
+            secondary_text=f"Remove this company ({comp.get('ats_platform', '').upper()}) from your ATS scraping pool? Existing scraped jobs will remain in your database."
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("🗑 Delete", Gtk.ResponseType.OK)
+
+        def on_response(diag, resp):
+            diag.close()
+            if resp == Gtk.ResponseType.OK:
+                delete_company(comp["id"])
+                self.load_data()
+                if hasattr(self.parent_window, "status_label"):
+                    cnt = get_company_count()
+                    self.parent_window.status_label.set_text(
+                        f"Removed '{comp.get('name')}'. ({cnt} companies remaining)"
+                    )
+
+        dialog.connect("response", on_response)
+        dialog.present()
 
 
 class JobApp(Gtk.Application):

@@ -8,7 +8,27 @@ import tkinter as tk
 from datetime import datetime, timezone, timedelta
 import customtkinter as ctk
 
-from db import get_conn, init_db, load_db, save_db, delete_jobs_by_rank, clear_all_jobs, update_job, get_company_count
+from db import (
+    get_conn, init_db, load_db, save_db, delete_jobs_by_rank,
+    clear_all_jobs, update_job, get_company_count, get_all_companies,
+    delete_company, get_company_stats, save_company,
+    clear_all_companies, clear_everything
+)
+from ats_parser import parse_ats_info
+
+PLATFORM_COLORS = {
+    "greenhouse": "#0b7a42",
+    "lever": "#1f6feb",
+    "ashby": "#8250df",
+    "smartrecruiters": "#b07204",
+    "workday": "#cf222e",
+    "breezy": "#0969da",
+    "workable": "#1a7f37",
+    "bamboohr": "#2da44e",
+    "jobvite": "#9a6700",
+    "recruitee": "#545d68",
+    "ats": "#444c56",
+}
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -87,6 +107,9 @@ class JobAppWindow(ctk.CTk):
 
         self.scrape_ats_btn = ctk.CTkButton(self.header_frame, text="🏢 Scrape Companies", command=self.on_scrape_ats_clicked, fg_color="#2b6b3e", hover_color="#215230")
         self.scrape_ats_btn.pack(side="left", padx=5)
+
+        self.view_companies_btn = ctk.CTkButton(self.header_frame, text="📋 Saved Companies", command=self.on_view_companies_clicked)
+        self.view_companies_btn.pack(side="left", padx=5)
 
         self.refresh_btn = ctk.CTkButton(self.header_frame, text="Refresh Everything", command=self.on_refresh_clicked)
         self.refresh_btn.pack(side="left", padx=5)
@@ -604,24 +627,53 @@ class JobAppWindow(ctk.CTk):
 
     def on_clear_db_clicked(self):
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Confirm")
-        dialog.geometry("300x150")
+        dialog.title("Clear Database Options")
+        dialog.geometry("520x400")
         dialog.attributes("-topmost", True)
-        
-        ctk.CTkLabel(dialog, text="Clear Entire Database?\nThis cannot be undone.").pack(pady=20)
-        
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(fill="x")
-        
-        def confirm():
-            deleted = clear_all_jobs()
+        dialog.resizable(False, False)
+
+        frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=25, pady=20)
+
+        ctk.CTkLabel(frame, text="Clear Database Options", font=("Arial", 16, "bold")).pack(anchor="w", pady=(0, 4))
+        ctk.CTkLabel(frame, text="Choose what you want to remove from your database:", font=("Arial", 11), text_color="gray").pack(anchor="w", pady=(0, 15))
+
+        # Option 1: Delete all saved companies only
+        def clear_companies():
+            cnt = clear_all_companies()
+            if hasattr(self, "companies_win") and self.companies_win and self.companies_win.winfo_exists():
+                self.companies_win.load_data()
+            self.status_label.configure(text=f"🏢 Cleared all {cnt} companies from pool. Jobs kept.")
+            dialog.destroy()
+
+        ctk.CTkButton(frame, text="🏢 Delete All Saved Companies Only", command=clear_companies).pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(frame, text="Deletes all saved companies from ATS pool. Scraped jobs and rank data are kept.", font=("Arial", 10), text_color="gray", justify="left").pack(anchor="w", pady=(0, 12))
+
+        # Option 2: Delete all scraped jobs only
+        def clear_jobs():
+            cnt = clear_all_jobs()
             self.jobs_db.clear()
             self.refresh_ui()
-            self.status_label.configure(text=f"💣 Cleared {deleted} jobs from the database.")
+            self.status_label.configure(text=f"💼 Cleared {cnt} jobs from database. Saved companies kept.")
             dialog.destroy()
-            
-        ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy).pack(side="left", padx=10, expand=True)
-        ctk.CTkButton(btn_frame, text="Clear", fg_color="#b32929", command=confirm).pack(side="right", padx=10, expand=True)
+
+        ctk.CTkButton(frame, text="💼 Delete All Scraped Jobs Only", command=clear_jobs).pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(frame, text="Deletes all scraped job postings and rankings. Saved companies pool is kept.", font=("Arial", 10), text_color="gray", justify="left").pack(anchor="w", pady=(0, 12))
+
+        # Option 3: Delete everything
+        def clear_all():
+            res = clear_everything()
+            self.jobs_db.clear()
+            self.refresh_ui()
+            if hasattr(self, "companies_win") and self.companies_win and self.companies_win.winfo_exists():
+                self.companies_win.load_data()
+            self.status_label.configure(text=f"💣 Wiped database! ({res['jobs']} jobs, {res['companies']} companies, {res['deleted_urls']} archived URLs)")
+            dialog.destroy()
+
+        ctk.CTkButton(frame, text="💣 Delete Everything (Jobs + Companies + ATS Data)", fg_color="#b32929", hover_color="#8a1f1f", command=clear_all).pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(frame, text="Complete wipe: deletes all jobs, saved companies, and archived URL history.", font=("Arial", 10), text_color="gray", justify="left").pack(anchor="w", pady=(0, 15))
+
+        ctk.CTkButton(frame, text="Cancel", width=100, command=dialog.destroy).pack(anchor="e")
 
     def on_refresh_clicked(self):
         self.jobs_db = load_db()
@@ -751,6 +803,13 @@ class JobAppWindow(ctk.CTk):
             self.refresh_ui()
             comp_cnt = get_company_count()
             self.status_label.configure(text=f"ATS Scraping finished! ({comp_cnt} companies saved)")
+
+    def on_view_companies_clicked(self):
+        if not hasattr(self, "companies_win") or self.companies_win is None or not self.companies_win.winfo_exists():
+            self.companies_win = CompaniesWindowWin(self)
+        else:
+            self.companies_win.focus()
+
     # --- DETERMINISTIC PRE-FILTER LOGIC (ZERO TOKENS) ---
     def on_fast_filter_clicked(self):
         self.status_label.configure(text="⚡ Running fast deterministic pre-filter...")
@@ -853,6 +912,357 @@ class JobAppWindow(ctk.CTk):
             self.sort_status_label.configure(text="Ranking script failed or was stopped.")
             self.jobs_db = load_db()
             self.refresh_ui()
+
+
+class AddCompanyWindowWin(ctk.CTkToplevel):
+    def __init__(self, parent_win):
+        super().__init__(parent_win)
+        self.parent_win = parent_win
+        self.title("➕ Add ATS Career Board")
+        self.geometry("520x300")
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+
+        frame = ctk.CTkFrame(self, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        title_lbl = ctk.CTkLabel(frame, text="Add Company to ATS Scraping Pool", font=("Arial", 16, "bold"))
+        title_lbl.pack(anchor="w", pady=(0, 4))
+
+        sub_lbl = ctk.CTkLabel(
+            frame,
+            text="Paste any job URL or career board (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, etc.)",
+            font=("Arial", 11),
+            text_color="gray",
+            wraplength=460,
+            justify="left"
+        )
+        sub_lbl.pack(anchor="w", pady=(0, 15))
+
+        self.url_entry = ctk.CTkEntry(frame, placeholder_text="Career Board or Job URL (e.g. boards.greenhouse.io/stripe)", width=460)
+        self.url_entry.pack(fill="x", pady=(0, 10))
+
+        self.name_entry = ctk.CTkEntry(frame, placeholder_text="Company Name (Optional, auto-detected if blank)", width=460)
+        self.name_entry.pack(fill="x", pady=(0, 10))
+
+        self.status_lbl = ctk.CTkLabel(frame, text="", font=("Arial", 11), text_color="#cf222e", wraplength=460, justify="left")
+        self.status_lbl.pack(anchor="w", pady=(0, 10))
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(5, 0))
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, command=self.destroy).pack(side="left")
+        ctk.CTkButton(
+            btn_frame,
+            text="Save & Track",
+            width=130,
+            fg_color="#2b6b3e",
+            hover_color="#215230",
+            command=self.on_save
+        ).pack(side="right")
+
+    def on_save(self):
+        url = self.url_entry.get().strip()
+        custom_name = self.name_entry.get().strip()
+        if not url:
+            self.status_lbl.configure(text="Please enter a career board or job URL.", text_color="#cf222e")
+            return
+
+        res = parse_ats_info(url, resolve_google=False)
+        if not res:
+            self.status_lbl.configure(
+                text="❌ Could not detect ATS platform from URL.\nSupported: Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, Recruitee.",
+                text_color="#cf222e"
+            )
+            return
+
+        ats = res["ats_platform"]
+        ident = res["identifier"]
+        career_url = res["career_url"]
+        comp_name = custom_name or res.get("company_name") or res.get("name") or ident.title()
+
+        saved = save_company(comp_name, ats, ident, career_url)
+        if saved:
+            self.parent_win.load_data()
+            self.destroy()
+        else:
+            self.status_lbl.configure(
+                text=f"⚠️ Company @{ident} ({ats.upper()}) already exists in your pool.",
+                text_color="#d29922"
+            )
+
+
+class CompaniesWindowWin(ctk.CTkToplevel):
+    def __init__(self, parent_win):
+        super().__init__(parent_win)
+        self.parent_win = parent_win
+        self.title("Saved Companies (ATS Scraping Pool)")
+        self.geometry("980x720")
+        self.attributes("-topmost", True)
+
+        self.all_companies = []
+        self.filtered_companies = []
+
+        # Top Action Bar
+        top_bar = ctk.CTkFrame(self)
+        top_bar.pack(fill="x", padx=15, pady=(15, 8))
+
+        self.search_entry = ctk.CTkEntry(
+            top_bar,
+            placeholder_text="🔍 Search company name, ATS, or handle...",
+            width=320
+        )
+        self.search_entry.pack(side="left", padx=(5, 10), pady=8)
+        self.search_entry.bind("<KeyRelease>", lambda e: self.apply_filter())
+
+        ctk.CTkLabel(top_bar, text="Platform:").pack(side="left", padx=(5, 2))
+        self.platform_options = [
+            "ALL", "greenhouse", "lever", "ashby", "smartrecruiters",
+            "workday", "breezy", "workable", "bamboohr", "jobvite", "recruitee"
+        ]
+        self.platform_drop = ctk.CTkOptionMenu(
+            top_bar,
+            values=[p.upper() for p in self.platform_options],
+            command=lambda v: self.apply_filter(),
+            width=140
+        )
+        self.platform_drop.pack(side="left", padx=5)
+
+        self.add_btn = ctk.CTkButton(
+            top_bar,
+            text="➕ Add Company",
+            fg_color="#2b6b3e",
+            hover_color="#215230",
+            command=self.on_add_company_clicked,
+            width=130
+        )
+        self.add_btn.pack(side="left", padx=10)
+
+        self.refresh_btn = ctk.CTkButton(
+            top_bar,
+            text="🔄 Refresh",
+            command=self.load_data,
+            width=90
+        )
+        self.refresh_btn.pack(side="left", padx=5)
+
+        self.clear_all_btn = ctk.CTkButton(
+            top_bar,
+            text="🗑 Clear All",
+            fg_color="#b32929",
+            hover_color="#8a1f1f",
+            command=self.on_clear_all_clicked,
+            width=90
+        )
+        self.clear_all_btn.pack(side="left", padx=5)
+
+        # Stats Banner Frame
+        self.stats_frame = ctk.CTkFrame(self, fg_color=("gray85", "gray20"))
+        self.stats_frame.pack(fill="x", padx=15, pady=(0, 10))
+
+        self.stats_label = ctk.CTkLabel(
+            self.stats_frame,
+            text="Loading stats...",
+            font=("Arial", 12),
+            anchor="w",
+            padx=12,
+            pady=8
+        )
+        self.stats_label.pack(fill="x")
+
+        # Scrollable Frame for Company Cards
+        self.scrollable = ctk.CTkScrollableFrame(self)
+        self.scrollable.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+
+        self.load_data()
+
+    def load_data(self):
+        self.all_companies = get_all_companies()
+        stats = get_company_stats()
+
+        total_c = stats.get("total_companies", 0)
+        total_j = stats.get("total_jobs", 0)
+        plat_strs = [f"{p.upper()}: {cnt}" for p, cnt in stats.get("platforms", {}).items()]
+        breakdown = "  •  ".join(plat_strs)
+
+        self.stats_label.configure(
+            text=f"{total_c} Companies in Pool  •  {total_j} Jobs Scraped   |   {breakdown}"
+        )
+        self.apply_filter()
+
+    def apply_filter(self):
+        query = self.search_entry.get().strip().lower()
+        selected_plat = self.platform_drop.get().strip().lower()
+
+        filtered = []
+        for c in self.all_companies:
+            name = (c.get("name") or "").lower()
+            ats = (c.get("ats_platform") or "").lower()
+            ident = (c.get("identifier") or "").lower()
+            url = (c.get("career_url") or "").lower()
+
+            if selected_plat != "all" and ats != selected_plat:
+                continue
+
+            if query and query not in name and query not in ats and query not in ident and query not in url:
+                continue
+
+            filtered.append(c)
+
+        self.filtered_companies = filtered
+        self.render_companies()
+
+    def render_companies(self):
+        for widget in self.scrollable.winfo_children():
+            widget.destroy()
+
+        if not self.filtered_companies:
+            empty_lbl = ctk.CTkLabel(
+                self.scrollable,
+                text="No saved companies match your search or filter.",
+                font=("Arial", 14),
+                text_color="gray"
+            )
+            empty_lbl.pack(pady=40)
+            return
+
+        for c in self.filtered_companies:
+            row_frame = ctk.CTkFrame(self.scrollable, fg_color=("gray90", "gray17"))
+            row_frame.pack(fill="x", pady=4, padx=5)
+
+            # Left/Info box
+            info_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+            info_frame.pack(side="left", fill="both", expand=True, padx=12, pady=8)
+
+            # Top Row: Name + Badge + Handle
+            top_line = ctk.CTkFrame(info_frame, fg_color="transparent")
+            top_line.pack(fill="x", anchor="w")
+
+            name_text = c.get("name") or c.get("identifier", "").title()
+            name_lbl = ctk.CTkLabel(top_line, text=name_text, font=("Arial", 14, "bold"), anchor="w")
+            name_lbl.pack(side="left", padx=(0, 8))
+
+            ats = (c.get("ats_platform") or "ats").lower()
+            badge_color = PLATFORM_COLORS.get(ats, "#444c56")
+            badge = ctk.CTkLabel(
+                top_line,
+                text=f" {ats.upper()} ",
+                fg_color=badge_color,
+                text_color="white",
+                corner_radius=4,
+                font=("Arial", 10, "bold")
+            )
+            badge.pack(side="left", padx=(0, 8))
+
+            ident_lbl = ctk.CTkLabel(top_line, text=f"@{c.get('identifier', '')}", text_color="gray", font=("Arial", 11))
+            ident_lbl.pack(side="left")
+
+            # Bottom Row: Career URL + Scraped metadata
+            career_url = c.get("career_url") or ""
+            disp_url = (career_url[:65] + "...") if len(career_url) > 65 else career_url
+
+            last_scraped = c.get("last_scraped_at")
+            if last_scraped:
+                try:
+                    dt = datetime.fromisoformat(last_scraped)
+                    scraped_str = f"Scraped: {dt.strftime('%b %d, %H:%M')}"
+                except Exception:
+                    scraped_str = f"Scraped: {last_scraped[:16]}"
+            else:
+                scraped_str = "Never scraped"
+
+            job_cnt = c.get("job_count", 0) or 0
+            meta_text = f"{disp_url}   •   {scraped_str}   •   {job_cnt} active jobs"
+            meta_lbl = ctk.CTkLabel(info_frame, text=meta_text, text_color="gray", font=("Arial", 11), anchor="w")
+            meta_lbl.pack(fill="x", anchor="w", pady=(3, 0))
+
+            # Right action buttons
+            btn_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+            btn_frame.pack(side="right", padx=12, pady=8)
+
+            open_btn = ctk.CTkButton(
+                btn_frame,
+                text="🌐 Open Board",
+                width=110,
+                command=lambda u=career_url: webbrowser.open(u)
+            )
+            open_btn.pack(side="left", padx=4)
+
+            del_btn = ctk.CTkButton(
+                btn_frame,
+                text="🗑 Remove",
+                width=80,
+                fg_color="#b32929",
+                hover_color="#8a1f1f",
+                command=lambda comp=c: self.confirm_delete_company(comp)
+            )
+            del_btn.pack(side="left", padx=4)
+
+    def on_add_company_clicked(self):
+        AddCompanyWindowWin(self)
+
+    def on_clear_all_clicked(self):
+        count = len(self.all_companies)
+        if count == 0:
+            return
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Confirm Delete All Companies")
+        dialog.geometry("400x170")
+        dialog.attributes("-topmost", True)
+        dialog.resizable(False, False)
+
+        ctk.CTkLabel(
+            dialog,
+            text=f"Delete ALL {count} saved companies from scraping pool?\nExisting scraped jobs will remain untouched.",
+            wraplength=360
+        ).pack(pady=20)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20)
+
+        def do_delete_all():
+            deleted = clear_all_companies()
+            self.load_data()
+            if hasattr(self.parent_win, "status_label"):
+                self.parent_win.status_label.configure(
+                    text=f"🗑 Cleared all {deleted} companies from scraping pool. Jobs kept."
+                )
+            dialog.destroy()
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, command=dialog.destroy).pack(side="left", expand=True)
+        ctk.CTkButton(btn_frame, text="🗑 Delete All", width=110, fg_color="#b32929", hover_color="#8a1f1f", command=do_delete_all).pack(side="right", expand=True)
+
+    def confirm_delete_company(self, comp):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Confirm Delete")
+        dialog.geometry("380x160")
+        dialog.attributes("-topmost", True)
+        dialog.resizable(False, False)
+
+        name = comp.get("name") or comp.get("identifier")
+        ats = (comp.get("ats_platform") or "").upper()
+        ctk.CTkLabel(
+            dialog,
+            text=f"Remove '{name}' ({ats})?\nThis deletes the company from your scraping pool.",
+            wraplength=340
+        ).pack(pady=20)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20)
+
+        def do_delete():
+            delete_company(comp["id"])
+            self.load_data()
+            if hasattr(self.parent_win, "status_label"):
+                cnt = get_company_count()
+                self.parent_win.status_label.configure(
+                    text=f"Removed '{name}'. ({cnt} companies remaining)"
+                )
+            dialog.destroy()
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, command=dialog.destroy).pack(side="left", expand=True)
+        ctk.CTkButton(btn_frame, text="🗑 Delete", width=100, fg_color="#b32929", hover_color="#8a1f1f", command=do_delete).pack(side="right", expand=True)
+
 
 if __name__ == "__main__":
     app = JobAppWindow()

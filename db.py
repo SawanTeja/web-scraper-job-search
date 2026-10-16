@@ -77,6 +77,16 @@ def init_db(conn=None):
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_ats ON companies(ats_platform)")
 
+    # Deleted URLs table: remembers deleted/ignored job URLs permanently so scrapers never re-add them
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS deleted_urls (
+            url        TEXT PRIMARY KEY,
+            deleted_at TEXT,
+            reason     TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_deleted_urls ON deleted_urls(url)")
+
     conn.commit()
     if close_after:
         conn.close()
@@ -86,14 +96,14 @@ def init_db(conn=None):
 #  Read helpers
 # ──────────────────────────────────────────────
 def job_exists(url, conn):
-    """Return True if a job URL already exists in the DB."""
-    row = conn.execute("SELECT 1 FROM jobs WHERE url=?", (url,)).fetchone()
+    """Return True if a job URL already exists in the DB or was previously deleted."""
+    row = conn.execute("SELECT 1 FROM jobs WHERE url=? UNION SELECT 1 FROM deleted_urls WHERE url=?", (url, url)).fetchone()
     return row is not None
 
 
 def get_all_urls(conn):
-    """Return a set of all URLs currently in the DB (cheap — only fetches URLs)."""
-    rows = conn.execute("SELECT url FROM jobs").fetchall()
+    """Return a set of all URLs currently in the DB or previously deleted/ignored (so scrapers skip them)."""
+    rows = conn.execute("SELECT url FROM jobs UNION SELECT url FROM deleted_urls").fetchall()
     return {row["url"] for row in rows}
 
 
@@ -187,6 +197,37 @@ def get_company_count(conn=None):
     if close_after:
         conn.close()
     return count
+
+
+def delete_company(company_id, conn=None):
+    """Delete a company by its ID from the companies table."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    cur = conn.execute("DELETE FROM companies WHERE id=?", (company_id,))
+    conn.commit()
+    deleted = cur.rowcount
+    if close_after:
+        conn.close()
+    return deleted
+
+
+def get_company_stats(conn=None):
+    """Return summary statistics of saved companies and platforms."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    total_companies = conn.execute("SELECT count(*) FROM companies").fetchone()[0]
+    total_jobs = conn.execute("SELECT sum(job_count) FROM companies").fetchone()[0] or 0
+    platform_rows = conn.execute("SELECT ats_platform, count(*) FROM companies GROUP BY ats_platform ORDER BY count(*) DESC").fetchall()
+    platforms = {r[0]: r[1] for r in platform_rows}
+    if close_after:
+        conn.close()
+    return {
+        "total_companies": total_companies,
+        "total_jobs": total_jobs,
+        "platforms": platforms
+    }
 
 
 def update_company_scraped(ats_platform, identifier, job_count, conn=None):
@@ -340,11 +381,33 @@ def save_db(db_dict, conn=None):
 
 
 def delete_jobs_by_rank(rank, conn=None):
-    """Delete all jobs matching the given rank. Returns count of deleted rows."""
+    """Delete all jobs matching the given rank. Archives URLs to deleted_urls so scrapers never re-add them."""
     close_after = conn is None
     if conn is None:
         conn = get_conn()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn.execute("""
+        INSERT OR IGNORE INTO deleted_urls (url, deleted_at, reason)
+        SELECT url, ?, 'deleted_' || rank FROM jobs WHERE rank=?
+    """, (now_iso, rank))
     cur = conn.execute("DELETE FROM jobs WHERE rank=?", (rank,))
+    conn.commit()
+    if close_after:
+        conn.close()
+    return cur.rowcount
+
+
+def delete_jobs_by_status(status, conn=None):
+    """Delete all jobs matching the given status. Archives URLs to deleted_urls so scrapers never re-add them."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn.execute("""
+        INSERT OR IGNORE INTO deleted_urls (url, deleted_at, reason)
+        SELECT url, ?, 'deleted_' || status FROM jobs WHERE status=?
+    """, (now_iso, status))
+    cur = conn.execute("DELETE FROM jobs WHERE status=?", (status,))
     conn.commit()
     if close_after:
         conn.close()
@@ -361,6 +424,37 @@ def clear_all_jobs(conn=None):
     if close_after:
         conn.close()
     return cur.rowcount
+
+
+def clear_all_companies(conn=None):
+    """Delete ALL companies from the companies table. Returns count of deleted companies."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    cur = conn.execute("DELETE FROM companies")
+    conn.commit()
+    deleted = cur.rowcount
+    if close_after:
+        conn.close()
+    return deleted
+
+
+def clear_everything(conn=None):
+    """Delete all rows from jobs, companies, and deleted_urls tables. Returns dict with counts."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    c_jobs = conn.execute("DELETE FROM jobs").rowcount
+    c_companies = conn.execute("DELETE FROM companies").rowcount
+    c_urls = conn.execute("DELETE FROM deleted_urls").rowcount
+    conn.commit()
+    if close_after:
+        conn.close()
+    return {
+        "jobs": c_jobs,
+        "companies": c_companies,
+        "deleted_urls": c_urls
+    }
 
 
 # ──────────────────────────────────────────────
