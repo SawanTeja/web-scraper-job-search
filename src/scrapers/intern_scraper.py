@@ -1,8 +1,16 @@
+import sys
+import os
+
+_SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_ROOT_DIR = os.path.abspath(os.path.join(_SRC_DIR, ".."))
+for _p in [_SRC_DIR, _ROOT_DIR]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import asyncio
 import urllib.parse
 import random
 import json
-import os
 import subprocess
 from datetime import datetime, timezone
 from playwright.async_api import async_playwright
@@ -41,7 +49,7 @@ SEARCH_QUERIES = [
 
 TIME_FILTER = "qdr:d"
 MAX_PAGES = 5
-DB_FILE = "jobs_db.json"
+DB_FILE = os.path.join(_ROOT_DIR, "jobs_db.json")
 
 def clean_url(raw_url):
     """Decodes Google redirects and removes tracking queries."""

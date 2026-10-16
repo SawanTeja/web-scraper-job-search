@@ -3,9 +3,17 @@ ats_parser.py — ATS Platform detection, URL resolution, and company parsing.
 Handles major ATS platforms: Greenhouse, Lever, Ashby, SmartRecruiters,
 Workday, Workable, BambooHR, Breezy HR, Recruitee, Jobvite, etc.
 """
+import sys
+import os
 import re
 import urllib.parse
 import urllib.request
+
+_SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_ROOT_DIR = os.path.abspath(os.path.join(_SRC_DIR, ".."))
+for _p in [_SRC_DIR, _ROOT_DIR]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 # Supported ATS platform definitions and patterns
 ATS_PATTERNS = [

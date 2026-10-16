@@ -55,15 +55,14 @@ GROQ_API_KEY=your_actual_api_key_here
 - **Direct ATS Scraper (Fastest, No Google rate limits)**:
   Scrapes saved companies' career boards directly across Greenhouse, Lever, Ashby, SmartRecruiters, Workday, etc.:
   ```bash
-  python ats_scraper.py
+  python main.py --ats
   ```
-  *(To backfill companies from your existing database, run `python ats_scraper.py --backfill`)*
+  *(To backfill companies from your existing database, run `python main.py --backfill`)*
 
 - **Google Discovery Scraper**:
   Discovers new companies and job links via Google searches and automatically saves the company ATS platform for direct future scraping:
   ```bash
-  python intern_scraper_fast.py  # Fast
-  python intern_scraper.py       # Medium
+  python main.py --scrape
   ```
 
 ### 2. The Dashboard (GUI)
@@ -71,10 +70,11 @@ Run the graphical interface to manage everything from one place:
 
 ```bash
 # On Linux (GTK4):
-python gui.py
+python main.py
+# or: python main.py --gui
 
 # On Windows:
-python win_gui.py
+python main.py --win
 ```
 - **Scrape Companies**: Click the "🏢 Scrape Companies" button to instantly scrape all saved companies' ATS boards directly (bypasses Google rate limits).
 - **Filter US/Senior Jobs**: Click "⚡ Filter US/Senior" to instantly auto-ignore US-based, Senior/Lead/Manager, and non-tech roles in <1s (uses 0 AI tokens!).
@@ -82,12 +82,13 @@ python win_gui.py
 - **AI Rank/Sort Jobs**: Head to the "Priority Sorting" tab and click the AI Rank button to evaluate remaining fresh candidate listings using LLM.
 - **Track Status**: Move jobs between `New`, `Applied`, `Ongoing`, `Rejected`, and `NA` (with auto-expiry of stale 'New' jobs after 24 hours).
 
-### 3. Running Scripts Manually
-Alternatively, you can run individual scripts via terminal:
-- **Fast Deterministic Pre-Filter (0 AI tokens)**: `python job_filter.py`
-- **ATS Direct Scraper**: `python ats_scraper.py`
-- **Google Scraper**: `python intern_scraper_fast.py`
-- **AI Ranker**: `python rank_internships.py`
+### 3. Running Modules Manually
+All modules can be executed directly via `main.py` CLI or through `src/`:
+- **Fast Deterministic Pre-Filter (0 AI tokens)**: `python main.py --filter` (or `python src/ranking/job_filter.py`)
+- **ATS Direct Scraper**: `python main.py --ats` (or `python src/scrapers/ats_scraper.py`)
+- **Google Scraper**: `python main.py --scrape` (or `python src/scrapers/intern_scraper_fast.py`)
+- **AI Ranker**: `python main.py --rank` (or `python src/ranking/rank_internships.py`)
+- **Unit Test Suite**: `python main.py --test`
 
 ---
 
@@ -169,12 +170,11 @@ web-scraper-job-search/
 │   ├── test_ats_parser.py          # Unit tests for ATS platform detection
 │   └── test_job_filter.py          # Unit tests for deterministic filters
 ├── main.py                         # Unified CLI / GUI launcher entrypoint
-├── gui.py                          # Linux GTK4 launcher shim
-├── win_gui.py                      # Windows CustomTkinter launcher shim
-├── ats_scraper.py                  # Direct ATS scraper launcher shim
-├── rank_internships.py             # AI ranking CLI launcher shim
-├── job_filter.py                   # Deterministic filter CLI launcher shim
-└── requirements.txt
+├── jobs_db.sqlite                  # SQLite database (WAL mode, persistent)
+├── prompts.json                    # Groq LLM prompt templates
+├── requirements.txt                # Python dependencies
+├── setup.md                        # Setup guide
+└── README.md                       # Documentation
 ```
 
 ---
