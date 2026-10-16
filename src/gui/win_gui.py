@@ -22,7 +22,8 @@ try:
         get_conn, init_db, load_db, save_db, delete_jobs_by_rank,
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
-        clear_all_companies, clear_everything
+        clear_all_companies, clear_everything,
+        extract_companies_from_existing_jobs, seed_starter_companies
     )
     from src.scrapers.ats_parser import parse_ats_info
 except ImportError:
@@ -30,9 +31,11 @@ except ImportError:
         get_conn, init_db, load_db, save_db, delete_jobs_by_rank,
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
-        clear_all_companies, clear_everything
+        clear_all_companies, clear_everything,
+        extract_companies_from_existing_jobs, seed_starter_companies
     )
     from ats_parser import parse_ats_info
+
 
 PLATFORM_COLORS = {
     "greenhouse": "#0b7a42",
@@ -1035,7 +1038,7 @@ class CompaniesWindowWin(ctk.CTkToplevel):
         super().__init__(parent_win)
         self.parent_win = parent_win
         self.title("Saved Companies (ATS Scraping Pool)")
-        self.geometry("980x720")
+        self.geometry("1120x720")
         self.attributes("-topmost", True)
 
         self.all_companies = []
@@ -1048,12 +1051,12 @@ class CompaniesWindowWin(ctk.CTkToplevel):
         self.search_entry = ctk.CTkEntry(
             top_bar,
             placeholder_text="🔍 Search company name, ATS, or handle...",
-            width=320
+            width=230
         )
-        self.search_entry.pack(side="left", padx=(5, 10), pady=8)
+        self.search_entry.pack(side="left", padx=(5, 6), pady=8)
         self.search_entry.bind("<KeyRelease>", lambda e: self.apply_filter())
 
-        ctk.CTkLabel(top_bar, text="Platform:").pack(side="left", padx=(5, 2))
+        ctk.CTkLabel(top_bar, text="Platform:").pack(side="left", padx=(3, 2))
         self.platform_options = [
             "ALL", "greenhouse", "lever", "ashby", "smartrecruiters",
             "workday", "breezy", "workable", "bamboohr", "jobvite", "recruitee"
@@ -1062,27 +1065,47 @@ class CompaniesWindowWin(ctk.CTkToplevel):
             top_bar,
             values=[p.upper() for p in self.platform_options],
             command=lambda v: self.apply_filter(),
-            width=140
+            width=110
         )
-        self.platform_drop.pack(side="left", padx=5)
+        self.platform_drop.pack(side="left", padx=4)
 
         self.add_btn = ctk.CTkButton(
             top_bar,
-            text="➕ Add Company",
+            text="➕ Add",
             fg_color="#2b6b3e",
             hover_color="#215230",
             command=self.on_add_company_clicked,
-            width=130
+            width=70
         )
-        self.add_btn.pack(side="left", padx=10)
+        self.add_btn.pack(side="left", padx=3)
+
+        self.extract_btn = ctk.CTkButton(
+            top_bar,
+            text="📥 Extract from Jobs",
+            fg_color="#1f538d",
+            hover_color="#14375e",
+            command=self.on_extract_clicked,
+            width=135
+        )
+        self.extract_btn.pack(side="left", padx=3)
+
+        self.seed_btn = ctk.CTkButton(
+            top_bar,
+            text="🌱 Seed Top 45+",
+            fg_color="#2b6b3e",
+            hover_color="#215230",
+            command=self.on_seed_clicked,
+            width=120
+        )
+        self.seed_btn.pack(side="left", padx=3)
 
         self.refresh_btn = ctk.CTkButton(
             top_bar,
             text="🔄 Refresh",
             command=self.load_data,
-            width=90
+            width=75
         )
-        self.refresh_btn.pack(side="left", padx=5)
+        self.refresh_btn.pack(side="left", padx=3)
 
         self.clear_all_btn = ctk.CTkButton(
             top_bar,
@@ -1090,9 +1113,10 @@ class CompaniesWindowWin(ctk.CTkToplevel):
             fg_color="#b32929",
             hover_color="#8a1f1f",
             command=self.on_clear_all_clicked,
-            width=90
+            width=80
         )
-        self.clear_all_btn.pack(side="left", padx=5)
+        self.clear_all_btn.pack(side="left", padx=3)
+
 
         # Stats Banner Frame
         self.stats_frame = ctk.CTkFrame(self, fg_color=("gray85", "gray20"))
@@ -1238,6 +1262,59 @@ class CompaniesWindowWin(ctk.CTkToplevel):
 
     def on_add_company_clicked(self):
         AddCompanyWindowWin(self)
+
+    def on_extract_clicked(self):
+        conn = get_conn()
+        job_count = conn.execute("SELECT count(*) FROM jobs").fetchone()[0]
+        conn.close()
+
+        if job_count == 0:
+            self.stats_label.configure(
+                text="⚠️ No jobs in DB yet. Run 'Scrape Jobs' first or use '🌱 Seed Top 45+'!"
+            )
+            return
+
+        self.extract_btn.configure(state="disabled")
+        self.stats_label.configure(
+            text=f"🔄 Scanning {job_count} jobs to extract company ATS career boards... Please wait..."
+        )
+
+        def worker():
+            try:
+                total_c = extract_companies_from_existing_jobs(max_workers=20)
+                self.after(0, lambda: self._on_extract_done(total_c))
+            except Exception as e:
+                self.after(0, lambda: self._on_extract_error(str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_extract_done(self, total_c):
+        self.extract_btn.configure(state="normal")
+        self.load_data()
+        self.stats_label.configure(
+            text=f"✅ Extraction complete! Total companies in pool: {total_c}"
+        )
+        if hasattr(self.parent_win, "status_label"):
+            self.parent_win.status_label.configure(
+                text=f"✅ Extracted ATS companies from jobs. Pool: {total_c} companies."
+            )
+
+    def _on_extract_error(self, err_msg):
+        self.extract_btn.configure(state="normal")
+        self.stats_label.configure(text=f"❌ Extraction error: {err_msg}")
+
+    def on_seed_clicked(self):
+        added = seed_starter_companies()
+        self.load_data()
+        total = get_company_count()
+        self.stats_label.configure(
+            text=f"🌱 Added {added} top tech ATS companies! Total pool: {total} companies."
+        )
+        if hasattr(self.parent_win, "status_label"):
+            self.parent_win.status_label.configure(
+                text=f"🌱 Seeded {added} top tech companies. Total pool: {total} companies."
+            )
+
 
     def on_clear_all_clicked(self):
         count = len(self.all_companies)

@@ -327,6 +327,82 @@ def extract_companies_from_existing_jobs(conn=None, max_workers=25, limit=None):
 
 
 # ──────────────────────────────────────────────
+#  Starter Seed Companies
+# ──────────────────────────────────────────────
+STARTER_COMPANIES = [
+    # Top Greenhouse
+    ("Stripe", "greenhouse", "stripe", "https://boards.greenhouse.io/stripe"),
+    ("Figma", "greenhouse", "figma", "https://boards.greenhouse.io/figma"),
+    ("Airtable", "greenhouse", "airtable", "https://boards.greenhouse.io/airtable"),
+    ("Datadog", "greenhouse", "datadog", "https://boards.greenhouse.io/datadog"),
+    ("Cloudflare", "greenhouse", "cloudflare", "https://boards.greenhouse.io/cloudflare"),
+    ("Discord", "greenhouse", "discord", "https://boards.greenhouse.io/discord"),
+    ("Roblox", "greenhouse", "roblox", "https://boards.greenhouse.io/roblox"),
+    ("Twitch", "greenhouse", "twitch", "https://boards.greenhouse.io/twitch"),
+    ("Coinbase", "greenhouse", "coinbase", "https://boards.greenhouse.io/coinbase"),
+    ("GitHub", "greenhouse", "github", "https://boards.greenhouse.io/github"),
+    ("GitLab", "greenhouse", "gitlab", "https://boards.greenhouse.io/gitlab"),
+    ("Databricks", "greenhouse", "databricks", "https://boards.greenhouse.io/databricks"),
+    ("Reddit", "greenhouse", "reddit", "https://boards.greenhouse.io/reddit"),
+    ("DoorDash", "greenhouse", "doordash", "https://boards.greenhouse.io/doordash"),
+    ("Uber", "greenhouse", "uber", "https://boards.greenhouse.io/uber"),
+    ("Lyft", "greenhouse", "lyft", "https://boards.greenhouse.io/lyft"),
+    ("Robinhood", "greenhouse", "robinhood", "https://boards.greenhouse.io/robinhood"),
+    ("Scale AI", "greenhouse", "scaleai", "https://boards.greenhouse.io/scaleai"),
+    ("Instacart", "greenhouse", "instacart", "https://boards.greenhouse.io/instacart"),
+    ("Coursera", "greenhouse", "coursera", "https://boards.greenhouse.io/coursera"),
+    ("HashiCorp", "greenhouse", "hashicorp", "https://boards.greenhouse.io/hashicorp"),
+    ("Snap", "greenhouse", "snapchat", "https://boards.greenhouse.io/snapchat"),
+    ("Pinterest", "greenhouse", "pinterest", "https://boards.greenhouse.io/pinterest"),
+
+    # Top Ashby
+    ("Vercel", "ashby", "vercel", "https://jobs.ashbyhq.com/vercel"),
+    ("Notion", "ashby", "notion", "https://jobs.ashbyhq.com/notion"),
+    ("Linear", "ashby", "linear", "https://jobs.ashbyhq.com/linear"),
+    ("Ramp", "ashby", "ramp", "https://jobs.ashbyhq.com/ramp"),
+    ("Cursor", "ashby", "anysphere", "https://jobs.ashbyhq.com/anysphere"),
+    ("Replicate", "ashby", "replicate", "https://jobs.ashbyhq.com/replicate"),
+    ("Supabase", "ashby", "supabase", "https://jobs.ashbyhq.com/supabase"),
+    ("Modal", "ashby", "modal", "https://jobs.ashbyhq.com/modal"),
+    ("Perplexity AI", "ashby", "perplexity", "https://jobs.ashbyhq.com/perplexity"),
+    ("OpenAI", "ashby", "openai", "https://jobs.ashbyhq.com/openai"),
+    ("Mistral AI", "ashby", "mistral", "https://jobs.ashbyhq.com/mistral"),
+    ("Retool", "ashby", "retool", "https://jobs.ashbyhq.com/retool"),
+    ("Resend", "ashby", "resend", "https://jobs.ashbyhq.com/resend"),
+
+    # Top Lever
+    ("Spotify", "lever", "spotify", "https://jobs.lever.co/spotify"),
+    ("Netflix", "lever", "netflix", "https://jobs.lever.co/netflix"),
+    ("Palantir", "lever", "palantir", "https://jobs.lever.co/palantir"),
+    ("Postman", "lever", "postman", "https://jobs.lever.co/postman"),
+    ("Plaid", "lever", "plaid", "https://jobs.lever.co/plaid"),
+    ("Ripple", "lever", "ripple", "https://jobs.lever.co/ripple"),
+    ("Affirm", "lever", "affirm", "https://jobs.lever.co/affirm"),
+
+    # Top SmartRecruiters
+    ("Square", "smartrecruiters", "Square", "https://jobs.smartrecruiters.com/Square"),
+    ("Visa", "smartrecruiters", "Visa", "https://jobs.smartrecruiters.com/Visa"),
+    ("Bosch Group", "smartrecruiters", "BoschGroup", "https://jobs.smartrecruiters.com/BoschGroup"),
+    ("Twitter", "smartrecruiters", "Twitter", "https://jobs.smartrecruiters.com/Twitter"),
+]
+
+
+def seed_starter_companies(conn=None):
+    """Seed the database with popular tech ATS companies."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    added = 0
+    for name, plat, ident, url in STARTER_COMPANIES:
+        if save_company(name=name, ats_platform=plat, identifier=ident, career_url=url, conn=conn):
+            added += 1
+    if close_after:
+        conn.close()
+    return added
+
+
+
+# ──────────────────────────────────────────────
 #  Write helpers
 # ──────────────────────────────────────────────
 def insert_or_ignore_job(url, title, conn, status="New", rank="UNKNOWN",

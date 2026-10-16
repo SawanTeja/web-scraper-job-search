@@ -14,7 +14,7 @@ for _p in [_SRC_DIR, _ROOT_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# SQLite DB helper (replaces all json load/save logic)
+# SQLite DB helper
 try:
     from src.core.db import (
         get_conn, init_db, insert_or_ignore_job, get_all_urls, save_company,
@@ -28,29 +28,29 @@ except ImportError:
     )
     from ats_parser import parse_ats_info
 
-# The expanded list of ATS, Portals, and Career Pages
+# Supported ATS domains for career page searches
 SITES = [
-    # Startup ATS
-    "lever.co",
+    # Top Startup ATS
     "boards.greenhouse.io",
+    "jobs.lever.co",
     "jobs.ashbyhq.com",
     "apply.workable.com",
     "smartrecruiters.com",
 
     # Enterprise ATS
-    "icims.com",
-    "jobvite.com",
+    "jobs.jobvite.com",
     "bamboohr.com",
     "successfactors.com",
     "taleo.net",
+    "icims.com",
     "oraclecloud.com",
 ]
 
-# The "Broad Tech" Dragnet
+# Quoted, high-intent job title queries (prevents Google from matching dictionary entries or YouTube videos)
 SEARCH_QUERIES = [
-    'Software',
-    'C++ OR Java',
-    'Javascript OR React OR Node.js'
+    '"software engineer" OR "software developer"',
+    '"intern" OR "internship"',
+    '"backend" OR "frontend" OR "full stack"'
 ]
 
 TIME_FILTER = "qdr:d"
@@ -63,6 +63,20 @@ USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
+
+VALID_ATS_DOMAINS = [
+    "greenhouse.io", "lever.co", "ashbyhq.com", "workable.com",
+    "smartrecruiters.com", "jobvite.com", "bamboohr.com",
+    "successfactors.com", "taleo.net", "oraclecloud.com",
+    "myworkdayjobs.com", "icims.com", "breezy.hr", "recruitee.com"
+]
+
+NON_JOB_JUNK_DOMAINS = [
+    "youtube.com", "oxfordlearnersdictionaries.com", "dictionary.com",
+    "wikipedia.org", "reddit.com", "support.google.com", "google.com",
+    "facebook.com", "instagram.com", "twitter.com", "x.com", "medium.com",
+    "quora.com", "github.com", "amazon.com", "apple.com/support"
+]
 
 
 def notify_user(title, message):
@@ -82,15 +96,46 @@ def notify_user(title, message):
 
 
 def clean_url(raw_url):
-    """Decodes Google redirects and removes tracking queries."""
-    if "google.com/url" in raw_url:
-        parsed = urllib.parse.urlparse(raw_url)
+    """Decodes Google redirects and returns the clean destination URL."""
+    if not raw_url:
+        return ""
+    url = raw_url
+    if "google.com/url" in url:
+        parsed = urllib.parse.urlparse(url)
         query_params = urllib.parse.parse_qs(parsed.query)
         if 'q' in query_params:
-            raw_url = query_params['q'][0]
-    if "google.com/goto" in raw_url:
-        return raw_url  # Preserve encrypted google redirects
-    return raw_url.split('?')[0]
+            url = query_params['q'][0]
+        elif 'url' in query_params:
+            url = query_params['url'][0]
+    return url.split('?')[0]
+
+
+def is_valid_job_url(final_url, target_site):
+    """
+    Strict validation: ensures the URL actually belongs to the target site
+    or a recognized ATS career portal, and explicitly rejects non-job web pages.
+    """
+    if not final_url or not final_url.startswith("http"):
+        return False
+
+    url_lower = final_url.lower()
+
+    # Reject encrypted or unresolved Google redirect tracking tokens
+    if "google.com" in url_lower:
+        return False
+
+    # Reject non-job domains (dictionaries, YouTube videos, blogs, reddit)
+    if any(junk in url_lower for junk in NON_JOB_JUNK_DOMAINS):
+        return False
+
+    # Check if target site (e.g. jobvite.com) is in the URL
+    if target_site:
+        clean_target = target_site.replace("jobs.", "").replace("boards.", "").lower()
+        if clean_target in url_lower:
+            return True
+
+    # Or any recognized ATS platform
+    return any(d in url_lower for d in VALID_ATS_DOMAINS)
 
 
 # --- Anti-CAPTCHA Mouse and Scroll Function ---
@@ -101,7 +146,7 @@ async def human_scroll_and_move(page):
         await asyncio.sleep(random.uniform(0.5, 1.2))
 
         await page.mouse.wheel(0, random.randint(300, 900))
-        await asyncio.sleep(random.uniform(1.5, 3.0))
+        await asyncio.sleep(random.uniform(1.5, 2.5))
 
         if random.choice([True, False]):
             await page.mouse.wheel(0, -random.randint(100, 250))
@@ -135,7 +180,6 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
         print("=" * 65 + "\n")
 
     sites_list = list(sites_override or SITES)
-    # If starting fresh (no active checkpoint), randomize site order to avoid robotic query patterns
     if not resume_site:
         random.shuffle(sites_list)
 
@@ -185,10 +229,9 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
 
                 for start in range(start_page_offset, pages_limit * 10, 10):
                     search_count += 1
-                    # Save checkpoint before making search request so progress is never lost
                     save_scraper_checkpoint("google_fast", site, query_term, start, conn=conn)
 
-                    # RANDOM HOMEPAGE DETOUR to look like human browsing
+                    # RANDOM HOMEPAGE DETOUR
                     if search_count % random.randint(8, 12) == 0:
                         print("      🏠 Taking a detour to Google homepage to act human...")
                         try:
@@ -210,7 +253,7 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
                     except Exception as e:
                         print(f"      ⚠️ Navigation error: {e}")
 
-                    # Check for Google block or CAPTCHA
+                    # Check for Google rate-limit or CAPTCHA
                     page_url = page.url
                     is_sorry = "sorry/index" in page_url or await page.locator('form[action*="/sorry/index"]').count() > 0
 
@@ -261,76 +304,99 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
                                 stopped_due_to_rate_limit = True
                                 break
 
-                    # Wait for search results to render
+                    # Check if Google relaxed the query (0 results on target site)
                     try:
-                        await page.wait_for_selector('div.yuRUbf', timeout=12000)
+                        page_html = await page.content()
+                        is_relaxed = (
+                            "did not match any documents" in page_html
+                            or f"No results found for site:{site}" in page_html
+                            or "It looks like there aren't many great matches for your search" in page_html
+                            or "Showing results for" in page_html
+                            or "Must include:" in page_html
+                        )
+                        if is_relaxed:
+                            print(f"      🚫 Google found 0 recent results for site:{site}. (Google relaxed to general web). Skipping query.")
+                            break
                     except Exception:
-                        print("      ⚠️ Results didn't render in time, will try to extract anyway...")
+                        pass
+
+                    # Wait for search results
+                    try:
+                        await page.wait_for_selector('div.yuRUbf, div.g, div[data-hveid]', timeout=10000)
+                    except Exception:
+                        pass
 
                     await human_scroll_and_move(page)
 
-                    sleep_time = random.uniform(4, 9)
+                    sleep_time = random.uniform(4, 8)
                     print(f"      ⏳ Page {int(start / 10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")
                     await asyncio.sleep(sleep_time)
 
                     try:
+                        # Extract cards using modern Google selectors with fallback
                         results = await page.eval_on_selector_all(
-                            "div.yuRUbf",
-                            """elements => elements.map(e => {
-                                let a = e.querySelector('a');
-                                let h3 = e.querySelector('h3');
-                                return {
-                                    url: a ? a.href : '',
-                                    title: h3 ? h3.innerText : 'Unknown Title'
-                                };
-                            })"""
+                            "div.yuRUbf, div.g, div[data-hveid]",
+                            """elements => {
+                                let list = [];
+                                for (let e of elements) {
+                                    let a = e.querySelector('a:has(h3)') || e.querySelector('a[href^="http"]');
+                                    let h3 = e.querySelector('h3');
+                                    if (a && h3 && a.href) {
+                                        list.push({
+                                            url: a.href,
+                                            title: h3.innerText ? h3.innerText.trim() : 'Unknown Title'
+                                        });
+                                    }
+                                }
+                                return list;
+                            }"""
                         )
 
                         if not results:
                             print("      🚫 No more results for this query. Moving to next.")
                             break
 
-                        print(f"      📊 Found {len(results)} results on page.")
                         new_jobs_found = 0
 
                         for res in results:
-                            raw_url = res['url']
-                            title = res['title']
+                            raw_url = res.get('url', '')
+                            title = res.get('title', '')
+                            final_url = clean_url(raw_url)
 
-                            if site in raw_url or "google.com" in raw_url:
-                                final_url = clean_url(raw_url)
-                                if final_url not in unique_jobs:
-                                    unique_jobs.add(final_url)
+                            # STRICT VALIDATION: Ensure URL is a legitimate ATS job page and not dictionary/youtube
+                            if not is_valid_job_url(final_url, site):
+                                continue
 
-                                    ats_info = parse_ats_info(final_url, title=title, resolve_google=False)
-                                    comp_name = ats_info.get("company_name") if ats_info else None
-                                    plat = ats_info.get("ats_platform") if ats_info else None
+                            if final_url not in unique_jobs:
+                                unique_jobs.add(final_url)
 
-                                    if ats_info:
-                                        save_company(
-                                            name=comp_name,
-                                            ats_platform=plat,
-                                            identifier=ats_info["identifier"],
-                                            career_url=ats_info["career_url"],
-                                            conn=conn
-                                        )
+                                ats_info = parse_ats_info(final_url, title=title, resolve_google=False)
+                                comp_name = ats_info.get("company_name") if ats_info else None
+                                plat = ats_info.get("ats_platform") if ats_info else None
 
-                                    inserted = insert_or_ignore_job(
-                                        final_url, title, conn,
-                                        company=comp_name,
-                                        ats_platform=plat
+                                if ats_info:
+                                    save_company(
+                                        name=comp_name,
+                                        ats_platform=plat,
+                                        identifier=ats_info["identifier"],
+                                        career_url=ats_info["career_url"],
+                                        conn=conn
                                     )
-                                    if inserted:
-                                        new_jobs_found += 1
-                                        new_jobs_added += 1
-                                else:
-                                    print(f"      ⏭️ Skipped (duplicate): {final_url[:80]}")
+
+                                inserted = insert_or_ignore_job(
+                                    final_url, title, conn,
+                                    company=comp_name,
+                                    ats_platform=plat
+                                )
+                                if inserted:
+                                    new_jobs_found += 1
+                                    new_jobs_added += 1
+                                    print(f"      💾 [{plat or 'Job'}] {comp_name or 'Company'}: {title[:40]} -> {final_url[:60]}")
                             else:
-                                print(f"      ⏭️ Skipped (site mismatch): {raw_url[:80]}")
+                                pass
 
                         if new_jobs_found > 0:
                             conn.commit()
-                            print(f"      💾 Saved {new_jobs_found} new jobs to DB.")
 
                     except Exception as e:
                         print(f"      ❌ Error extracting links: {e}")
@@ -338,17 +404,15 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
                 if stopped_due_to_rate_limit:
                     break
 
-                # Query-to-query gap
-                query_pause = random.uniform(10, 18)
+                query_pause = random.uniform(8, 15)
                 print(f"   🛑 Finished query block. Resting for {query_pause:.0f}s...")
                 await asyncio.sleep(query_pause)
 
             if stopped_due_to_rate_limit:
                 break
 
-            # Site-to-site gap
-            site_pause = random.uniform(22, 35)
-            print(f"☕ Finished {site}. Taking a long {site_pause:.0f}s break...")
+            site_pause = random.uniform(18, 28)
+            print(f"☕ Finished {site}. Taking a {site_pause:.0f}s break...")
             await asyncio.sleep(site_pause)
 
         await context.close()

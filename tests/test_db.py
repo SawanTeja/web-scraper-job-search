@@ -87,6 +87,13 @@ class TestDatabase(unittest.TestCase):
         clear_scraper_checkpoint("test_bot", conn=self.conn)
         self.assertIsNone(get_scraper_checkpoint("test_bot", conn=self.conn))
 
+    def test_seed_starter_companies(self):
+        from src.core.db import seed_starter_companies, get_company_count
+        count = seed_starter_companies(conn=self.conn)
+        self.assertGreater(count, 30)
+        self.assertEqual(get_company_count(conn=self.conn), count)
+
 
 if __name__ == "__main__":
     unittest.main()
+

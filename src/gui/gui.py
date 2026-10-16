@@ -24,7 +24,8 @@ try:
         get_conn, init_db, load_db, save_db, delete_jobs_by_rank,
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
-        clear_all_companies, clear_everything
+        clear_all_companies, clear_everything,
+        extract_companies_from_existing_jobs, seed_starter_companies
     )
     from src.scrapers.ats_parser import parse_ats_info
 except ImportError:
@@ -32,9 +33,11 @@ except ImportError:
         get_conn, init_db, load_db, save_db, delete_jobs_by_rank,
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
-        clear_all_companies, clear_everything
+        clear_all_companies, clear_everything,
+        extract_companies_from_existing_jobs, seed_starter_companies
     )
     from ats_parser import parse_ats_info
+
 
 DB_FILE = os.path.join(_ROOT_DIR, "jobs_db.sqlite")
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
@@ -1371,10 +1374,21 @@ class CompaniesWindow(Gtk.Window):
         self.platform_drop.connect("notify::selected", self.on_platform_changed)
         header_box.append(self.platform_drop)
 
-        self.add_btn = Gtk.Button(label="➕ Add Company")
+        self.add_btn = Gtk.Button(label="➕ Add")
         self.add_btn.add_css_class("suggested-action")
         self.add_btn.connect("clicked", self.on_add_company_clicked)
         header_box.append(self.add_btn)
+
+        self.extract_btn = Gtk.Button(label="📥 Extract from Jobs")
+        self.extract_btn.set_tooltip_text("Scan existing jobs in DB to discover and extract company ATS career websites")
+        self.extract_btn.connect("clicked", self.on_extract_clicked)
+        header_box.append(self.extract_btn)
+
+        self.seed_btn = Gtk.Button(label="🌱 Seed Top 45+")
+        self.seed_btn.add_css_class("suggested-action")
+        self.seed_btn.set_tooltip_text("Instantly load 45+ top tech company ATS career boards into your pool")
+        self.seed_btn.connect("clicked", self.on_seed_clicked)
+        header_box.append(self.seed_btn)
 
         self.refresh_btn = Gtk.Button(label="🔄 Refresh")
         self.refresh_btn.connect("clicked", self.on_refresh_clicked)
@@ -1385,6 +1399,7 @@ class CompaniesWindow(Gtk.Window):
         self.clear_all_companies_btn.set_tooltip_text("Remove all saved companies from ATS scraping pool")
         self.clear_all_companies_btn.connect("clicked", self.on_clear_all_companies_clicked)
         header_box.append(self.clear_all_companies_btn)
+
 
         # Stats Banner
         self.stats_banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -1465,6 +1480,49 @@ class CompaniesWindow(Gtk.Window):
     def on_add_company_clicked(self, button):
         add_win = AddCompanyWindow(self)
         add_win.present()
+
+    def on_extract_clicked(self, button):
+        conn = get_conn()
+        job_count = conn.execute("SELECT count(*) FROM jobs").fetchone()[0]
+        conn.close()
+
+        if job_count == 0:
+            self.stats_label.set_markup("⚠️ <span foreground='#d29922'>No jobs in DB yet. Run 'Scrape Jobs' first or use '🌱 Seed Top 45+'!</span>")
+            return
+
+        self.extract_btn.set_sensitive(False)
+        self.stats_label.set_markup(f"🔄 <i>Scanning {job_count} jobs to extract company ATS career websites... Please wait...</i>")
+
+        def worker():
+            try:
+                total_c = extract_companies_from_existing_jobs(max_workers=20)
+                GLib.idle_add(self._on_extract_done, total_c)
+            except Exception as e:
+                GLib.idle_add(self._on_extract_error, str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_extract_done(self, total_c):
+        self.extract_btn.set_sensitive(True)
+        self.load_data()
+        self.stats_label.set_markup(f"✅ <b>Extraction Complete!</b> Total companies in pool: <b>{total_c}</b>")
+        if hasattr(self.parent_window, "status_label"):
+            self.parent_window.status_label.set_text(f"✅ Extracted ATS companies from jobs. Pool: {total_c} companies.")
+        return False
+
+    def _on_extract_error(self, err_msg):
+        self.extract_btn.set_sensitive(True)
+        self.stats_label.set_markup(f"❌ <span foreground='#cf222e'>Extraction error: {err_msg}</span>")
+        return False
+
+    def on_seed_clicked(self, button):
+        added = seed_starter_companies()
+        self.load_data()
+        total = get_company_count()
+        self.stats_label.set_markup(f"🌱 <b>Added {added} top tech companies!</b> Total pool: <b>{total}</b> companies.")
+        if hasattr(self.parent_window, "status_label"):
+            self.parent_window.status_label.set_text(f"🌱 Seeded {added} top tech ATS companies. Pool: {total} companies.")
+
 
     def apply_filter(self):
         query = self.search_entry.get_text().strip().lower()

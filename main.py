@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--win", action="store_true", help="Launch Windows CustomTkinter GUI")
     parser.add_argument("--ats", action="store_true", help="Run direct ATS scraper for saved companies")
     parser.add_argument("--backfill", action="store_true", help="Backfill company ATS boards from database")
+    parser.add_argument("--seed", action="store_true", help="Seed database with top tech ATS companies")
     parser.add_argument("--scrape", action="store_true", help="Run Google search scraper (Fast)")
     parser.add_argument("--rank", action="store_true", help="Run Groq AI LLM ranker")
     parser.add_argument("--filter", action="store_true", help="Run deterministic pre-filter (0 AI tokens)")
@@ -51,6 +52,12 @@ def main():
         from src.core.db import extract_companies_from_existing_jobs
         cnt = extract_companies_from_existing_jobs(max_workers=25)
         print(f"✅ Total companies saved in pool: {cnt}")
+
+    elif args.seed:
+        from src.core.db import seed_starter_companies, get_company_count
+        added = seed_starter_companies()
+        print(f"🌱 Added {added} starter tech companies to ATS pool. Total companies: {get_company_count()}")
+
 
     elif args.scrape:
         import asyncio
