@@ -89,6 +89,17 @@ def init_db(conn=None):
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_deleted_urls ON deleted_urls(url)")
 
+    # Scraper checkpoints: stores progress so scrapers can resume where they left off
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scraper_checkpoints (
+            scraper_name    TEXT PRIMARY KEY,
+            site            TEXT,
+            query_term      TEXT,
+            page_start      INTEGER DEFAULT 0,
+            updated_at      TEXT
+        )
+    """)
+
     conn.commit()
     if close_after:
         conn.close()
@@ -463,6 +474,56 @@ def clear_everything(conn=None):
         "companies": c_companies,
         "deleted_urls": c_urls
     }
+
+
+# ──────────────────────────────────────────────
+#  Scraper Checkpoint State Persistence
+# ──────────────────────────────────────────────
+def save_scraper_checkpoint(scraper_name, site, query_term, page_start=0, conn=None):
+    """Save progress checkpoint for a scraper so it can resume after CAPTCHA/network stop."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("""
+        INSERT INTO scraper_checkpoints (scraper_name, site, query_term, page_start, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(scraper_name) DO UPDATE SET
+            site=excluded.site,
+            query_term=excluded.query_term,
+            page_start=excluded.page_start,
+            updated_at=excluded.updated_at
+    """, (scraper_name, site, query_term, page_start, now))
+    conn.commit()
+    if close_after:
+        conn.close()
+
+
+def get_scraper_checkpoint(scraper_name, conn=None):
+    """Retrieve saved progress checkpoint for a scraper, or None."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    row = conn.execute(
+        "SELECT site, query_term, page_start, updated_at FROM scraper_checkpoints WHERE scraper_name=?",
+        (scraper_name,)
+    ).fetchone()
+    if close_after:
+        conn.close()
+    if row:
+        return dict(row)
+    return None
+
+
+def clear_scraper_checkpoint(scraper_name, conn=None):
+    """Clear progress checkpoint for a scraper after a full completed run."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    conn.execute("DELETE FROM scraper_checkpoints WHERE scraper_name=?", (scraper_name,))
+    conn.commit()
+    if close_after:
+        conn.close()
 
 
 # ──────────────────────────────────────────────

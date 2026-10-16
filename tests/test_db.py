@@ -75,6 +75,18 @@ class TestDatabase(unittest.TestCase):
         self.assertIsNotNone(tombstone)
         self.assertIn(url, get_all_urls(conn=self.conn))
 
+    def test_scraper_checkpoints(self):
+        from src.core.db import save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint
+        save_scraper_checkpoint("test_bot", "bamboohr.com", "Software", 30, conn=self.conn)
+        cp = get_scraper_checkpoint("test_bot", conn=self.conn)
+        self.assertIsNotNone(cp)
+        self.assertEqual(cp["site"], "bamboohr.com")
+        self.assertEqual(cp["query_term"], "Software")
+        self.assertEqual(cp["page_start"], 30)
+
+        clear_scraper_checkpoint("test_bot", conn=self.conn)
+        self.assertIsNone(get_scraper_checkpoint("test_bot", conn=self.conn))
+
 
 if __name__ == "__main__":
     unittest.main()
