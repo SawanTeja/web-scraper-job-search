@@ -19,8 +19,8 @@ from playwright_stealth import Stealth
 # The expanded list of ATS, Portals, and Career Pages
 SITES = [
     # Startup ATS
-    "lever.co",
     "boards.greenhouse.io",
+    "lever.co",
     "jobs.ashbyhq.com",
     "apply.workable.com",
     "smartrecruiters.com",
@@ -49,6 +49,7 @@ SEARCH_QUERIES = [
 
 TIME_FILTER = "qdr:d"
 MAX_PAGES = 5
+
 DB_FILE = os.path.join(_ROOT_DIR, "jobs_db.json")
 
 def clean_url(raw_url):
@@ -60,6 +61,27 @@ def clean_url(raw_url):
             raw_url = query_params['q'][0]
     if "google.com/goto" in raw_url:
         return raw_url # Preserve encrypted google redirects
+    return raw_url.split('?')[0]
+
+async def resolve_url(raw_url, context):
+    """Resolves Google redirects into direct ATS destination URL."""
+    if not raw_url:
+        return ""
+    if "google.com/url" in raw_url or "/url?" in raw_url:
+        parsed = urllib.parse.urlparse(raw_url)
+        query_params = urllib.parse.parse_qs(parsed.query)
+        if 'q' in query_params:
+            return query_params['q'][0].split('?')[0]
+        elif 'url' in query_params:
+            return query_params['url'][0].split('?')[0]
+    if "google.com/goto" in raw_url:
+        try:
+            resp = await context.request.get(raw_url, max_redirects=0, timeout=3000)
+            loc = resp.headers.get("location")
+            if loc:
+                return loc.split('?')[0]
+        except Exception:
+            pass
     return raw_url.split('?')[0]
 
 def load_db():
@@ -198,13 +220,13 @@ async def scrape_google_jobs():
                     query = f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
                     
-                    search_url = f"https://www.google.com/search?q={encoded_query}&tbs={TIME_FILTER}&start={start}"
+                    search_url = f"https://www.google.com/search?q={encoded_query}&tbs={TIME_FILTER}&start={start}&filter=0&hl=en"
                     
                     await page.goto(search_url)
 
                     # Wait for search results to actually render in the DOM
                     try:
-                        await page.wait_for_selector('div.yuRUbf', timeout=15000)
+                        await page.wait_for_selector('div.yuRUbf, div.g', timeout=15000)
                     except Exception:
                         print(f"      ⚠️ Results didn't render in time, will try to extract anyway...")
                     
@@ -217,7 +239,7 @@ async def scrape_google_jobs():
                     await asyncio.sleep(sleep_time)
                     
                     # Check for CAPTCHA
-                    if "sorry/index" in page.url or await page.locator('form[action="/sorry/index"]').count() > 0:
+                    if "sorry/index" in page.url or await page.locator('form[action*="/sorry/index"]').count() > 0:
                         print("      ⚠️ CAPTCHA detected! Please solve it in the Chromium window.")
                         try:
                             import platform
@@ -236,15 +258,21 @@ async def scrape_google_jobs():
                     
                     try:
                         results = await page.eval_on_selector_all(
-                            "div.yuRUbf",
-                            """elements => elements.map(e => {
-                                let a = e.querySelector('a');
-                                let h3 = e.querySelector('h3');
-                                return {
-                                    url: a ? a.href : '',
-                                    title: h3 ? h3.innerText : 'Unknown Title'
-                                };
-                            })"""
+                            "div.yuRUbf, div.g",
+                            """elements => {
+                                let list = [];
+                                for (let e of elements) {
+                                    let a = e.querySelector('a:has(h3)') || e.querySelector('a');
+                                    let h3 = e.querySelector('h3');
+                                    if (a && a.href && (h3 || e.classList.contains('yuRUbf'))) {
+                                        list.push({
+                                            url: a.href,
+                                            title: h3 ? h3.innerText.trim() : 'Unknown Title'
+                                        });
+                                    }
+                                }
+                                return list;
+                            }"""
                         )
                         
                         if not results:
@@ -253,21 +281,27 @@ async def scrape_google_jobs():
 
                         print(f"      📊 Found {len(results)} results on page.")
                         new_jobs_found = 0
+                        target_clean = site.replace("boards.", "").replace("jobs.", "").replace("apply.", "").lower()
+
                         for res in results:
-                            raw_url = res['url']
-                            title = res['title']
-                            
-                            if site in raw_url or "google.com" in raw_url:
-                                final_url = clean_url(raw_url)
+                            raw_url = res.get('url', '')
+                            title = res.get('title', 'Unknown Title')
+                            if not raw_url:
+                                continue
+
+                            final_url = await resolve_url(raw_url, context)
+                            is_target_site = (site in final_url.lower() or target_clean in final_url.lower() or site in raw_url)
+                            if is_target_site or "google.com/goto" in final_url:
                                 if final_url not in unique_jobs:
                                     unique_jobs.add(final_url)
                                     if add_job_to_db(jobs_db, title, final_url):
                                         new_jobs_found += 1
                                         new_jobs_added += 1
+                                        print(f"      💾 Found: {title[:40]} -> {final_url[:65]}")
                                 else:
-                                    print(f"      ⏭️ Skipped (duplicate): {final_url[:80]}")
+                                    print(f"      ⏭️ Skipped (duplicate): {final_url[:65]}")
                             else:
-                                print(f"      ⏭️ Skipped (site mismatch): {raw_url[:80]}")
+                                print(f"      ⏭️ Skipped (site mismatch): {final_url[:65]}")
                         
                         if new_jobs_found > 0:
                             print(f"      💾 Auto-saved {new_jobs_found} new jobs to DB.")
@@ -285,7 +319,7 @@ async def scrape_google_jobs():
             print(f"☕ Finished {site}. Taking a long {site_pause:.0f}s break...")
             await asyncio.sleep(site_pause)
 
-        await browser.close()
+        await context.close()
         return new_jobs_added
 
 if __name__ == "__main__":
