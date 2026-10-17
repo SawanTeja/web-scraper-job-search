@@ -139,6 +139,34 @@ ATS_PATTERNS = [
             "job_id": m.group(2) if m.lastindex >= 2 else None,
         }
     ),
+    # iCIMS: <company>.icims.com/jobs/<job_id>/...
+    (
+        "icims",
+        re.compile(r"https?://([a-zA-Z0-9\-]+)\.icims\.com(?:/jobs(?:/(\d+))?)?", re.I),
+        lambda m: {
+            "ats_platform": "icims",
+            "identifier": m.group(1).lower(),
+            "company_name": m.group(1).replace("-", " ").replace("_", " ").title(),
+            "career_url": f"https://{m.group(1).lower()}.icims.com/jobs/search",
+            "job_id": m.group(2) if m.lastindex >= 2 else None,
+        }
+    ),
+    # Oracle Cloud HCM: <tenant>.fa.<region>.oraclecloud.com/hcmUI/CandidateExperience/.../sites/<site>/job/<id>
+    (
+        "oraclecloud",
+        re.compile(r"https?://([a-zA-Z0-9\-]+)\.fa(?:\.([a-zA-Z0-9\-]+))?\.oraclecloud\.com/hcmUI/CandidateExperience/(?:[a-zA-Z\-]+/)?sites/([^/?#]+)(?:/job/(\d+))?", re.I),
+        lambda m: {
+            "ats_platform": "oraclecloud",
+            "identifier": f"{m.group(1)}|{m.group(2) or ''}|{m.group(3)}",
+            "company_name": m.group(1).replace("-", " ").replace("_", " ").title(),
+            "career_url": (
+                f"https://{m.group(1)}.fa.{m.group(2)}.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{m.group(3)}"
+                if m.group(2)
+                else f"https://{m.group(1)}.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{m.group(3)}"
+            ),
+            "job_id": m.group(4) if m.lastindex >= 4 else None,
+        }
+    ),
 ]
 
 

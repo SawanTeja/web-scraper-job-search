@@ -16,7 +16,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _ROOT_DIR = os.path.abspath(os.path.join(_SRC_DIR, ".."))
-for _p in [_SRC_DIR, _ROOT_DIR]:
+_RANKING_DIR = os.path.join(_SRC_DIR, "ranking")
+_CORE_DIR = os.path.join(_SRC_DIR, "core")
+for _p in [_SRC_DIR, _ROOT_DIR, _RANKING_DIR, _CORE_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -283,6 +285,76 @@ def fetch_workable_jobs(identifier: str) -> list[dict]:
     return results
 
 
+def fetch_jobvite_jobs(identifier: str) -> list[dict]:
+    """Fetches jobs from Jobvite company career page."""
+    url = f"https://jobs.jobvite.com/{identifier}"
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    results = []
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+            matches = re.findall(r'href=[\"\x27](/[^/]+/job/([a-zA-Z0-9]+))[\"\x27][^>]*>([^<]+)</a>', html)
+            for path, jid, title in matches:
+                clean_t = title.strip()
+                if clean_t and not clean_t.lower().startswith("apply") and not clean_t.lower().startswith("view"):
+                    results.append({
+                        "title": clean_t,
+                        "url": f"https://jobs.jobvite.com{path}"
+                    })
+    except Exception:
+        pass
+    return results
+
+
+def fetch_icims_jobs(identifier: str) -> list[dict]:
+    """Fetches jobs via iCIMS company career page iframe."""
+    url = f"https://{identifier}.icims.com/jobs/search?pr=0&in_iframe=1"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    results = []
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+            matches = re.findall(
+                r'href=[\"\x27](https?://[^\s\"\x27]+/jobs/(\d+)/[^\s\"\x27]+)[\"\x27][^>]*title=[\"\x27]([^\"]+)[\"\x27]',
+                html
+            )
+            for raw_url, jid, title in matches:
+                clean_url = raw_url.split("?")[0]
+                clean_title = re.sub(r'^\d+\s*[-–]\s*', '', title).strip()
+                results.append({
+                    "title": clean_title,
+                    "url": clean_url
+                })
+    except Exception:
+        pass
+    return results
+
+
+def fetch_oraclecloud_jobs(identifier: str) -> list[dict]:
+    """Fetches jobs via Oracle Cloud HCM Candidate Experience REST API."""
+    parts = identifier.split("|")
+    if len(parts) < 3:
+        return []
+    tenant, region, site = parts[0], parts[1], parts[2]
+    host = f"{tenant}.fa.{region}.oraclecloud.com" if region else f"{tenant}.fa.oraclecloud.com"
+    url = f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber={site}"
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    results = []
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode("utf-8"))
+            for item in data.get("items", []):
+                for req_item in item.get("requisitionList", []):
+                    jid = req_item.get("Id")
+                    title = req_item.get("Title", "Unknown Title").strip()
+                    loc = req_item.get("PrimaryLocation", "")
+                    full_url = f"https://{host}/hcmUI/CandidateExperience/en/sites/{site}/job/{jid}"
+                    results.append({"title": title, "url": full_url, "location": loc})
+    except Exception:
+        pass
+    return results
+
+
 # Mapping of ATS platform name to fetch function
 PLATFORM_FETCHERS = {
     "greenhouse": fetch_greenhouse_jobs,
@@ -294,6 +366,9 @@ PLATFORM_FETCHERS = {
     "breezy": fetch_breezy_jobs,
     "recruitee": fetch_recruitee_jobs,
     "workable": fetch_workable_jobs,
+    "jobvite": fetch_jobvite_jobs,
+    "icims": fetch_icims_jobs,
+    "oraclecloud": fetch_oraclecloud_jobs,
 }
 
 
@@ -395,7 +470,13 @@ def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
                 location = job.get("location", "")
                 
                 # Check deterministic ignore (US-based, Senior/Lead, Non-tech)
-                from job_filter import evaluate_deterministic_ignore
+                try:
+                    from src.ranking.job_filter import evaluate_deterministic_ignore
+                except ImportError:
+                    try:
+                        from ranking.job_filter import evaluate_deterministic_ignore
+                    except ImportError:
+                        from job_filter import evaluate_deterministic_ignore
                 should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
                 initial_rank = "IGNORE" if should_ignore else "UNKNOWN"
                 initial_status = "NA" if should_ignore else "New"

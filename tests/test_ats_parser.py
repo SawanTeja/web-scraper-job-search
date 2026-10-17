@@ -26,6 +26,8 @@ class TestATSParser(unittest.TestCase):
             ("https://team.bamboohr.com/careers/55", "bamboohr", "team"),
             ("https://demo.breezy.hr/p/123", "breezy", "demo"),
             ("https://jobs.jobvite.com/hulu/job/123", "jobvite", "hulu"),
+            ("https://internal-vtgdefense.icims.com/jobs/9316/job", "icims", "internal-vtgdefense"),
+            ("https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210799717", "oraclecloud", "jpmc||cx_1001"),
         ]
         for url, plat, ident in cases:
             res = parse_ats_info(url)
