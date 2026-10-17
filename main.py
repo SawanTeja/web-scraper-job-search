@@ -18,6 +18,17 @@ import argparse
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(ROOT_DIR, "src")
+
+# Auto-switch to scraper_env virtual environment if run with system python
+venv_python = os.path.join(ROOT_DIR, "scraper_env", "bin", "python")
+if os.path.exists(venv_python) and sys.executable != venv_python:
+    try:
+        import groq
+        import playwright
+        import dotenv
+    except ImportError:
+        os.execv(venv_python, [venv_python] + sys.argv)
+
 for p in [ROOT_DIR, SRC_DIR]:
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -33,9 +44,15 @@ def main():
     parser.add_argument("--scrape", action="store_true", help="Run Google search scraper (Fast)")
     parser.add_argument("--rank", action="store_true", help="Run Groq AI LLM ranker")
     parser.add_argument("--filter", action="store_true", help="Run deterministic pre-filter (0 AI tokens)")
+    parser.add_argument("--limits", action="store_true", help="Check live Groq API rate limits & remaining quota across all keys")
     parser.add_argument("--test", action="store_true", help="Run unit test suite")
 
     args = parser.parse_args()
+
+    if args.limits:
+        from src.ranking.groq_limits import run_limits_cli
+        run_limits_cli()
+        return
 
     if args.test:
         import unittest

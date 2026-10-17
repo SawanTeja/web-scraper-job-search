@@ -74,7 +74,7 @@ class GroqManager:
         print(msg)
 
     async def chat_completion(self, model, messages, temperature=0, retries=None):
-        max_attempts = retries if retries is not None else max(self.total_keys * 2, 6)
+        max_attempts = retries if retries is not None else max(self.total_keys * 4, 20)
 
         for attempt in range(max_attempts):
             client = self.get_client()
@@ -91,11 +91,16 @@ class GroqManager:
             except groq.RateLimitError as e:
                 print(f"   ⚠️ Rate limit exceeded on Key #{key_num}/{self.total_keys}. Rotating...")
                 self.rotate(reason="rate-limit")
-                await asyncio.sleep(1) # Small pause before retrying on next key
+                # If a full ring of all keys has been exhausted, pause for token bucket to drain
+                if (attempt + 1) % self.total_keys == 0:
+                    print(f"   ⏳ All {self.total_keys} keys in rolling TPM cooldown. Pausing 6s for token bucket to drain...")
+                    await asyncio.sleep(6)
+                else:
+                    await asyncio.sleep(1) # Small pause before retrying on next key
             except Exception as e:
                 print(f"   ⚠️ API Error on Key #{key_num}/{self.total_keys}: {e}. Retrying {attempt+1}/{max_attempts}...")
                 self.rotate(reason="api-error")
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2)
         return None
 
 groq_manager = GroqManager()

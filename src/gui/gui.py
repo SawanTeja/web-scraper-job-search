@@ -144,6 +144,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.fast_filter_btn.connect("clicked", self.on_fast_filter_clicked)
         header_box.append(self.fast_filter_btn)
 
+        self.limits_btn = Gtk.Button(label="🔑 API Limits")
+        self.limits_btn.connect("clicked", self.on_check_limits_clicked)
+        header_box.append(self.limits_btn)
+
 
 
         # Delete IGNORE jobs button
@@ -266,6 +270,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.prio_filter_btn.connect("clicked", self.on_fast_filter_clicked)
         priority_header.append(self.prio_filter_btn)
 
+        self.prio_limits_btn = Gtk.Button(label="🔑 API Limits")
+        self.prio_limits_btn.connect("clicked", self.on_check_limits_clicked)
+        priority_header.append(self.prio_limits_btn)
+
         self.sort_status_label = Gtk.Label(label="")
         priority_header.append(self.sort_status_label)
 
@@ -351,6 +359,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
             .company-title {
                 font-weight: bold;
                 font-size: 14px;
+            }
+            .metric-card {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 8px;
+                padding: 10px 14px;
             }
             .dim-label {
                 opacity: 0.7;
@@ -1083,6 +1097,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
+    def on_check_limits_clicked(self, button):
+        win = GroqLimitsWindowGTK(self)
+        win.present()
+
     # --- LLM RANKING LOGIC ---
     def on_reset_rank_clicked(self, button):
         count = 0
@@ -1686,6 +1704,212 @@ class CompaniesWindow(Gtk.Window):
 
         dialog.connect("response", on_response)
         dialog.present()
+
+
+class GroqLimitsWindowGTK(Gtk.Window):
+    """Modern modal dialog showing live Groq API limits & token status across all keys."""
+    def __init__(self, parent_window):
+        super().__init__(title="Groq API Limits & Quota", transient_for=parent_window, modal=True)
+        self.parent_window = parent_window
+        self.set_default_size(780, 580)
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        main_box.set_margin_top(18)
+        main_box.set_margin_bottom(18)
+        main_box.set_margin_start(20)
+        main_box.set_margin_end(20)
+        self.set_child(main_box)
+
+        # Header Title
+        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        title_lbl = Gtk.Label(label="<span size='x-large' weight='bold'>🔑 Groq API Quotas &amp; Health</span>")
+        title_lbl.set_use_markup(True)
+        title_lbl.set_halign(Gtk.Align.START)
+        title_box.append(title_lbl)
+
+        sub_lbl = Gtk.Label(label="Live rate limits, daily requests remaining, and TPM token buffers queried across all keys in .env.")
+        sub_lbl.set_halign(Gtk.Align.START)
+        sub_lbl.add_css_class("dim-label")
+        title_box.append(sub_lbl)
+        main_box.append(title_box)
+
+        # Summary Metrics Box
+        self.stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        main_box.append(self.stats_box)
+
+        # Status / Progress indicator
+        self.status_label = Gtk.Label(label="⏳ Querying Groq API keys...")
+        self.status_label.set_halign(Gtk.Align.START)
+        main_box.append(self.status_label)
+
+        # Scrolled Keys List
+        self.scroll = Gtk.ScrolledWindow()
+        self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroll.set_vexpand(True)
+        self.keys_listbox = Gtk.ListBox()
+        self.keys_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.keys_listbox.add_css_class("boxed-list")
+        self.scroll.set_child(self.keys_listbox)
+        main_box.append(self.scroll)
+
+        # Explainer / Guide Notes
+        guide_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        g1 = Gtk.Label(label="<small>• <b>RPD (Requests Per Day):</b> 1,000 req/day per key. Resets once daily at 00:00 UTC (~midnight).</small>")
+        g1.set_use_markup(True)
+        g1.set_halign(Gtk.Align.START)
+        guide_box.append(g1)
+        g2 = Gtk.Label(label="<small>• <b>TPM (Tokens Per Minute):</b> 8,000 tokens/key/min. Rolling 60s window that clears in seconds.</small>")
+        g2.set_use_markup(True)
+        g2.set_halign(Gtk.Align.START)
+        guide_box.append(g2)
+        g3 = Gtk.Label(label="<small>• <b>Add More Capacity:</b> Add <tt>GROQ_API_KEY_6</tt>, <tt>GROQ_API_KEY_7</tt>, etc. into <tt>.env</tt> (+500 jobs/day per key).</small>")
+        g3.set_use_markup(True)
+        g3.set_halign(Gtk.Align.START)
+        guide_box.append(g3)
+        main_box.append(guide_box)
+
+        # Bottom Action Buttons
+        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_box.set_halign(Gtk.Align.END)
+        self.refresh_btn = Gtk.Button(label="🔄 Refresh Limits")
+        self.refresh_btn.connect("clicked", lambda w: self.fetch_limits())
+        btn_box.append(self.refresh_btn)
+
+        close_btn = Gtk.Button(label="Close")
+        close_btn.connect("clicked", lambda w: self.close())
+        btn_box.append(close_btn)
+        main_box.append(btn_box)
+
+        self.fetch_limits()
+
+    def fetch_limits(self):
+        self.refresh_btn.set_sensitive(False)
+        self.status_label.set_text("⏳ Querying Groq API keys...")
+
+        def worker():
+            try:
+                from src.ranking.groq_limits import check_all_groq_limits
+                data = check_all_groq_limits()
+                GLib.idle_add(self._on_limits_loaded, data)
+            except Exception as e:
+                GLib.idle_add(self._on_limits_error, str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_limits_error(self, err_msg):
+        self.refresh_btn.set_sensitive(True)
+        self.status_label.set_markup(f"❌ <span foreground='#cf222e'>Error: {err_msg}</span>")
+        return False
+
+    def _on_limits_loaded(self, data):
+        self.refresh_btn.set_sensitive(True)
+        if data.get("error"):
+            self.status_label.set_markup(f"❌ <span foreground='#cf222e'>{data['error']}</span>")
+            return False
+
+        self.status_label.set_markup(f"✅ Checked <b>{data['total_keys']} keys</b> | Daily reset in <b>{data['daily_reset_in']}</b> (at 00:00 UTC)")
+
+        # Clear stats_box
+        while True:
+            c = self.stats_box.get_first_child()
+            if not c:
+                break
+            self.stats_box.remove(c)
+
+        # Build Summary Cards
+        def make_card(title, value, subtext):
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+            box.add_css_class("metric-card")
+            box.set_hexpand(True)
+            t = Gtk.Label(label=f"<small>{title}</small>")
+            t.set_use_markup(True)
+            t.set_halign(Gtk.Align.START)
+            t.add_css_class("dim-label")
+            box.append(t)
+            v = Gtk.Label(label=f"<span size='large' weight='bold'>{value}</span>")
+            v.set_use_markup(True)
+            v.set_halign(Gtk.Align.START)
+            box.append(v)
+            s = Gtk.Label(label=f"<small>{subtext}</small>")
+            s.set_use_markup(True)
+            s.set_halign(Gtk.Align.START)
+            s.add_css_class("dim-label")
+            box.append(s)
+            return box
+
+        pct = (data['total_remaining_requests'] / (data['total_limit_requests'] or 1)) * 100
+        self.stats_box.append(make_card("DAILY REQUESTS", f"{data['total_remaining_requests']:,} / {data['total_limit_requests']:,}", f"{pct:.1f}% remaining today"))
+        self.stats_box.append(make_card("JOBS CAPACITY TODAY", f"~{data['estimated_jobs_today']:,} jobs", "at 2 API calls/job"))
+        self.stats_box.append(make_card("ACTIVE KEYS", f"{data['total_keys']} Keys", "Circular rotation"))
+        self.stats_box.append(make_card("DAILY RESET", f"{data['daily_reset_in']}", "Resets at 00:00 UTC"))
+
+        # Clear keys listbox
+        while True:
+            c = self.keys_listbox.get_first_child()
+            if not c:
+                break
+            self.keys_listbox.remove(c)
+
+        for k in data["keys"]:
+            row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=15)
+            row_box.set_margin_top(8)
+            row_box.set_margin_bottom(8)
+            row_box.set_margin_start(12)
+            row_box.set_margin_end(12)
+
+            # Left: Key info + badge
+            key_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            key_box.set_size_request(180, -1)
+            idx_lbl = Gtk.Label(label=f"<b>Key #{k['index']}</b>")
+            idx_lbl.set_use_markup(True)
+            key_box.append(idx_lbl)
+
+            mask_lbl = Gtk.Label(label=f"<tt>{k['masked_key']}</tt>")
+            mask_lbl.set_use_markup(True)
+            mask_lbl.add_css_class("dim-label")
+            key_box.append(mask_lbl)
+            row_box.append(key_box)
+
+            # Status pill
+            status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            status_box.set_size_request(110, -1)
+            pill = Gtk.Label(label=k["status_label"])
+            pill.set_halign(Gtk.Align.START)
+            status_box.append(pill)
+            row_box.append(status_box)
+
+            # Daily Requests
+            req_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            req_box.set_hexpand(True)
+            req_pct = (k['remaining_requests'] / (k['limit_requests'] or 1)) * 100
+            req_lbl = Gtk.Label(label=f"<b>Daily:</b> {k['remaining_requests']:,} / {k['limit_requests']:,} ({req_pct:.0f}%)")
+            req_lbl.set_use_markup(True)
+            req_lbl.set_halign(Gtk.Align.START)
+            req_box.append(req_lbl)
+            row_box.append(req_box)
+
+            # TPM Buffer
+            tpm_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            tpm_box.set_size_request(140, -1)
+            tpm_lbl = Gtk.Label(label=f"<b>TPM:</b> {k['remaining_tokens']:,} / {k['limit_tokens']:,}")
+            tpm_lbl.set_use_markup(True)
+            tpm_lbl.set_halign(Gtk.Align.START)
+            tpm_box.append(tpm_lbl)
+            row_box.append(tpm_box)
+
+            # Reset timer
+            rst_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            rst_box.set_size_request(110, -1)
+            rst_lbl = Gtk.Label(label=f"<small>Reset: {k['reset_requests']}</small>")
+            rst_lbl.set_use_markup(True)
+            rst_lbl.set_halign(Gtk.Align.END)
+            rst_lbl.add_css_class("dim-label")
+            rst_box.append(rst_lbl)
+            row_box.append(rst_box)
+
+            self.keys_listbox.append(row_box)
+
+        return False
 
 
 class JobApp(Gtk.Application):

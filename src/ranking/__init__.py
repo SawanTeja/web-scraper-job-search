@@ -15,8 +15,16 @@ from src.ranking.job_filter import (
     categorize_job_tier, evaluate_deterministic_ignore, apply_deterministic_filter_to_db,
     sync_ats_locations_to_db
 )
-from src.ranking.rank_internships import GroqManager, rank_jobs
-from src.ranking.reset_ranks import reset_ranks
+
+try:
+    from src.ranking.rank_internships import GroqManager, rank_jobs
+except ImportError:
+    GroqManager, rank_jobs = None, None
+
+try:
+    from src.ranking.reset_ranks import reset_ranks
+except ImportError:
+    reset_ranks = None
 
 __all__ = [
     "is_us_based", "is_senior_or_lead", "is_non_tech", "is_career_hub", "is_early_career",

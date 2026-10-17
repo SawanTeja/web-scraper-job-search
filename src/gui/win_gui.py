@@ -156,6 +156,9 @@ class JobAppWindow(ctk.CTk):
         self.fast_filter_btn = ctk.CTkButton(self.header_frame, text="⚡ Smart Tier Filter", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
         self.fast_filter_btn.pack(side="left", padx=5)
 
+        self.limits_btn = ctk.CTkButton(self.header_frame, text="🔑 API Limits", command=self.on_check_limits_clicked, fg_color="#5a3d8a", hover_color="#442c6b")
+        self.limits_btn.pack(side="left", padx=5)
+
         self.del_ignore_btn = ctk.CTkButton(self.header_frame, text="🗑 Delete IGNORE", command=self.on_delete_ignore_clicked, fg_color="#b32929", hover_color="#8a1f1f")
         self.del_ignore_btn.pack(side="left", padx=5)
 
@@ -210,6 +213,9 @@ class JobAppWindow(ctk.CTk):
 
         self.prio_filter_btn = ctk.CTkButton(self.prio_header, text="⚡ Smart Tier Filter", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
         self.prio_filter_btn.pack(side="left", padx=5)
+
+        self.prio_limits_btn = ctk.CTkButton(self.prio_header, text="🔑 API Limits", command=self.on_check_limits_clicked, fg_color="#5a3d8a", hover_color="#442c6b")
+        self.prio_limits_btn.pack(side="left", padx=5)
 
         self.sort_status_label = ctk.CTkLabel(self.prio_header, text="")
         self.sort_status_label.pack(side="left", padx=5)
@@ -900,6 +906,9 @@ class JobAppWindow(ctk.CTk):
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
+    def on_check_limits_clicked(self):
+        win = GroqLimitsWindowWin(self)
+
     def on_reset_rank_clicked(self):
         count = 0
         for link, data in self.jobs_db.items():
@@ -1394,6 +1403,165 @@ class CompaniesWindowWin(ctk.CTkToplevel):
 
         ctk.CTkButton(btn_frame, text="Cancel", width=100, command=dialog.destroy).pack(side="left", expand=True)
         ctk.CTkButton(btn_frame, text="🗑 Delete", width=100, fg_color="#b32929", hover_color="#8a1f1f", command=do_delete).pack(side="right", expand=True)
+
+
+class GroqLimitsWindowWin(ctk.CTkToplevel):
+    """Modern dark modal window showing live Groq API limits & token status across all keys."""
+    def __init__(self, parent_win):
+        super().__init__(parent_win)
+        self.parent_win = parent_win
+        self.title("Groq API Limits & Quota")
+        self.geometry("820x620")
+        self.attributes("-topmost", True)
+
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True, padx=20, pady=15)
+
+        # Header Title
+        title_lbl = ctk.CTkLabel(main_frame, text="🔑 Groq API Quotas & Health", font=("Arial", 18, "bold"))
+        title_lbl.pack(anchor="w", pady=(0, 2))
+
+        sub_lbl = ctk.CTkLabel(
+            main_frame,
+            text="Live rate limits, daily requests remaining, and TPM token buffers queried across all keys in .env.",
+            font=("Arial", 11),
+            text_color="gray"
+        )
+        sub_lbl.pack(anchor="w", pady=(0, 12))
+
+        # Overview Stats Cards Frame (4 cards horizontally)
+        self.stats_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        self.stats_frame.pack(fill="x", pady=(0, 10))
+
+        # Status text
+        self.status_lbl = ctk.CTkLabel(main_frame, text="⏳ Querying Groq API keys...", font=("Arial", 12))
+        self.status_lbl.pack(anchor="w", pady=(0, 8))
+
+        # Scrollable Key List
+        self.keys_list = ctk.CTkScrollableFrame(main_frame, height=280)
+        self.keys_list.pack(fill="both", expand=True, pady=(0, 10))
+
+        # Notes Frame
+        notes_frame = ctk.CTkFrame(main_frame, fg_color="#1e1e1e", corner_radius=6)
+        notes_frame.pack(fill="x", pady=(0, 12), padx=2)
+        ctk.CTkLabel(
+            notes_frame,
+            text="• RPD (Daily Limit): 1,000 req/day per key. Resets once daily at 00:00 UTC (~midnight).\n"
+                 "• TPM (Minute Limit): 8,000 tokens/key/min. Rolling 60s window that automatically recovers in seconds.\n"
+                 "• Add Capacity: Add GROQ_API_KEY_6, GROQ_API_KEY_7, etc. in .env (+500 candidate jobs/day per key).",
+            font=("Arial", 10),
+            text_color="#a0a0a0",
+            justify="left"
+        ).pack(anchor="w", padx=12, pady=8)
+
+        # Bottom Buttons
+        bottom_box = ctk.CTkFrame(main_frame, fg_color="transparent")
+        bottom_box.pack(fill="x")
+
+        self.refresh_btn = ctk.CTkButton(
+            bottom_box,
+            text="🔄 Refresh Limits",
+            command=self.fetch_limits,
+            fg_color="#1f538d",
+            hover_color="#14375e",
+            width=130
+        )
+        self.refresh_btn.pack(side="right", padx=(5, 0))
+
+        close_btn = ctk.CTkButton(
+            bottom_box,
+            text="Close",
+            command=self.destroy,
+            fg_color="#404040",
+            hover_color="#505050",
+            width=90
+        )
+        close_btn.pack(side="right", padx=5)
+
+        self.fetch_limits()
+
+    def fetch_limits(self):
+        self.refresh_btn.configure(state="disabled")
+        self.status_lbl.configure(text="⏳ Querying Groq API keys...")
+
+        def worker():
+            try:
+                from src.ranking.groq_limits import check_all_groq_limits
+                data = check_all_groq_limits()
+                self.after(0, lambda: self._on_limits_loaded(data))
+            except Exception as e:
+                self.after(0, lambda: self._on_limits_error(str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_limits_error(self, err_msg):
+        self.refresh_btn.configure(state="normal")
+        self.status_lbl.configure(text=f"❌ Error: {err_msg}")
+
+    def _on_limits_loaded(self, data):
+        self.refresh_btn.configure(state="normal")
+        if data.get("error"):
+            self.status_lbl.configure(text=f"❌ {data['error']}")
+            return
+
+        self.status_lbl.configure(
+            text=f"✅ Checked {data['total_keys']} keys | Daily reset in {data['daily_reset_in']} (at 00:00 UTC)"
+        )
+
+        # Clear stats_frame
+        for widget in self.stats_frame.winfo_children():
+            widget.destroy()
+
+        def make_stat_card(parent, title, val, sub):
+            card = ctk.CTkFrame(parent, fg_color="#2b2b2b", corner_radius=8)
+            card.pack(side="left", fill="both", expand=True, padx=4)
+            ctk.CTkLabel(card, text=title, font=("Arial", 10), text_color="gray").pack(anchor="w", padx=10, pady=(8, 2))
+            ctk.CTkLabel(card, text=val, font=("Arial", 15, "bold")).pack(anchor="w", padx=10, pady=(0, 2))
+            ctk.CTkLabel(card, text=sub, font=("Arial", 9), text_color="gray").pack(anchor="w", padx=10, pady=(0, 8))
+
+        pct = (data['total_remaining_requests'] / (data['total_limit_requests'] or 1)) * 100
+        make_stat_card(self.stats_frame, "DAILY REQUESTS", f"{data['total_remaining_requests']:,} / {data['total_limit_requests']:,}", f"{pct:.1f}% left today")
+        make_stat_card(self.stats_frame, "JOB CAPACITY TODAY", f"~{data['estimated_jobs_today']:,} jobs", "at 2 reqs/job")
+        make_stat_card(self.stats_frame, "ACTIVE KEYS", f"{data['total_keys']} Keys", "Circular rotation")
+        make_stat_card(self.stats_frame, "DAILY RESET", f"{data['daily_reset_in']}", "Resets at 00:00 UTC")
+
+        # Clear keys list
+        for widget in self.keys_list.winfo_children():
+            widget.destroy()
+
+        for k in data["keys"]:
+            row = ctk.CTkFrame(self.keys_list, fg_color="#242424", corner_radius=6)
+            row.pack(fill="x", pady=3, padx=2)
+
+            left = ctk.CTkFrame(row, fg_color="transparent")
+            left.pack(side="left", padx=10, pady=8)
+            ctk.CTkLabel(left, text=f"Key #{k['index']}", font=("Arial", 12, "bold")).pack(side="left", padx=(0, 5))
+            ctk.CTkLabel(left, text=k['masked_key'], font=("Consolas", 11), text_color="gray").pack(side="left")
+
+            status_color = "#1a531b" if k["status"] == "HEALTHY" else ("#7a6b10" if k["status"] == "RATE_LIMITED" else "#591313")
+            status_badge = ctk.CTkLabel(row, text=f" {k['status_label']} ", fg_color=status_color, corner_radius=4, font=("Arial", 10, "bold"))
+            status_badge.pack(side="left", padx=10)
+
+            req_pct = (k['remaining_requests'] / (k['limit_requests'] or 1)) * 100
+            ctk.CTkLabel(
+                row,
+                text=f"Daily: {k['remaining_requests']:,} / {k['limit_requests']:,} ({req_pct:.0f}%)",
+                font=("Arial", 11)
+            ).pack(side="left", padx=15)
+
+            ctk.CTkLabel(
+                row,
+                text=f"TPM: {k['remaining_tokens']:,} / {k['limit_tokens']:,}",
+                font=("Arial", 11),
+                text_color="gray"
+            ).pack(side="left", padx=15)
+
+            ctk.CTkLabel(
+                row,
+                text=f"Reset: {k['reset_requests']}",
+                font=("Arial", 10),
+                text_color="gray"
+            ).pack(side="right", padx=10)
 
 
 if __name__ == "__main__":
