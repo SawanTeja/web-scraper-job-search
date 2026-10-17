@@ -18,11 +18,13 @@ try:
         is_us_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
         categorize_job_tier, evaluate_deterministic_ignore
     )
+    from src.ranking.rank_internships import is_already_ai_ranked
 except ImportError:
     from ranking.job_filter import (
         is_us_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
         categorize_job_tier, evaluate_deterministic_ignore
     )
+    from ranking.rank_internships import is_already_ai_ranked
 
 
 class TestJobFilter(unittest.TestCase):
@@ -100,15 +102,15 @@ class TestJobFilter(unittest.TestCase):
             self.assertFalse(is_ec, f"Unexpected early career match for '{title}'")
 
     def test_categorize_job_tier(self):
-        # Tier 1: Early Career (High Priority, New status)
+        # Tier 1: Early Career (Internal Priority 1, UNKNOWN rank until AI evaluates it)
         t1 = categorize_job_tier("Junior Software Engineer", "Bangalore, India")
         self.assertEqual(t1["tier"], 1)
-        self.assertEqual(t1["rank"], "HIGH")
+        self.assertEqual(t1["rank"], "UNKNOWN")
         self.assertEqual(t1["status"], "New")
 
         t1_intern = categorize_job_tier("Software Developer Intern @ Visier", "Berlin, Germany")
         self.assertEqual(t1_intern["tier"], 1)
-        self.assertEqual(t1_intern["rank"], "HIGH")
+        self.assertEqual(t1_intern["rank"], "UNKNOWN")
 
         # Tier 2: General Tech / SWE (Clean tech role for AI evaluation)
         t2 = categorize_job_tier("Java Backend Developer - Vadodara", "Vadodara, India")
@@ -145,6 +147,19 @@ class TestJobFilter(unittest.TestCase):
         t3_us = categorize_job_tier("Software Engineer", "Seattle, WA")
         self.assertEqual(t3_us["tier"], 3)
         self.assertEqual(t3_us["rank"], "IGNORE")
+
+    def test_ai_ranked_preservation(self):
+        # Jobs marked by AI must NEVER be re-ranked by AI
+        self.assertTrue(is_already_ai_ranked("[AI Verified] Excellent backend match"))
+        self.assertTrue(is_already_ai_ranked("[AI-Evaluated] High priority Python intern"))
+        self.assertTrue(is_already_ai_ranked("AI: Software Engineering match"))
+        self.assertTrue(is_already_ai_ranked(details={"ai_evaluated": True}))
+
+        # Unranked and deterministic jobs must be eligible for AI evaluation
+        self.assertFalse(is_already_ai_ranked("[Tier 1: Early Career] Early-career keyword: 'Intern'"))
+        self.assertFalse(is_already_ai_ranked("[Tier 2: Tech / SWE Role]"))
+        self.assertFalse(is_already_ai_ranked("Reset for re-evaluation"))
+        self.assertFalse(is_already_ai_ranked(""))
 
 
 if __name__ == "__main__":

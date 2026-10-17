@@ -462,7 +462,7 @@ def categorize_job_tier(title: str, location: str = "", jd_text: str = "") -> di
     if is_ec:
         return {
             "tier": 1,
-            "rank": "HIGH",
+            "rank": "UNKNOWN",
             "status": "New",
             "reason": f"[Tier 1: Early Career] {ec_reason}",
             "is_early_career": True,
@@ -586,7 +586,7 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
     cur = conn.execute("UPDATE jobs SET status='NA' WHERE rank='IGNORE' AND status='New'")
     already_ignored_moved = cur.rowcount
 
-    query = "SELECT url, title, details FROM jobs WHERE status = 'New' OR rank = 'UNKNOWN'"
+    query = "SELECT url, title, details, reason, rank FROM jobs WHERE status = 'New' OR rank = 'UNKNOWN'"
     rows = conn.execute(query).fetchall()
 
     stats = {
@@ -606,10 +606,17 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
     for r in rows:
         if isinstance(r, (tuple, list)):
             url, title, det_raw = r[0], r[1] or "", r[2]
+            reason_existing = r[3] or ""
         else:
             url = r["url"]
             title = r["title"] or ""
             det_raw = r["details"]
+            reason_existing = r["reason"] or ""
+
+        # NEVER overwrite or re-evaluate jobs that have already been evaluated by AI
+        if reason_existing.startswith("[AI Verified]") or reason_existing.startswith("[AI-Evaluated]") or reason_existing.startswith("AI:"):
+            stats["passed"] += 1
+            continue
 
         location = ""
         jd_snippet = ""
@@ -641,7 +648,7 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
 
         elif tier == 1:
             conn.execute(
-                "UPDATE jobs SET rank='HIGH', status='New', reason=? WHERE url=?",
+                "UPDATE jobs SET rank='UNKNOWN', status='New', reason=? WHERE url=?",
                 (tier_res["reason"], url)
             )
             stats["tier1_early_career"] += 1

@@ -78,7 +78,7 @@ class ToolTip:
 
 DB_FILE = os.path.join(_ROOT_DIR, "jobs_db.sqlite")
 STATUSES = ["New", "Applied", "Ongoing", "Rejected", "NA"]
-RANKS = ["HIGH", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
+RANKS = ["HIGH", "MEDIUM", "LOW", "IGNORE", "ERROR", "UNKNOWN"]
 
 def resolve_script_path(script_filename):
     """Find script in src/scrapers, src/ranking, root dir, or cwd."""
@@ -100,6 +100,7 @@ NA_EXPIRY_HOURS = 24
 
 RANK_COLORS = {
     "HIGH": "#1a531b",   # green
+    "MEDIUM": "#7a6b10", # amber/yellow
     "LOW": "#8c4412",    # orange
     "IGNORE": "#404040", # dark grey
     "ERROR": "#591313",  # red
@@ -374,7 +375,7 @@ class JobAppWindow(ctk.CTk):
     def _build_priority_queue(self, render_queue):
         """Append priority-sorted rows to the render queue."""
         def get_rank_weight(rank_str):
-            weights = {"HIGH": 0, "LOW": 1, "UNKNOWN": 2, "ERROR": 3, "IGNORE": 4}
+            weights = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNKNOWN": 3, "ERROR": 4, "IGNORE": 5}
             return weights.get(rank_str, 3)
 
         now = datetime.now(timezone.utc)

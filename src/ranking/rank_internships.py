@@ -324,6 +324,17 @@ REASON: One short sentence explaining the decision.
 
     return rank, reason
 
+
+def is_already_ai_ranked(reason: str = "", details: dict = None) -> bool:
+    """Returns True if this job has already been evaluated by the Groq AI."""
+    clean_reason = (reason or "").strip()
+    if clean_reason.startswith("[AI Verified]") or clean_reason.startswith("[AI-Evaluated]") or clean_reason.startswith("AI:"):
+        return True
+    if details and isinstance(details, dict) and details.get("ai_evaluated"):
+        return True
+    return False
+
+
 async def process_and_rank_jobs():
     if os.path.exists("stop.flag"):
         try:
@@ -341,15 +352,49 @@ async def process_and_rank_jobs():
         print(f"🧹 Deterministic Pre-Filter: Auto-ignored {filter_stats['total_ignored']} jobs ({filter_stats['senior_ignored']} Senior, {filter_stats['non_tech_ignored']} Non-tech, {filter_stats['us_ignored']} US) - 0 tokens used!")
 
     jobs_db = load_db(conn)
-    fresh_jobs = {link: data for link, data in jobs_db.items()
-                  if data.get("status") == "New" and data.get("rank", "UNKNOWN") in ["UNKNOWN", "ERROR"]}
 
-    if not fresh_jobs:
-        print("ℹ️  No fresh jobs to rank. All jobs have already been processed.")
+    # 2. Build prioritized ranking queue:
+    #    Priority 1: Tier 1 jobs (internships / early career provisionally tagged, awaiting full AI verification)
+    #    Priority 2: Tier 2 jobs (general SWE / tech roles with rank UNKNOWN or ERROR)
+    #    NOTE: Any job already evaluated by AI ([AI Verified]) is STRICTLY SKIPPED and never re-ranked!
+    candidate_items = []
+    skipped_ai_count = 0
+    for link, data in jobs_db.items():
+        if data.get("status") != "New":
+            continue
+        rank = data.get("rank", "UNKNOWN")
+        reason = data.get("reason", "")
+        details = data.get("details")
+
+        # Once marked by AI, NEVER re-rank it in AI again
+        if is_already_ai_ranked(reason, details):
+            skipped_ai_count += 1
+            continue
+
+        is_tier1 = "[Tier 1:" in reason or (rank == "HIGH")
+        is_unranked = rank in ["UNKNOWN", "ERROR"]
+
+        if is_tier1 or is_unranked:
+            prio = 0 if is_tier1 else 1
+            candidate_items.append((prio, link, data))
+
+    if skipped_ai_count > 0:
+        print(f"🔒 Skipped {skipped_ai_count} jobs already evaluated by AI (will not re-rank).")
+
+    if not candidate_items:
+        print("ℹ️  No fresh jobs to rank. All active jobs have already been evaluated by AI.")
         conn.close()
         return
 
-    print(f"🚀 Starting JD extraction and AI ranking for {len(fresh_jobs)} fresh candidate jobs...\n")
+    # Sort queue: Tier 1 jobs are AI-ranked FIRST!
+    candidate_items.sort(key=lambda x: x[0])
+    fresh_jobs = {link: data for _, link, data in candidate_items}
+    tier1_count = sum(1 for p, _, _ in candidate_items if p == 0)
+    tier2_count = len(candidate_items) - tier1_count
+
+    print(f"🚀 Starting JD extraction and AI ranking for {len(fresh_jobs)} candidate jobs:")
+    print(f"   ⭐ Priority 1: {tier1_count} Early Career / Intern jobs (AI will read full JD to verify tech fit & eliminate hidden catches)")
+    print(f"   💻 Priority 2: {tier2_count} General Software / Tech jobs\n")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -373,13 +418,15 @@ async def process_and_rank_jobs():
                 )
                 
             title = data.get("title", "Unknown")
-            print(f"[{index + 1}/{len(fresh_jobs)}] Extracting: {title}")
+            is_tier1 = "[Tier 1:" in data.get("reason", "") or (data.get("rank") == "HIGH" and not data.get("reason", "").startswith("AI:"))
+            tier_badge = "⭐ [Tier 1 Intern/Junior]" if is_tier1 else "💻 [Tier 2 Tech/SWE]"
+            print(f"[{index + 1}/{len(fresh_jobs)}] {tier_badge} Extracting: {title}")
 
             # Deterministic pre-check on title (Senior, SDE 2/3, Non-tech, US)
             should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title)
             if should_ignore:
                 print(f"   ⏭️ Skipped ([Deterministic] {ignore_reason})\n")
-                update_job(url, conn, rank="IGNORE", reason=f"[Deterministic] {ignore_reason}")
+                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deterministic] {ignore_reason}")
                 conn.commit()
                 continue
                 
@@ -425,8 +472,12 @@ async def process_and_rank_jobs():
 
                 rank, reason, details = await asyncio.wait_for(process_single_job(), timeout=90)
 
-                print(f"   📊 Result: {rank} - {reason}\n")
-                update_job(url, conn, rank=rank, reason=reason,
+                print(f"   📊 AI Result: {rank} - {reason}\n")
+                new_status = "NA" if rank == "IGNORE" else "New"
+                ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
+                if details and isinstance(details, dict):
+                    details["ai_evaluated"] = True
+                update_job(url, conn, rank=rank, reason=ai_reason, status=new_status,
                            **({"details": details} if details else {}))
                 conn.commit()
 
