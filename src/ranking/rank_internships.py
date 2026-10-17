@@ -27,6 +27,9 @@ try:
 except ImportError:
     from db import get_conn, init_db, load_db, update_job
 
+PRIMARY_MODEL = "qwen/qwen3.8-27b"
+FALLBACK_MODEL = "openai/gpt-oss-20b"
+
 # --- GROQ ROTATION MANAGER ---
 class GroqManager:
     def __init__(self):
@@ -60,28 +63,45 @@ class GroqManager:
         self.clients = [AsyncGroq(api_key=k) for k in keys]
         self.current_idx = 0
         self.total_keys = len(self.clients)
-        print(f"🔑 Loaded {self.total_keys} Groq API keys for circular rotation.")
+        self.primary_model = PRIMARY_MODEL
+        self.fallback_model = FALLBACK_MODEL
+        self.active_model = PRIMARY_MODEL
+        # Set of key numbers (1-indexed) that have exhausted their DAILY quota on the active model
+        self.daily_exhausted_keys = set()
+        print(f"🔑 Loaded {self.total_keys} Groq API keys for circular rotation (Primary: {self.primary_model}, Fallback: {self.fallback_model}).")
 
     def get_client(self):
+        # Automatically skip any keys that have already exhausted their DAILY quota on the active model
+        if len(self.daily_exhausted_keys) < self.total_keys:
+            attempts = 0
+            while (self.current_idx + 1) in self.daily_exhausted_keys and attempts < self.total_keys:
+                self.current_idx = (self.current_idx + 1) % self.total_keys
+                attempts += 1
         return self.clients[self.current_idx]
 
     def rotate(self, reason: str = ""):
-        old_idx = self.current_idx
         self.current_idx = (self.current_idx + 1) % self.total_keys
+        # Skip daily exhausted keys during rotation as long as at least one key still has daily quota
+        if len(self.daily_exhausted_keys) < self.total_keys:
+            attempts = 0
+            while (self.current_idx + 1) in self.daily_exhausted_keys and attempts < self.total_keys:
+                self.current_idx = (self.current_idx + 1) % self.total_keys
+                attempts += 1
         msg = f"🔄 Swapped to Groq API Key #{self.current_idx + 1}/{self.total_keys}"
         if reason:
             msg += f" ({reason})"
         print(msg)
 
-    async def chat_completion(self, model, messages, temperature=0, retries=None):
-        max_attempts = retries if retries is not None else max(self.total_keys * 4, 20)
+    async def chat_completion(self, messages, temperature=0, retries=None, model=None):
+        max_attempts = retries if retries is not None else max(self.total_keys * 4, 25)
 
         for attempt in range(max_attempts):
+            target_model = model or self.active_model
             client = self.get_client()
             key_num = self.current_idx + 1
             try:
                 response = await client.chat.completions.create(
-                    model=model,
+                    model=target_model,
                     messages=messages,
                     temperature=temperature
                 )
@@ -89,14 +109,46 @@ class GroqManager:
                 self.current_idx = (self.current_idx + 1) % self.total_keys
                 return response
             except groq.RateLimitError as e:
-                print(f"   ⚠️ Rate limit exceeded on Key #{key_num}/{self.total_keys}. Rotating...")
-                self.rotate(reason="rate-limit")
-                # If a full ring of all keys has been exhausted, pause for token bucket to drain
-                if (attempt + 1) % self.total_keys == 0:
-                    print(f"   ⏳ All {self.total_keys} keys in rolling TPM cooldown. Pausing 6s for token bucket to drain...")
-                    await asyncio.sleep(6)
+                err_str = str(e).lower()
+                # 1. Distinguish between rolling per-minute limits (TPM / RPM) and genuine DAILY limits (TPD / RPD)
+                # TPM / RPM recover in seconds; DAILY limits (TPD / RPD) exhaust quota until 00:00 UTC
+                is_per_minute = any(x in err_str for x in ["tokens per minute", "tokens_per_minute", "tpm", "requests per minute", "requests_per_minute", "rpm"]) or ("please try again in" in err_str and ("s." in err_str or "ms." in err_str))
+                is_daily = not is_per_minute and any(x in err_str for x in ["tokens_per_day", "tokens per day", "tpd", "requests_per_day", "requests per day", "rpd", "daily"])
+
+                if is_daily:
+                    self.daily_exhausted_keys.add(key_num)
+                    exhausted_count = len(self.daily_exhausted_keys)
+                    print(f"   ⚠️ Key #{key_num}/{self.total_keys} reached DAILY quota limit ({exhausted_count}/{self.total_keys} keys exhausted on {self.active_model}).")
+
+                    # STRICT RULE: ONLY switch to fallback when ALL keys have hit daily rate limit
+                    # Even if 1 key hasn't hit daily limit, DO NOT switch model!
+                    if exhausted_count >= self.total_keys:
+                        if self.active_model == self.primary_model:
+                            self.active_model = self.fallback_model
+                            self.daily_exhausted_keys.clear()
+                            print(f"\n🔀 ALL {self.total_keys} keys exhausted daily quota on {self.primary_model}!")
+                            print(f"🔄 Switched to Fallback Model: {self.fallback_model} (Fresh 200,000 daily tokens per key!)\n")
+                            await asyncio.sleep(1)
+                            continue
+                        else:
+                            print(f"❌ ALL {self.total_keys} keys have exhausted daily limits on both primary and fallback models!")
+                            return None
+                    else:
+                        # At least one key has daily tokens left -> keep using active model and rotate to next key
+                        print(f"   ↪️ Other keys still have daily quota on {self.active_model}. Rotating...")
+                        self.rotate(reason="daily-limit-rotate")
+                        await asyncio.sleep(1)
                 else:
-                    await asyncio.sleep(1) # Small pause before retrying on next key
+                    # Rolling per-minute rate limit (TPM/RPM) - NEVER switch models on per-minute limits!
+                    print(f"   ⚠️ Per-minute TPM cooldown on Key #{key_num}/{self.total_keys}. Rotating...")
+                    self.rotate(reason="rate-limit")
+                    # If all active keys have been tried within this minute, pause for rolling token bucket to drain
+                    active_keys_count = max(1, self.total_keys - len(self.daily_exhausted_keys))
+                    if (attempt + 1) % active_keys_count == 0:
+                        print(f"   ⏳ All active keys in rolling TPM cooldown. Pausing 6s for token bucket to drain...")
+                        await asyncio.sleep(6)
+                    else:
+                        await asyncio.sleep(1) # Small pause before retrying on next key
             except Exception as e:
                 print(f"   ⚠️ API Error on Key #{key_num}/{self.total_keys}: {e}. Retrying {attempt+1}/{max_attempts}...")
                 self.rotate(reason="api-error")
@@ -246,7 +298,6 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
 """
 
     response = await groq_manager.chat_completion(
-        model='qwen/qwen3.8-27b',
         messages=[{'role': 'user', 'content': prompt}]
     )
 
@@ -293,8 +344,9 @@ Assign exactly ONE of the following ranks based on the job requirements. Evaluat
 1. IGNORE:
    - Senior, Lead, Manager, or non-internship/non-entry level roles.
    - Requires >2 years of experience.
-   - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation).
-   - Jobs located in the USA (this includes ANY US state or city like California, CA, New York, NY, Texas, TX, Seattle, SF, etc. You must filter these out!).
+   - Non-software roles (e.g., Civil, Mechanical, HR, QA, Tech Support, Transportation, Cashier, Sales).
+   - Jobs located in the USA (California, CA, New York, NY, Texas, TX, Seattle, SF, etc. Filter these out!).
+   - Jobs located in Canada (Toronto, Vancouver, Montreal, Ontario, Quebec, Alberta, etc. Filter these out!).
 2. HIGH: Software Engineering, Backend, Full Stack, C/C++, Node.js, Systems, Mobile.
 3. MEDIUM: General Web Dev, Platform, AI/ML, DevOps (programming-focused).
 4. LOW: Data Analyst, Data Engineering, Cloud/IT operations.
@@ -306,7 +358,6 @@ REASON: One short sentence explaining the decision.
 """
 
     response = await groq_manager.chat_completion(
-        model='qwen/qwen3.8-27b',
         messages=[{'role': 'user', 'content': prompt}]
     )
 
@@ -451,7 +502,7 @@ async def process_and_rank_jobs():
 
                     await page.wait_for_timeout(3000)
                     raw_text = await page.inner_text("body", timeout=10000)
-                    jd_text = clean_text(raw_text)[:6000]
+                    jd_text = clean_text(raw_text)[:2800]
 
                     if len(jd_text) < 100:
                         fallback_text = await page.evaluate("""() => {
@@ -459,18 +510,19 @@ async def process_and_rank_jobs():
                                 .map(el => el.innerText)
                                 .join(' ');
                         }""")
-                        jd_text = clean_text(fallback_text)[:6000]
+                        jd_text = clean_text(fallback_text)[:2800]
 
                     if len(jd_text) < 100:
                         return "ERROR", "Failed to extract meaningful text.", None
                     else:
-                        print("   🧠 Extracting structured details with Groq (qwen3.8-27b)...")
+                        active_model_name = groq_manager.active_model.split('/')[-1]
+                        print(f"   🧠 Extracting structured details with Groq ({active_model_name})...")
                         details = await extract_job_details_with_llm(title, jd_text)
 
                         if details:
-                            print("   🧠 Ranking Extracted JSON with Groq (qwen3.8-27b)...")
+                            print(f"   🧠 Ranking Extracted JSON with Groq ({active_model_name})...")
                         else:
-                            print("   ⚠️ Extraction failed. Ranking RAW Job Description with Groq (qwen3.8-27b)...")
+                            print(f"   ⚠️ Extraction failed. Ranking RAW Job Description with Groq ({active_model_name})...")
 
                         rank, reason = await evaluate_job_with_llm(details, jd_text, title)
                         return rank, reason, details

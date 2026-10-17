@@ -126,11 +126,16 @@ NON_TECH_PATTERNS = [
     # Administration, Reception, Secretarial
     r"\b(?:receptionist|office manager|executive assistant|administrative assistant|front desk|office coordinator|clerk)\b",
 
-    # Retail, Food Service, Hospitality, Warehouse
+    # Retail, Food Service, Hospitality, Warehouse (English & French)
     r"\b(?:warehouse|store associate|driver|delivery|barista|cook|chef|cashier|retail|barman|waiter|hotel)\b",
+    r"\b(?:caissier|caissi[eè]re|commis(?:\s+[aà]\s+l['’]inventaire)?|journalier|magasinier)\b",
 
     # Physical / Civil / Mechanical Engineering & Trades
     r"\b(?:civil engineer|mechanical engineer|structural engineer|construction|technician|electrician|facilities|hvac)\b",
+    r"\b(?:building\s+(?:maintenance\s+)?mechanic|heavy\s+equipment|repair\s+mechanic|maintenance\s+mechanic)\b",
+    r"\b(?:sewage|wastewater|water\s+treatment|treatment\s+plant|plumbing|plumber)\b",
+    r"\b(?:nuclear\s+facility|nuclear\s+cognizant|power\s+plant\s+operator)\b",
+    r"\b(?:maritime\s+technical\s+operations|vessel\s+operations)\b",
     r"\b(?:geolog(?:y|ist|ical)|geotechnical|asbestos|metallurg(?:y|ical)|mining\s+engineer|environmental|hydrolog(?:y|ist))\b",
     r"\b(?:fire\s+engineer|fire\s+safety|safety\s+officer|security\s+officer|security\s+guard|health\s+and\s+safety|ehs)\b",
     r"\b(?:traffic\s+engineer|process\s+engineer|field\s+service|warranty|surveyor|surveying)\b",
@@ -141,14 +146,28 @@ NON_TECH_PATTERNS = [
     # Creative / Visual non-coding design
     r"\b(?:graphic\s+designer|visual\s+designer|video\s+editor|animat(?:or|ion)|fashion|interior\s+designer)\b",
 
-    # Supply chain & Logistics
+    # Supply chain & Logistics & Administration
     r"\b(?:logistics?|supply\s+chain|procurement|inventory|logisztika|shipping|purchasing)\b",
+    r"\bgestionnaire(?:\s*,\s*(?:comptes|approvisionnement|produits|relation|incidents|clients?))?\b",
+    r"\bsecr[eé]taire(?:\s+m[eé]dical[e]?)?\b",
+    r"\bcomptabilit[eé]\b",
+    r"\b(?:sourcing\s+buyer|quotation\s+specialist|paid\s+search\s+analyst|ppc\s+analyst)\b",
 
     # Foreign language industrial / mechanical terms
     r"\b(?:contrôleur|esthétique|habillage|horloger|mouvement|industrialisation|simulation\s+des\s+chocs)\b",
 ]
 
 NON_TECH_REGEX = re.compile("|".join(NON_TECH_PATTERNS), re.I)
+
+TECH_SAFEGUARD_REGEX = re.compile(
+    r"\b(?:software|developer|programmer|full\s*stack|front\s*end|back\s*end|web\s+developer|mobile|ios|android|ai\s+engineer|ml\s+engineer|machine\s+learning|data\s+scientist|data\s+engineer|devops|sre|site\s+reliability|cloud\s+engineer|cyber|security\s+engineer|systems\s+engineer|qa\s+engineer|sdet|test\s+automation|embedded\s+software|firmware)\b",
+    re.I
+)
+
+HARD_NON_TECH_REGEX = re.compile(
+    r"\b(?:caissier|caissi[eè]re|commis|journalier|magasinier|secr[eé]taire|mechanic|sewage|wastewater|sourcing\s+buyer|quotation\s+specialist)\b",
+    re.I
+)
 
 
 # ──────────────────────────────────────────────
@@ -270,7 +289,6 @@ NON_US_REGIONS = [
     "united kingdom", "london", "manchester", "birmingham", "scotland", "edinburgh",
     "germany", "berlin", "munich", "frankfurt", "hamburg",
     "france", "paris", "lyon",
-    "canada", "toronto", "vancouver", "montreal", "ottawa", "waterloo",
     "netherlands", "amsterdam", "rotterdam",
     "poland", "warsaw", "krakow",
     "singapore", "australia", "sydney", "melbourne",
@@ -284,6 +302,48 @@ US_STATES_REGEX = re.compile(r"\b(" + "|".join(US_STATES) + r")\b", re.I)
 US_CITIES_REGEX = re.compile(r"\b(" + "|".join(US_CITIES) + r")\b", re.I)
 US_STATE_ABBR_REGEX = re.compile(r"(?:,\s*|\s+)(" + "|".join(US_STATE_ABBRS) + r")(?:\s*,\s*USA|\s*,\s*United States|\s*$|[,\s\)\-])", re.I)
 NON_US_REGEX = re.compile(r"\b(" + "|".join(NON_US_REGIONS) + r")\b", re.I)
+
+# ──────────────────────────────────────────────
+#  Patterns for Canadian Locations
+# ──────────────────────────────────────────────
+CANADA_COUNTRY_PATTERNS = [
+    r"\bcanada\b",
+    r"\bcanadian\b",
+    r"\bca\s+remote\b",
+    r"\bremote\s*[-–(]\s*(?:canada|can)\b",
+    r"\bremote\s+in\s+canada\b",
+    r"\bwithin\s+canada\b",
+    r"\bcanada\s+only\b",
+    r"\beligib(?:le|ility)\s+to\s+work\s+in\s+canada\b",
+    r"\bauthori[zs]ed\s+to\s+work\s+in\s+canada\b",
+]
+
+CANADA_PROVINCES = [
+    "Ontario", "Quebec", "Québec", "British Columbia", "Alberta",
+    "Manitoba", "Saskatchewan", "Nova Scotia", "New Brunswick",
+    "Newfoundland", "Prince Edward Island", "Northwest Territories",
+    "Yukon", "Nunavut"
+]
+
+CANADA_PROVINCE_ABBRS = [
+    "ON", "QC", "BC", "AB", "MB", "SK", "NS", "NB", "NL", "PE", "NT", "YT"
+]
+
+CANADA_CITIES = [
+    "Toronto", "Vancouver", "Montreal", "Montréal", "Ottawa", "Calgary",
+    "Edmonton", "Quebec City", "Ville de Québec", "Winnipeg", "Mississauga",
+    "Brampton", "Hamilton", "Waterloo", "Kitchener", "Halifax", "Surrey",
+    "Markham", "Richmond Hill", "Laval", "Gatineau", "Longueuil", "Burnaby",
+    "Saskatoon", "Regina", "St. John's", "Saint John", "Oakville", "Burlington",
+    "Oshawa", "Barrie", "Guelph", "Kingston", "Dartmouth", "Kelowna", "Fredericton",
+    "Moncton", "Charlottetown", "Whitehorse", "Yellowknife", "Lévis", "Levis"
+]
+
+CANADA_COUNTRY_REGEX = re.compile("|".join(CANADA_COUNTRY_PATTERNS), re.I)
+CANADA_PROVINCES_REGEX = re.compile(r"\b(" + "|".join(CANADA_PROVINCES) + r")\b", re.I)
+CANADA_CITIES_REGEX = re.compile(r"\b(" + "|".join(CANADA_CITIES) + r")\b", re.I)
+CANADA_PROVINCE_ABBR_REGEX = re.compile(r"(?:,\s*)(" + "|".join(CANADA_PROVINCE_ABBRS) + r")(?:\s*,\s*Canada|\s*$|[,\s\)\-])", re.I)
+CANADA_VICTORIA_REGEX = re.compile(r"\bVictoria,\s*(?:BC|Canada|British\s+Columbia)\b", re.I)
 
 
 # ──────────────────────────────────────────────
@@ -302,11 +362,21 @@ def is_senior_or_lead(title: str, jd_text: str = "") -> tuple[bool, str]:
 
 
 def is_non_tech(title: str, jd_text: str = "") -> tuple[bool, str]:
-    """Returns (True, reason) if role is non-technical (Sales, HR, Helpdesk, Assembly, etc.) from title."""
+    """Returns (True, reason) if role is non-technical (Sales, HR, Helpdesk, Assembly, Cashier, etc.) from title."""
     if title:
         norm_title = normalize_text(title)
+
+        # 1. Hard non-tech roles never get exempted by tech words (e.g. Cashier, Mechanic, Sewage)
+        hm = HARD_NON_TECH_REGEX.search(title) or HARD_NON_TECH_REGEX.search(norm_title)
+        if hm:
+            return True, f"Non-tech role detected in title: '{hm.group(0)}'"
+
+        # 2. General non-tech pattern check
         m = NON_TECH_REGEX.search(title) or NON_TECH_REGEX.search(norm_title)
         if m:
+            # Safeguard: if title explicitly mentions software engineering / development, keep it
+            if TECH_SAFEGUARD_REGEX.search(title) or TECH_SAFEGUARD_REGEX.search(norm_title):
+                return False, ""
             return True, f"Non-tech role detected in title: '{m.group(0)}'"
 
     return False, ""
@@ -343,7 +413,12 @@ def is_us_based(title: str = "", location: str = "", jd_text: str = "") -> tuple
     norm_combined = normalize_text(loc_combined)
 
     # 1. Non-US Override check: avoid false positives with state abbreviations (e.g. Bangalore, IN or Toronto, CA)
-    has_non_us = bool(NON_US_REGEX.search(loc_combined) or NON_US_REGEX.search(norm_combined))
+    has_non_us = bool(
+        NON_US_REGEX.search(loc_combined) or 
+        NON_US_REGEX.search(norm_combined) or 
+        CANADA_CITIES_REGEX.search(loc_combined) or 
+        CANADA_COUNTRY_REGEX.search(loc_combined)
+    )
     has_us_city = bool(US_CITIES_REGEX.search(loc_combined) or US_CITIES_REGEX.search(norm_combined))
 
     # If it has an explicit Non-US location and no specific US city, it is NOT US
@@ -399,6 +474,66 @@ def is_us_based(title: str = "", location: str = "", jd_text: str = "") -> tuple
     return False, ""
 
 
+def is_canada_based(title: str = "", location: str = "", jd_text: str = "") -> tuple[bool, str]:
+    """Returns (True, reason) if role is located in Canada."""
+    loc_combined = f"{title} {location}".strip()
+    norm_combined = normalize_text(loc_combined)
+
+    # 1. Non-Canada Override: e.g. London, UK or Melbourne, Australia
+    has_other_country = bool(NON_US_REGEX.search(loc_combined) or NON_US_REGEX.search(norm_combined))
+    has_can_city = bool(CANADA_CITIES_REGEX.search(loc_combined) or CANADA_CITIES_REGEX.search(norm_combined))
+    has_can_country = bool(CANADA_COUNTRY_REGEX.search(loc_combined) or CANADA_COUNTRY_REGEX.search(norm_combined))
+
+    # If it specifies another country and does NOT mention Canada or a Canadian city, do not filter
+    if has_other_country and not has_can_city and not has_can_country:
+        return False, ""
+
+    # 2. Check title explicitly for Canada or Canadian tech hubs
+    if title:
+        m = CANADA_COUNTRY_REGEX.search(title)
+        if m:
+            return True, f"Canadian identifier detected in title: '{m.group(0)}'"
+        m = CANADA_CITIES_REGEX.search(title)
+        if m:
+            return True, f"Canadian city in title: '{m.group(0)}'"
+        m = CANADA_PROVINCES_REGEX.search(title)
+        if m:
+            return True, f"Canadian province in title: '{m.group(0)}'"
+
+    # 3. Check location string directly
+    if location:
+        m = CANADA_COUNTRY_REGEX.search(location)
+        if m:
+            return True, f"Canadian country identifier in location: '{location}'"
+        m = CANADA_CITIES_REGEX.search(location)
+        if m:
+            return True, f"Canadian city detected in location: '{m.group(0)}'"
+        m = CANADA_PROVINCES_REGEX.search(location)
+        if m:
+            return True, f"Canadian province in location: '{m.group(0)}'"
+        m = CANADA_VICTORIA_REGEX.search(location)
+        if m:
+            return True, f"Victoria, BC (Canada) in location: '{m.group(0)}'"
+        m = CANADA_PROVINCE_ABBR_REGEX.search(location)
+        if m:
+            return True, f"Canadian province postal code in location: '{m.group(1)}'"
+
+    # 4. Check full JD text header (first 800 chars)
+    if jd_text:
+        jd_header = jd_text[:800]
+        m = CANADA_COUNTRY_REGEX.search(jd_header)
+        if m:
+            return True, f"Canadian identifier in JD: '{m.group(0)}'"
+        m = CANADA_CITIES_REGEX.search(jd_header)
+        if m:
+            return True, f"Canadian city in JD: '{m.group(0)}'"
+        m = CANADA_PROVINCES_REGEX.search(jd_header)
+        if m:
+            return True, f"Canadian province in JD: '{m.group(0)}'"
+
+    return False, ""
+
+
 def categorize_job_tier(title: str, location: str = "", jd_text: str = "") -> dict:
     """
     Evaluates a job into one of 3 Smart Tiers:
@@ -446,7 +581,18 @@ def categorize_job_tier(title: str, location: str = "", jd_text: str = "") -> di
             "is_early_career": False,
         }
 
-    # 4. Career Hub Landing Page (e.g. "Duolingo Careers")
+    # 4. Canada Location
+    is_can, can_reason = is_canada_based(title=clean_title, location=clean_loc, jd_text=jd_text)
+    if is_can:
+        return {
+            "tier": 3,
+            "rank": "IGNORE",
+            "status": "NA",
+            "reason": f"[Deterministic] {can_reason}",
+            "is_early_career": False,
+        }
+
+    # 5. Career Hub Landing Page (e.g. "Duolingo Careers")
     is_hub, hub_reason = is_career_hub(clean_title)
     if is_hub:
         return {
@@ -594,6 +740,7 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
         "senior_ignored": 0,
         "non_tech_ignored": 0,
         "us_ignored": 0,
+        "canada_ignored": 0,
         "career_hub_ignored": 0,
         "total_ignored": already_ignored_moved,
         "tier1_early_career": 0,
@@ -643,6 +790,8 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
                 stats["non_tech_ignored"] += 1
             elif "US" in tier_res["reason"]:
                 stats["us_ignored"] += 1
+            elif "Canad" in tier_res["reason"] or "Victoria, BC" in tier_res["reason"]:
+                stats["canada_ignored"] += 1
             elif "Career hub" in tier_res["reason"]:
                 stats["career_hub_ignored"] += 1
 
@@ -679,6 +828,7 @@ if __name__ == "__main__":
     print(f"   🚫 Senior / Supervisor:     {res['senior_ignored']}")
     print(f"   🚫 Non-tech / Helpdesk:     {res['non_tech_ignored']}")
     print(f"   🚫 US-based location:       {res['us_ignored']}")
+    print(f"   🚫 Canada-based location:   {res['canada_ignored']}")
     print(f"   🚫 Career hub landing pages:{res['career_hub_ignored']}")
     print(f"   ----------------------------------------")
     print(f"   🎯 Tier 3 (Ignored / NA):   {res['total_ignored']} ({res['total_ignored']/(res['scanned'] or 1)*100:.1f}%)")

@@ -15,13 +15,13 @@ if BASE_DIR not in sys.path:
 
 try:
     from src.ranking.job_filter import (
-        is_us_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
+        is_us_based, is_canada_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
         categorize_job_tier, evaluate_deterministic_ignore
     )
     from src.ranking.rank_internships import is_already_ai_ranked
 except ImportError:
     from ranking.job_filter import (
-        is_us_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
+        is_us_based, is_canada_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
         categorize_job_tier, evaluate_deterministic_ignore
     )
     from ranking.rank_internships import is_already_ai_ranked
@@ -61,11 +61,31 @@ class TestJobFilter(unittest.TestCase):
     def test_non_tech_roles(self):
         non_tech = [
             "Sales Representative", "HR Manager", "Recruiter", "Account Executive",
-            "Représentant Support Helpdesk", "Helpdesk Support Specialist", "Assembly Operator"
+            "Représentant Support Helpdesk", "Helpdesk Support Specialist", "Assembly Operator",
+            "Caissier / Caissière", "Gestionnaire, Comptes fournisseurs", "Building Maintenance Mechanic",
+            "Sewage Treatment Plant Operator", "OSAT Sourcing Buyer", "Quotation Specialist"
         ]
         for title in non_tech:
             ignored, reason = is_non_tech(title)
             self.assertTrue(ignored, f"Expected non-tech ignore for {title}")
+
+    def test_canada_location(self):
+        can_locs = [
+            "Toronto, Canada", "Vancouver, BC", "Montreal, QC", "Calgary, Alberta",
+            "Ottawa, ON", "Waterloo, ON, Canada", "Remote - Canada"
+        ]
+        for loc in can_locs:
+            ignored, reason = is_canada_based(location=loc)
+            self.assertTrue(ignored, f"Expected Canada ignore for {loc}")
+
+        # Explicit non-Canada locations should NOT be ignored
+        non_can_locs = [
+            "London, UK", "Berlin, Germany", "Bangalore, India", "Melbourne, Victoria, Australia",
+            "Paris, France", "Madrid, Spain"
+        ]
+        for loc in non_can_locs:
+            ignored, reason = is_canada_based(location=loc)
+            self.assertFalse(ignored, f"Unexpected Canada ignore for {loc}: {reason}")
 
     def test_bitdeer_tech_role_preservation(self):
         # Must NOT flag AI infrastructure engineer as non-tech because of mining/hardware company boilerplate

@@ -95,6 +95,7 @@ def main():
         print(f"   🚫 Senior / Supervisor:     {res['senior_ignored']}")
         print(f"   🚫 Non-tech / Helpdesk:     {res['non_tech_ignored']}")
         print(f"   🚫 US-based location:       {res['us_ignored']}")
+        print(f"   🚫 Canada-based location:   {res['canada_ignored']}")
         print(f"   🚫 Career hub landing pages:{res['career_hub_ignored']}")
         print(f"   ----------------------------------------")
         print(f"   🎯 Tier 3 (Ignored / NA):   {res['total_ignored']} ({res['total_ignored']/(res['scanned'] or 1)*100:.1f}%)")
