@@ -139,7 +139,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.refresh_btn.connect("clicked", self.on_refresh_clicked)
         header_box.append(self.refresh_btn)
 
-        self.fast_filter_btn = Gtk.Button(label="⚡ Filter US/Senior")
+        self.fast_filter_btn = Gtk.Button(label="⚡ Smart Tier Filter")
         self.fast_filter_btn.connect("clicked", self.on_fast_filter_clicked)
         header_box.append(self.fast_filter_btn)
 
@@ -261,7 +261,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.reset_rank_btn.connect("clicked", self.on_reset_rank_clicked)
         priority_header.append(self.reset_rank_btn)
 
-        self.prio_filter_btn = Gtk.Button(label="⚡ Filter US/Senior")
+        self.prio_filter_btn = Gtk.Button(label="⚡ Smart Tier Filter")
         self.prio_filter_btn.connect("clicked", self.on_fast_filter_clicked)
         priority_header.append(self.prio_filter_btn)
 
@@ -749,6 +749,20 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         import html
         escaped_link = html.escape(link)
+
+        # Show Rank Badge and Reason
+        rank = data.get("rank", "UNKNOWN")
+        reason = data.get("reason", "")
+        if rank:
+            rank_markup = f"<b>Rank:</b> <span weight='bold'>{rank}</span>"
+            if reason:
+                rank_markup += f"  —  <i>{html.escape(reason)}</i>"
+            rank_meta_label = Gtk.Label(label=rank_markup)
+            rank_meta_label.set_use_markup(True)
+            rank_meta_label.set_halign(Gtk.Align.START)
+            rank_meta_label.set_wrap(True)
+            header_box.append(rank_meta_label)
+
         url_label = Gtk.Label(label=f"<a href='{escaped_link}'>Click here to open Original Job Posting</a>")
         url_label.set_use_markup(True)
         url_label.set_halign(Gtk.Align.START)
@@ -1026,7 +1040,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     # --- DETERMINISTIC PRE-FILTER LOGIC (ZERO TOKENS) ---
     def on_fast_filter_clicked(self, button):
-        self.status_label.set_text("⚡ Running fast deterministic pre-filter...")
+        self.status_label.set_text("⚡ Running Smart Tier Deterministic Filter (0 AI tokens)...")
         self.fast_filter_btn.set_sensitive(False)
         if hasattr(self, 'prio_filter_btn'):
             self.prio_filter_btn.set_sensitive(False)
@@ -1046,9 +1060,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     if hasattr(self, 'prio_filter_btn'):
                         self.prio_filter_btn.set_sensitive(True)
                     fresh_count = sum(1 for d in self.jobs_db.values() if d.get('status') == 'New')
-                    msg = (f"⚡ Filtered out {stats['total_ignored']} jobs "
-                           f"({stats.get('us_ignored', 0)} US, {stats.get('senior_ignored', 0)} Senior/Lead, {stats.get('non_tech_ignored', 0)} Non-tech) "
-                           f"-> Moved to NA! | Fresh remaining: {fresh_count}")
+                    tier1_count = stats.get('tier1_early_career', 0)
+                    tier2_count = stats.get('tier2_general_swe', 0)
+                    total_ignored = stats.get('total_ignored', 0)
+                    msg = (f"⚡ Smart Tier: {tier1_count} Early Career (HIGH) | {tier2_count} General SWE | "
+                           f"Ignored {total_ignored} (Senior/Helpdesk/US/Hubs) -> NA | Fresh Active: {fresh_count}")
                     self.status_label.set_text(msg)
                     if hasattr(self, 'sort_status_label'):
                         self.sort_status_label.set_text(msg)
@@ -1092,7 +1108,13 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
             return
 
-        self.sort_status_label.set_text("Initializing Local AI analysis... Check terminal!")
+        # Check configured Groq keys
+        key_count = sum(1 for i in range(1, 26) if os.environ.get(f"GROQ_API_KEY_{i}"))
+        if key_count == 0 and os.environ.get("GROQ_API_KEY"):
+            key_count = 1
+        key_info = f"({key_count} Groq API keys in circular rotation)" if key_count > 0 else ""
+
+        self.sort_status_label.set_text(f"Initializing AI analysis {key_info}... Check terminal!")
         self.sort_btn.set_sensitive(False)
         self.stop_sort_btn.set_sensitive(True)
         thread = threading.Thread(target=self.run_sorter)

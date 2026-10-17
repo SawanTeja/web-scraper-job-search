@@ -469,18 +469,18 @@ def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
                 known_urls.add(url)
                 location = job.get("location", "")
                 
-                # Check deterministic ignore (US-based, Senior/Lead, Non-tech)
+                # Smart 3-tier deterministic categorization (Tier 1 HIGH, Tier 2 SWE, Tier 3 IGNORE)
                 try:
-                    from src.ranking.job_filter import evaluate_deterministic_ignore
+                    from src.ranking.job_filter import categorize_job_tier
                 except ImportError:
                     try:
-                        from ranking.job_filter import evaluate_deterministic_ignore
+                        from ranking.job_filter import categorize_job_tier
                     except ImportError:
-                        from job_filter import evaluate_deterministic_ignore
-                should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
-                initial_rank = "IGNORE" if should_ignore else "UNKNOWN"
-                initial_status = "NA" if should_ignore else "New"
-                initial_reason = f"[Deterministic] {ignore_reason}" if should_ignore else ""
+                        from job_filter import categorize_job_tier
+                tier_res = categorize_job_tier(title=title, location=location)
+                initial_rank = tier_res["rank"]
+                initial_status = tier_res["status"]
+                initial_reason = tier_res["reason"]
                 details_blob = {"location": location} if location else None
 
                 inserted = insert_or_ignore_job(

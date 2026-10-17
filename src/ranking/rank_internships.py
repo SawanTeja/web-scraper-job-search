@@ -31,47 +31,71 @@ except ImportError:
 class GroqManager:
     def __init__(self):
         keys = []
-        for i in range(1, 10):
+        # Support numbered keys: GROQ_API_KEY_1 to GROQ_API_KEY_25
+        for i in range(1, 26):
             k = os.environ.get(f"GROQ_API_KEY_{i}")
-            if k:
-                keys.append(k)
-        
+            if k and k.strip():
+                clean_k = k.strip().strip("'\"")
+                if clean_k and clean_k not in keys:
+                    keys.append(clean_k)
+
+        # Support comma-separated GROQ_API_KEYS
+        if os.environ.get("GROQ_API_KEYS"):
+            for k in os.environ.get("GROQ_API_KEYS").split(","):
+                clean_k = k.strip().strip("'\"")
+                if clean_k and clean_k not in keys:
+                    keys.append(clean_k)
+
         # Fallback to standard GROQ_API_KEY if no numbered ones exist
         if not keys and os.environ.get("GROQ_API_KEY"):
-            keys.append(os.environ.get("GROQ_API_KEY"))
+            clean_k = os.environ.get("GROQ_API_KEY").strip().strip("'\"")
+            if clean_k and clean_k not in keys:
+                keys.append(clean_k)
 
         if not keys:
             print("❌ ERROR: No GROQ_API_KEY_1, GROQ_API_KEY_2, etc. found in .env!")
             exit(1)
-            
+
+        self.keys = keys
         self.clients = [AsyncGroq(api_key=k) for k in keys]
         self.current_idx = 0
-        print(f"🔑 Loaded {len(self.clients)} Groq API keys for rotation.")
+        self.total_keys = len(self.clients)
+        print(f"🔑 Loaded {self.total_keys} Groq API keys for circular rotation.")
 
     def get_client(self):
         return self.clients[self.current_idx]
 
-    def rotate(self):
-        self.current_idx = (self.current_idx + 1) % len(self.clients)
-        print(f"🔄 Swapped to Groq API Key #{self.current_idx + 1}")
+    def rotate(self, reason: str = ""):
+        old_idx = self.current_idx
+        self.current_idx = (self.current_idx + 1) % self.total_keys
+        msg = f"🔄 Swapped to Groq API Key #{self.current_idx + 1}/{self.total_keys}"
+        if reason:
+            msg += f" ({reason})"
+        print(msg)
 
-    async def chat_completion(self, model, messages, temperature=0, retries=3):
-        for attempt in range(retries):
+    async def chat_completion(self, model, messages, temperature=0, retries=None):
+        max_attempts = retries if retries is not None else max(self.total_keys * 2, 6)
+
+        for attempt in range(max_attempts):
             client = self.get_client()
+            key_num = self.current_idx + 1
             try:
                 response = await client.chat.completions.create(
                     model=model,
                     messages=messages,
                     temperature=temperature
                 )
+                # Successful call: advance circular index so next request uses next key in ring
+                self.current_idx = (self.current_idx + 1) % self.total_keys
                 return response
             except groq.RateLimitError as e:
-                print(f"   ⚠️ Rate limit exceeded on Key #{self.current_idx + 1}. Rotating...")
-                self.rotate()
-                await asyncio.sleep(1) # Small pause before retrying on new key
+                print(f"   ⚠️ Rate limit exceeded on Key #{key_num}/{self.total_keys}. Rotating...")
+                self.rotate(reason="rate-limit")
+                await asyncio.sleep(1) # Small pause before retrying on next key
             except Exception as e:
-                print(f"   ⚠️ API Error: {e}. Retrying {attempt+1}/{retries}...")
-                await asyncio.sleep(2)
+                print(f"   ⚠️ API Error on Key #{key_num}/{self.total_keys}: {e}. Retrying {attempt+1}/{max_attempts}...")
+                self.rotate(reason="api-error")
+                await asyncio.sleep(1.5)
         return None
 
 groq_manager = GroqManager()

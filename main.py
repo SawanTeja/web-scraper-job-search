@@ -70,7 +70,21 @@ def main():
 
     elif args.filter:
         from src.ranking.job_filter import apply_deterministic_filter_to_db
-        apply_deterministic_filter_to_db()
+        print("="*60)
+        print("⚡ RUNNING SMART TIER DETERMINISTIC FILTER (0 AI TOKENS)")
+        print("="*60)
+        res = apply_deterministic_filter_to_db()
+        print(f"📊 Jobs scanned:              {res['scanned']}")
+        print(f"   🚫 Senior / Supervisor:     {res['senior_ignored']}")
+        print(f"   🚫 Non-tech / Helpdesk:     {res['non_tech_ignored']}")
+        print(f"   🚫 US-based location:       {res['us_ignored']}")
+        print(f"   🚫 Career hub landing pages:{res['career_hub_ignored']}")
+        print(f"   ----------------------------------------")
+        print(f"   🎯 Tier 3 (Ignored / NA):   {res['total_ignored']} ({res['total_ignored']/(res['scanned'] or 1)*100:.1f}%)")
+        print(f"   ⭐ Tier 1 (High Priority):  {res['tier1_early_career']} (Early career / Intern)")
+        print(f"   💻 Tier 2 (General SWE):    {res['tier2_general_swe']} (Ready for Groq LLM)")
+        print(f"   ✅ Total Active Jobs:       {res['passed']}")
+        print("="*60)
 
     elif args.win:
         from src.gui.win_gui import JobAppWindow

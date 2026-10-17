@@ -152,7 +152,7 @@ class JobAppWindow(ctk.CTk):
         self.refresh_btn = ctk.CTkButton(self.header_frame, text="Refresh Everything", command=self.on_refresh_clicked)
         self.refresh_btn.pack(side="left", padx=5)
 
-        self.fast_filter_btn = ctk.CTkButton(self.header_frame, text="⚡ Filter US/Senior", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
+        self.fast_filter_btn = ctk.CTkButton(self.header_frame, text="⚡ Smart Tier Filter", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
         self.fast_filter_btn.pack(side="left", padx=5)
 
         self.del_ignore_btn = ctk.CTkButton(self.header_frame, text="🗑 Delete IGNORE", command=self.on_delete_ignore_clicked, fg_color="#b32929", hover_color="#8a1f1f")
@@ -207,7 +207,7 @@ class JobAppWindow(ctk.CTk):
         self.reset_rank_btn = ctk.CTkButton(self.prio_header, text="Reset Ranks", command=self.on_reset_rank_clicked, fg_color="#b32929", hover_color="#8a1f1f")
         self.reset_rank_btn.pack(side="left", padx=5)
 
-        self.prio_filter_btn = ctk.CTkButton(self.prio_header, text="⚡ Filter US/Senior", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
+        self.prio_filter_btn = ctk.CTkButton(self.prio_header, text="⚡ Smart Tier Filter", command=self.on_fast_filter_clicked, fg_color="#1f538d", hover_color="#14375e")
         self.prio_filter_btn.pack(side="left", padx=5)
 
         self.sort_status_label = ctk.CTkLabel(self.prio_header, text="")
@@ -520,7 +520,15 @@ class JobAppWindow(ctk.CTk):
         if salary: info_str.append(f"Salary: {salary}")
         if info_str:
             ctk.CTkLabel(main_box, text=" | ".join(info_str), font=("Arial", 14), justify="left", wraplength=800).pack(anchor="w", pady=(0, 10))
-            
+
+        # Show Rank Badge and Reason
+        rank = data.get("rank", "UNKNOWN")
+        reason = data.get("reason", "")
+        if rank:
+            rank_color = RANK_COLORS.get(rank, RANK_COLORS["UNKNOWN"])
+            badge_text = f" {rank} " + (f"  —  {reason}" if reason else "")
+            ctk.CTkLabel(main_box, text=badge_text, fg_color=rank_color, corner_radius=5, font=("Arial", 13, "bold"), text_color="white").pack(anchor="w", pady=(0, 10))
+
         link_btn = ctk.CTkButton(main_box, text="Click here to open Original Job Posting", command=lambda: webbrowser.open(link))
         link_btn.pack(anchor="w", pady=(0, 20))
         
@@ -850,7 +858,7 @@ class JobAppWindow(ctk.CTk):
 
     # --- DETERMINISTIC PRE-FILTER LOGIC (ZERO TOKENS) ---
     def on_fast_filter_clicked(self):
-        self.status_label.configure(text="⚡ Running fast deterministic pre-filter...")
+        self.status_label.configure(text="⚡ Running Smart Tier Deterministic Filter (0 AI tokens)...")
         self.fast_filter_btn.configure(state="disabled")
         if hasattr(self, 'prio_filter_btn'):
             self.prio_filter_btn.configure(state="disabled")
@@ -870,9 +878,11 @@ class JobAppWindow(ctk.CTk):
                     if hasattr(self, 'prio_filter_btn'):
                         self.prio_filter_btn.configure(state="normal")
                     fresh_count = sum(1 for d in self.jobs_db.values() if d.get('status') == 'New')
-                    msg = (f"⚡ Filtered out {stats['total_ignored']} jobs "
-                           f"({stats.get('us_ignored', 0)} US, {stats.get('senior_ignored', 0)} Senior/Lead, {stats.get('non_tech_ignored', 0)} Non-tech) "
-                           f"-> Moved to NA! | Fresh remaining: {fresh_count}")
+                    tier1_count = stats.get('tier1_early_career', 0)
+                    tier2_count = stats.get('tier2_general_swe', 0)
+                    total_ignored = stats.get('total_ignored', 0)
+                    msg = (f"⚡ Smart Tier: {tier1_count} Early Career (HIGH) | {tier2_count} General SWE | "
+                           f"Ignored {total_ignored} (Senior/Helpdesk/US/Hubs) -> NA | Fresh Active: {fresh_count}")
                     self.status_label.configure(text=msg)
                     if hasattr(self, 'sort_status_label'):
                         self.sort_status_label.configure(text=msg)
@@ -913,8 +923,14 @@ class JobAppWindow(ctk.CTk):
         if not os.path.exists(DB_FILE):
             self.sort_status_label.configure(text=f"No {DB_FILE}. Scrape first!")
             return
-            
-        self.sort_status_label.configure(text="Initializing Local AI analysis... Check terminal!")
+
+        # Check configured Groq keys
+        key_count = sum(1 for i in range(1, 26) if os.environ.get(f"GROQ_API_KEY_{i}"))
+        if key_count == 0 and os.environ.get("GROQ_API_KEY"):
+            key_count = 1
+        key_info = f"({key_count} Groq API keys in circular rotation)" if key_count > 0 else ""
+
+        self.sort_status_label.configure(text=f"Initializing AI analysis {key_info}... Check terminal!")
         self.sort_btn.configure(state="disabled")
         self.stop_sort_btn.configure(state="normal")
         thread = threading.Thread(target=self.run_sorter)

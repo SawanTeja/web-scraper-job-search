@@ -1,6 +1,9 @@
 """
-Unit tests for deterministic job filtering (US location, Senior role, Non-tech role).
-Ensures zero false positives on genuine tech roles (like Bitdeer AI infrastructure).
+Unit tests for deterministic job filtering and 3-Tier Categorization:
+  - Tier 1: Early Career, Internships, Junior, Apprentice, Graduate, Associate SWE.
+  - Tier 2: General Software / Tech Engineering (Entry-level / general SWE).
+  - Tier 3: Deterministic IGNORE (Senior, Lead, Supervisor, Pleno, Non-Tech, Helpdesk, Career Hub, US Location).
+Ensures zero false positives on genuine tech roles (like Bitdeer AI infrastructure, Bangalore IN, Internal tools).
 """
 import unittest
 import os
@@ -12,13 +15,13 @@ if BASE_DIR not in sys.path:
 
 try:
     from src.ranking.job_filter import (
-        is_us_based, is_senior_or_lead, is_non_tech,
-        evaluate_deterministic_ignore
+        is_us_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
+        categorize_job_tier, evaluate_deterministic_ignore
     )
 except ImportError:
-    from ranker.job_filter import (
-        is_us_based, is_senior_or_lead, is_non_tech,
-        evaluate_deterministic_ignore
+    from ranking.job_filter import (
+        is_us_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
+        categorize_job_tier, evaluate_deterministic_ignore
     )
 
 
@@ -29,13 +32,21 @@ class TestJobFilter(unittest.TestCase):
             ignored, reason = is_us_based(location=loc)
             self.assertTrue(ignored, f"Expected US ignore for {loc}")
 
-        non_us_locs = ["London, UK", "Berlin, Germany", "Bangalore, India", "Toronto, Canada", "Norway"]
+        # Explicit non-US locations, including India (IN) and Canada (CA) ISO codes
+        non_us_locs = [
+            "London, UK", "Berlin, Germany", "Bangalore, India", "Toronto, Canada",
+            "Norway", "Bangalore, IN", "Noida, IN", "Vadodara, India", "Toronto, CA"
+        ]
         for loc in non_us_locs:
-            ignored, _ = is_us_based(location=loc)
-            self.assertFalse(ignored, f"Unexpected US ignore for {loc}")
+            ignored, reason = is_us_based(location=loc)
+            self.assertFalse(ignored, f"Unexpected US ignore for {loc}: {reason}")
 
     def test_senior_roles(self):
-        senior_titles = ["Senior SDE", "Lead Engineer", "Staff Software Engineer", "Principal Architect", "SDE II", "SDE 3"]
+        senior_titles = [
+            "Senior SDE", "Lead Engineer", "Staff Software Engineer", "Principal Architect",
+            "SDE II", "SDE 3", "Supervisor, Integration Subassemblies", "Integration Developer Pleno",
+            "Developer SSR", "Software Engineer (3+ years)"
+        ]
         for title in senior_titles:
             ignored, reason = is_senior_or_lead(title)
             self.assertTrue(ignored, f"Expected senior ignore for {title}")
@@ -46,7 +57,10 @@ class TestJobFilter(unittest.TestCase):
             self.assertFalse(ignored, f"Unexpected senior ignore for {title}")
 
     def test_non_tech_roles(self):
-        non_tech = ["Sales Representative", "HR Manager", "Recruiter", "Account Executive"]
+        non_tech = [
+            "Sales Representative", "HR Manager", "Recruiter", "Account Executive",
+            "Représentant Support Helpdesk", "Helpdesk Support Specialist", "Assembly Operator"
+        ]
         for title in non_tech:
             ignored, reason = is_non_tech(title)
             self.assertTrue(ignored, f"Expected non-tech ignore for {title}")
@@ -57,6 +71,80 @@ class TestJobFilter(unittest.TestCase):
         jd = "Bitdeer is a world-leading cryptocurrency mining and high-performance computing provider."
         ignored, reason = is_non_tech(title, jd_text=jd)
         self.assertFalse(ignored, f"Bitdeer role falsely ignored: {reason}")
+
+    def test_career_hub_detection(self):
+        hubs = ["Duolingo Careers", "Marriott Careers", "Careers at GitLab", "Join our team", "Open Positions"]
+        for title in hubs:
+            is_hub, reason = is_career_hub(title)
+            self.assertTrue(is_hub, f"Expected career hub for '{title}'")
+
+        real_jobs = ["Backend Engineer - Jobs", "Software Developer", "Junior SDE", "Associate Software Engineer"]
+        for title in real_jobs:
+            is_hub, _ = is_career_hub(title)
+            self.assertFalse(is_hub, f"Unexpected career hub for '{title}'")
+
+    def test_early_career_detection(self):
+        early = [
+            "Software Engineering Intern", "Junior Software Engineer", "Software Developer Intern @ Visier",
+            "Associate Software Engineer", "2025 Graduate Developer", "Apprentice Software Engineer",
+            "Werkstudent Software Development"
+        ]
+        for title in early:
+            is_ec, reason = is_early_career(title)
+            self.assertTrue(is_ec, f"Expected early career for '{title}'")
+
+        # Word-boundary check: 'internal' must NOT match 'intern'
+        non_early = ["Software Engineer - Internal Tools", "Backend Java Developer", "Systems Engineer"]
+        for title in non_early:
+            is_ec, _ = is_early_career(title)
+            self.assertFalse(is_ec, f"Unexpected early career match for '{title}'")
+
+    def test_categorize_job_tier(self):
+        # Tier 1: Early Career (High Priority, New status)
+        t1 = categorize_job_tier("Junior Software Engineer", "Bangalore, India")
+        self.assertEqual(t1["tier"], 1)
+        self.assertEqual(t1["rank"], "HIGH")
+        self.assertEqual(t1["status"], "New")
+
+        t1_intern = categorize_job_tier("Software Developer Intern @ Visier", "Berlin, Germany")
+        self.assertEqual(t1_intern["tier"], 1)
+        self.assertEqual(t1_intern["rank"], "HIGH")
+
+        # Tier 2: General Tech / SWE (Clean tech role for AI evaluation)
+        t2 = categorize_job_tier("Java Backend Developer - Vadodara", "Vadodara, India")
+        self.assertEqual(t2["tier"], 2)
+        self.assertEqual(t2["rank"], "UNKNOWN")
+        self.assertEqual(t2["status"], "New")
+
+        # Tier 3: Senior, Supervisor, Pleno
+        t3_sr = categorize_job_tier("Supervisor, Integration Subassemblies", "London, UK")
+        self.assertEqual(t3_sr["tier"], 3)
+        self.assertEqual(t3_sr["rank"], "IGNORE")
+        self.assertEqual(t3_sr["status"], "NA")
+
+        t3_pleno = categorize_job_tier("Integration Developer Pleno", "Remote")
+        self.assertEqual(t3_pleno["tier"], 3)
+        self.assertEqual(t3_pleno["rank"], "IGNORE")
+
+        # Tier 3: Helpdesk / Non-tech
+        t3_helpdesk = categorize_job_tier("Représentant Support Helpdesk", "Montreal, Canada")
+        self.assertEqual(t3_helpdesk["tier"], 3)
+        self.assertEqual(t3_helpdesk["rank"], "IGNORE")
+
+        # Tier 3: Non-tech Intern (Marketing Intern must be filtered out!)
+        t3_mkt_intern = categorize_job_tier("Marketing Intern", "Bangalore, India")
+        self.assertEqual(t3_mkt_intern["tier"], 3)
+        self.assertEqual(t3_mkt_intern["rank"], "IGNORE")
+
+        # Tier 3: Career Hub
+        t3_hub = categorize_job_tier("Duolingo Careers", "")
+        self.assertEqual(t3_hub["tier"], 3)
+        self.assertEqual(t3_hub["rank"], "IGNORE")
+
+        # Tier 3: US Location
+        t3_us = categorize_job_tier("Software Engineer", "Seattle, WA")
+        self.assertEqual(t3_us["tier"], 3)
+        self.assertEqual(t3_us["rank"], "IGNORE")
 
 
 if __name__ == "__main__":
