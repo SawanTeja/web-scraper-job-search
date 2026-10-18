@@ -1,6 +1,7 @@
 import gi
 import os
 import json
+import time
 import subprocess
 import threading
 import webbrowser
@@ -247,35 +248,58 @@ class JobAppWindow(Gtk.ApplicationWindow):
         priority_vbox.set_margin_end(15)
 
         # Priority Header
-        priority_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        priority_header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         priority_vbox.append(priority_header)
 
-        self.sort_btn = Gtk.Button(label="AI Rank/Sort Jobs")
-        self.sort_btn.add_css_class("suggested-action")
-        self.sort_btn.connect("clicked", self.on_sort_clicked)
-        priority_header.append(self.sort_btn)
+        # Row 1: 3-Stage Pipeline Workflow + Full Auto Pipeline
+        prio_row1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        priority_header.append(prio_row1)
 
-        self.stop_sort_btn = Gtk.Button(label="🛑 Stop Ranking")
+        self.extract_btn = Gtk.Button(label="📥 1. Extract JDs")
+        self.extract_btn.connect("clicked", self.on_extract_clicked)
+        prio_row1.append(self.extract_btn)
+
+        self.prio_deep_filter_btn = Gtk.Button(label="🎯 2. Deep JD Filter")
+        self.prio_deep_filter_btn.connect("clicked", self.on_deep_filter_clicked)
+        prio_row1.append(self.prio_deep_filter_btn)
+
+        self.ai_rank_btn = Gtk.Button(label="⭐ 3. AI Rank Clean Jobs")
+        self.ai_rank_btn.add_css_class("suggested-action")
+        self.ai_rank_btn.connect("clicked", self.on_ai_rank_clicked)
+        prio_row1.append(self.ai_rank_btn)
+
+        self.full_pipeline_btn = Gtk.Button(label="🚀 Full Pipeline (1➔2➔3)")
+        self.full_pipeline_btn.connect("clicked", self.on_full_pipeline_clicked)
+        prio_row1.append(self.full_pipeline_btn)
+
+        self.stop_sort_btn = Gtk.Button(label="🛑 Stop")
         self.stop_sort_btn.add_css_class("destructive-action")
         self.stop_sort_btn.connect("clicked", self.on_stop_sort_clicked)
         self.stop_sort_btn.set_sensitive(False)
-        priority_header.append(self.stop_sort_btn)
+        prio_row1.append(self.stop_sort_btn)
 
-        self.reset_rank_btn = Gtk.Button(label="Reset Ranks")
+        # Row 2: Secondary Utilities, Pre-Filter, Limits, and Live Status
+        prio_row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        priority_header.append(prio_row2)
+
+        self.prio_filter_btn = Gtk.Button(label="⚡ Pre-Filter Titles")
+        self.prio_filter_btn.connect("clicked", self.on_fast_filter_clicked)
+        prio_row2.append(self.prio_filter_btn)
+
+        self.prio_limits_btn = Gtk.Button(label="🔑 API Limits (7 Keys)")
+        self.prio_limits_btn.connect("clicked", self.on_check_limits_clicked)
+        prio_row2.append(self.prio_limits_btn)
+
+        self.reset_rank_btn = Gtk.Button(label="🔄 Reset Ranks")
         self.reset_rank_btn.add_css_class("destructive-action")
         self.reset_rank_btn.connect("clicked", self.on_reset_rank_clicked)
-        priority_header.append(self.reset_rank_btn)
-
-        self.prio_filter_btn = Gtk.Button(label="⚡ Smart Tier Filter")
-        self.prio_filter_btn.connect("clicked", self.on_fast_filter_clicked)
-        priority_header.append(self.prio_filter_btn)
-
-        self.prio_limits_btn = Gtk.Button(label="🔑 API Limits")
-        self.prio_limits_btn.connect("clicked", self.on_check_limits_clicked)
-        priority_header.append(self.prio_limits_btn)
+        prio_row2.append(self.reset_rank_btn)
 
         self.sort_status_label = Gtk.Label(label="")
-        priority_header.append(self.sort_status_label)
+        prio_row2.append(self.sort_status_label)
+
+        # Backwards compatibility alias
+        self.sort_btn = self.ai_rank_btn
 
         # Priority Listbox
         self.prio_scroll = Gtk.ScrolledWindow()
@@ -370,6 +394,20 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 opacity: 0.7;
                 font-size: 12px;
             }
+            .quick-remove-btn {
+                background-color: rgba(229, 83, 75, 0.15);
+                color: #ff7b72;
+                border: 1px solid rgba(229, 83, 75, 0.35);
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            .quick-remove-btn:hover {
+                background-color: #cf222e;
+                color: #ffffff;
+                border-color: #cf222e;
+            }
         """
         css_provider.load_from_data(css)
         Gtk.StyleContext.add_provider_for_display(
@@ -402,22 +440,29 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.save_db()
 
     def expire_stale_jobs(self):
-        """Auto-expire 'New' jobs older than 24 hours to 'NA'."""
+        """Auto-expire 'New' jobs older than 24 hours to 'NA' using direct fast SQLite query."""
         now = datetime.now(timezone.utc)
-        expired = 0
-        for link, data in self.jobs_db.items():
-            if data.get("status") == "New":
-                added_at_str = data.get("added_at")
-                if added_at_str:
-                    try:
-                        added_at = datetime.fromisoformat(added_at_str)
-                        if (now - added_at) > timedelta(hours=NA_EXPIRY_HOURS):
-                            data["status"] = "NA"
-                            expired += 1
-                    except ValueError:
-                        pass
+        cutoff = now - timedelta(hours=NA_EXPIRY_HOURS)
+        cutoff_iso = cutoff.isoformat()
+
+        conn = get_conn()
+        cur = conn.execute(
+            "UPDATE jobs SET status='NA', rank='IGNORE', reason='[Expired] Stale job (>24h)' "
+            "WHERE status='New' AND added_at < ?",
+            (cutoff_iso,)
+        )
+        expired = cur.rowcount
+        conn.commit()
+        conn.close()
+
         if expired > 0:
-            self.save_db()
+            for link, data in self.jobs_db.items():
+                if data.get("status") == "New":
+                    added_at_str = data.get("added_at")
+                    if added_at_str and added_at_str < cutoff_iso:
+                        data["status"] = "NA"
+                        data["rank"] = "IGNORE"
+                        data["reason"] = "[Expired] Stale job (>24h)"
             print(f"⏰ Auto-expired {expired} stale jobs to NA.")
 
     def clear_listbox(self, listbox):
@@ -536,6 +581,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
         now = datetime.now(timezone.utc)
         recent_jobs = {}
         for link, data in self.jobs_db.items():
+            if data.get("status") != "New":
+                continue
             added_at_str = data.get("added_at")
             if added_at_str:
                 try:
@@ -644,6 +691,16 @@ class JobAppWindow(Gtk.ApplicationWindow):
         box.append(title_label)
         box.append(status_drop)
         box.append(apply_btn)
+
+        # Quick Cross (Remove) button: marks job as NA with a single click
+        if status != "NA":
+            quick_na_btn = Gtk.Button(label="✕")
+            quick_na_btn.add_css_class("quick-remove-btn")
+            quick_na_btn.set_valign(Gtk.Align.CENTER)
+            quick_na_btn.set_tooltip_text("Quick Remove: Mark as NA")
+            quick_na_btn.connect("clicked", self.on_quick_na_clicked, link, row, status_drop)
+            box.append(quick_na_btn)
+
         row.set_child(box)
 
         # Add click event to open details popup
@@ -691,6 +748,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
         top_box.append(title_label)
         top_box.append(status_label)
 
+        if status != "NA":
+            prio_na_btn = Gtk.Button(label="✕")
+            prio_na_btn.add_css_class("quick-remove-btn")
+            prio_na_btn.set_valign(Gtk.Align.CENTER)
+            prio_na_btn.set_tooltip_text("Quick Remove: Mark as NA")
+            prio_na_btn.connect("clicked", self.on_quick_prio_na_clicked, link, row)
+            top_box.append(prio_na_btn)
+
         reason_label = Gtk.Label(label=reason)
         reason_label.set_halign(Gtk.Align.START)
         reason_label.set_wrap(True)
@@ -715,6 +780,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def on_job_row_clicked(self, gesture, n_press, x, y, data, link):
         """Open a popup window displaying structured job details."""
+        if time.time() - getattr(self, '_last_btn_click_time', 0) < 0.25:
+            return
+
         details = data.get("details", {})
         if not isinstance(details, dict):
             details = {}
@@ -849,7 +917,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         # Write only the changed field directly to SQLite — no full dict dump
         conn = get_conn()
-        update_job(link, conn, status=new_status)
+        if new_status == "NA":
+            if self.jobs_db[link].get("rank") in ("UNKNOWN", "", None):
+                self.jobs_db[link]["rank"] = "IGNORE"
+                self.jobs_db[link]["reason"] = "[Manual] Dismissed by user"
+            update_job(
+                link, conn,
+                status=new_status,
+                rank=self.jobs_db[link].get("rank"),
+                reason=self.jobs_db[link].get("reason")
+            )
+        else:
+            update_job(link, conn, status=new_status)
         conn.commit()
         conn.close()
 
@@ -876,8 +955,72 @@ class JobAppWindow(Gtk.ApplicationWindow):
         )
 
     def on_apply_clicked(self, button, link):
+        self._last_btn_click_time = time.time()
         try: webbrowser.open(link)
         except Exception as e: print(f"Failed to open URI: {e}")
+
+    def on_quick_na_clicked(self, button, link, row, status_drop=None):
+        """Immediately marks the job as NA and moves the row to NA tab."""
+        self._last_btn_click_time = time.time()
+        if link not in self.jobs_db:
+            return
+
+        old_status = self.jobs_db[link].get("status", "New")
+        if old_status == "NA":
+            return
+
+        self.jobs_db[link]["status"] = "NA"
+        if self.jobs_db[link].get("rank") in ["UNKNOWN", None, ""]:
+            self.jobs_db[link]["rank"] = "IGNORE"
+            self.jobs_db[link]["reason"] = "[Manual] Dismissed by user"
+
+        conn = get_conn()
+        update_job(
+            link,
+            conn,
+            status="NA",
+            rank=self.jobs_db[link].get("rank"),
+            reason=self.jobs_db[link].get("reason")
+        )
+        conn.commit()
+        conn.close()
+
+        if status_drop:
+            try:
+                na_idx = STATUSES.index("NA") if "NA" in STATUSES else 4
+                status_drop.set_selected(na_idx)
+            except Exception:
+                pass
+
+        GLib.idle_add(self.move_main_row, row, "NA")
+        self._prio_dirty = True
+
+    def on_quick_prio_na_clicked(self, button, link, row):
+        """Immediately marks priority job as NA and removes it from priority view."""
+        self._last_btn_click_time = time.time()
+        if link not in self.jobs_db:
+            return
+
+        self.jobs_db[link]["status"] = "NA"
+        if self.jobs_db[link].get("rank") in ["UNKNOWN", None, ""]:
+            self.jobs_db[link]["rank"] = "IGNORE"
+            self.jobs_db[link]["reason"] = "[Manual] Dismissed by user"
+
+        conn = get_conn()
+        update_job(
+            link,
+            conn,
+            status="NA",
+            rank=self.jobs_db[link].get("rank"),
+            reason=self.jobs_db[link].get("reason")
+        )
+        conn.commit()
+        conn.close()
+
+        parent = row.get_parent()
+        if parent:
+            parent.remove(row)
+        self.update_counts()
 
     def get_active_rank_filter(self):
         """Return the currently selected rank filter string."""
@@ -1097,6 +1240,41 @@ class JobAppWindow(Gtk.ApplicationWindow):
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
+    def on_deep_filter_clicked(self, button):
+        self.status_label.set_text("🎯 Running Deep JD Filter (Experience, Senior, Non-Tech)...")
+        if hasattr(self, 'prio_deep_filter_btn'):
+            self.prio_deep_filter_btn.set_sensitive(False)
+
+        def worker():
+            try:
+                try:
+                    from src.ranking.job_filter import apply_deep_jd_filter_to_db
+                except ImportError:
+                    from job_filter import apply_deep_jd_filter_to_db
+                stats = apply_deep_jd_filter_to_db(move_to_na=True)
+                def update_gui():
+                    self.jobs_db = load_db()
+                    self.refresh_ui()
+                    if hasattr(self, 'prio_deep_filter_btn'):
+                        self.prio_deep_filter_btn.set_sensitive(True)
+                    msg = (f"🎯 Deep JD Filter: {stats['total_ignored']} Ignored ({stats['exp_ignored']} exp>=1yr, "
+                           f"{stats['senior_ignored']} senior, {stats['non_tech_ignored']} non-tech, {stats['us_ignored']} US, {stats['canada_ignored']} Canada) | "
+                           f"Clean Candidates for AI: {stats['passed']}")
+                    self.status_label.set_text(msg)
+                    if hasattr(self, 'sort_status_label'):
+                        self.sort_status_label.set_text(msg)
+                GLib.idle_add(update_gui)
+            except Exception as e:
+                print(f"Error in deep filter worker: {e}")
+                def on_err():
+                    if hasattr(self, 'prio_deep_filter_btn'):
+                        self.prio_deep_filter_btn.set_sensitive(True)
+                    self.status_label.set_text(f"⚠️ Deep filter error: {e}")
+                GLib.idle_add(on_err)
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
     def on_check_limits_clicked(self, button):
         win = GroqLimitsWindowGTK(self)
         win.present()
@@ -1117,56 +1295,82 @@ class JobAppWindow(Gtk.ApplicationWindow):
         else:
             self.sort_status_label.set_text("No jobs to reset.")
 
-    def on_stop_sort_clicked(self, button):
+    def on_stop_sort_clicked(self, button=None):
         with open("stop.flag", "w") as f:
             f.write("stop")
-        self.sort_status_label.set_text("🛑 Stopping... Please wait for current job to finish.")
+        if hasattr(self, 'rank_process') and self.rank_process:
+            try:
+                self.rank_process.terminate()
+            except Exception:
+                pass
+        self.sort_status_label.set_text("🛑 Stopping... Please wait.")
         self.stop_sort_btn.set_sensitive(False)
 
-    def on_sort_clicked(self, button):
+    def set_pipeline_buttons_sensitive(self, sensitive: bool):
+        for btn in [getattr(self, 'extract_btn', None),
+                    getattr(self, 'ai_rank_btn', None),
+                    getattr(self, 'full_pipeline_btn', None),
+                    getattr(self, 'prio_deep_filter_btn', None),
+                    getattr(self, 'sort_btn', None)]:
+            if btn:
+                try:
+                    btn.set_sensitive(sensitive)
+                except Exception:
+                    pass
+
+    def run_pipeline(self, mode: str, label_name: str):
         if not os.path.exists(DB_FILE):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
             return
 
-        # Check configured Groq keys
         key_count = sum(1 for i in range(1, 26) if os.environ.get(f"GROQ_API_KEY_{i}"))
         if key_count == 0 and os.environ.get("GROQ_API_KEY"):
             key_count = 1
         key_info = f"({key_count} Groq API keys in circular rotation)" if key_count > 0 else ""
 
-        self.sort_status_label.set_text(f"Initializing AI analysis {key_info}... Check terminal!")
-        self.sort_btn.set_sensitive(False)
+        self.sort_status_label.set_text(f"Starting {label_name} {key_info}... Check terminal!")
+        self.set_pipeline_buttons_sensitive(False)
         self.stop_sort_btn.set_sensitive(True)
-        thread = threading.Thread(target=self.run_sorter)
-        thread.daemon = True
+        thread = threading.Thread(target=self._execute_pipeline_process, args=(mode, label_name), daemon=True)
         thread.start()
 
-    def run_sorter(self):
+    def _execute_pipeline_process(self, mode: str, label_name: str):
         try:
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
-            self.rank_process = subprocess.Popen([venv_python, resolve_script_path("rank_internships.py")], cwd=os.getcwd())
+            cmd = [venv_python, resolve_script_path("rank_internships.py"), f"--{mode}"]
+            self.rank_process = subprocess.Popen(cmd, cwd=os.getcwd())
             self.rank_process.wait()
             self.rank_process = None
-            GLib.idle_add(self.on_sort_finished, True)
+            GLib.idle_add(self.on_pipeline_finished, True, label_name)
         except Exception as e:
-            print(f"Error running sorter: {e}")
-            GLib.idle_add(self.on_sort_finished, False)
+            print(f"Error running pipeline ({label_name}): {e}")
+            GLib.idle_add(self.on_pipeline_finished, False, label_name)
 
-    def on_sort_finished(self, success):
-        self.sort_btn.set_sensitive(True)
+    def on_pipeline_finished(self, success: bool, label_name: str):
+        self.set_pipeline_buttons_sensitive(True)
         self.stop_sort_btn.set_sensitive(False)
         if success:
-            self.sort_status_label.set_text("Ranking finished!")
-            self.jobs_db = load_db()
-            self.refresh_ui()
+            self.sort_status_label.set_text(f"✅ {label_name} finished!")
         else:
-            self.sort_status_label.set_text("Ranking script failed or was stopped.")
-            # Reload db anyway in case it was stopped mid-way so we see the progress
-            self.jobs_db = load_db()
-            self.refresh_ui()
+            self.sort_status_label.set_text(f"⚠️ {label_name} stopped or encountered an error.")
+        self.jobs_db = load_db()
+        self.refresh_ui()
+
+    def on_extract_clicked(self, button=None):
+        self.run_pipeline("extract", "Stage 1: JD Extraction")
+
+    def on_ai_rank_clicked(self, button=None):
+        self.run_pipeline("rank", "Stage 3: AI Rank Clean Jobs")
+
+    def on_full_pipeline_clicked(self, button=None):
+        self.run_pipeline("full", "Full Pipeline (1➔2➔3)")
+
+    def on_sort_clicked(self, button=None):
+        # Backwards compatibility
+        self.on_full_pipeline_clicked()
 
 
 class ClearDbWindow(Gtk.Window):
@@ -1762,7 +1966,7 @@ class GroqLimitsWindowGTK(Gtk.Window):
         g2.set_use_markup(True)
         g2.set_halign(Gtk.Align.START)
         guide_box.append(g2)
-        g3 = Gtk.Label(label="<small>• <b>Add More Capacity:</b> Add <tt>GROQ_API_KEY_6</tt>, <tt>GROQ_API_KEY_7</tt>, etc. into <tt>.env</tt> (+500 jobs/day per key).</small>")
+        g3 = Gtk.Label(label="<small>• <b>Add More Capacity:</b> Add <tt>GROQ_API_KEY_8</tt>, <tt>GROQ_API_KEY_9</tt>, etc. into <tt>.env</tt> (+500 jobs/day per key).</small>")
         g3.set_use_markup(True)
         g3.set_halign(Gtk.Align.START)
         guide_box.append(g3)
@@ -1837,10 +2041,10 @@ class GroqLimitsWindowGTK(Gtk.Window):
             box.append(s)
             return box
 
-        pct = (data['total_remaining_requests'] / (data['total_limit_requests'] or 1)) * 100
-        self.stats_box.append(make_card("DAILY REQUESTS", f"{data['total_remaining_requests']:,} / {data['total_limit_requests']:,}", f"{pct:.1f}% remaining today"))
-        self.stats_box.append(make_card("JOBS CAPACITY TODAY", f"~{data['estimated_jobs_today']:,} jobs", "at 2 API calls/job"))
-        self.stats_box.append(make_card("ACTIVE KEYS", f"{data['total_keys']} Keys", "Circular rotation"))
+        tok_pct = (data['total_remaining_tokens'] / (data['total_daily_tokens'] or 1)) * 100
+        self.stats_box.append(make_card("DAILY TOKEN QUOTA", f"~{data['total_remaining_tokens']:,} tokens", f"{tok_pct:.1f}% left of {data['total_daily_tokens']:,}"))
+        self.stats_box.append(make_card("REAL JOB CAPACITY", f"~{data['token_based_capacity']:,} jobs", "at ~1,800 tokens/job"))
+        self.stats_box.append(make_card("FALLBACK CAPACITY", f"+{data['fallback_capacity']:,} jobs", "openai/gpt-oss-20b"))
         self.stats_box.append(make_card("DAILY RESET", f"{data['daily_reset_in']}", "Resets at 00:00 UTC"))
 
         # Clear keys listbox
@@ -1872,26 +2076,27 @@ class GroqLimitsWindowGTK(Gtk.Window):
 
             # Status pill
             status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-            status_box.set_size_request(110, -1)
+            status_box.set_size_request(150, -1)
             pill = Gtk.Label(label=k["status_label"])
             pill.set_halign(Gtk.Align.START)
             status_box.append(pill)
             row_box.append(status_box)
 
-            # Daily Requests
-            req_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            req_box.set_hexpand(True)
-            req_pct = (k['remaining_requests'] / (k['limit_requests'] or 1)) * 100
-            req_lbl = Gtk.Label(label=f"<b>Daily:</b> {k['remaining_requests']:,} / {k['limit_requests']:,} ({req_pct:.0f}%)")
-            req_lbl.set_use_markup(True)
-            req_lbl.set_halign(Gtk.Align.START)
-            req_box.append(req_lbl)
-            row_box.append(req_box)
+            # Daily Tokens
+            tpd_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            tpd_box.set_hexpand(True)
+            rem_k = k['est_remaining_daily_tokens'] // 1000
+            lim_k = k['limit_daily_tokens'] // 1000
+            tpd_lbl = Gtk.Label(label=f"<b>Daily Tokens:</b> ~{rem_k}k / {lim_k}k ({k['daily_token_pct']:.0f}%)")
+            tpd_lbl.set_use_markup(True)
+            tpd_lbl.set_halign(Gtk.Align.START)
+            tpd_box.append(tpd_lbl)
+            row_box.append(tpd_box)
 
             # TPM Buffer
             tpm_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            tpm_box.set_size_request(140, -1)
-            tpm_lbl = Gtk.Label(label=f"<b>TPM:</b> {k['remaining_tokens']:,} / {k['limit_tokens']:,}")
+            tpm_box.set_size_request(160, -1)
+            tpm_lbl = Gtk.Label(label=f"<b>TPM Buffer:</b> {k['remaining_tokens']:,} / {k['limit_tokens']:,}")
             tpm_lbl.set_use_markup(True)
             tpm_lbl.set_halign(Gtk.Align.START)
             tpm_box.append(tpm_lbl)

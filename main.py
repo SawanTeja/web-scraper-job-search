@@ -2,14 +2,16 @@
 Web Scraper & Job Application Manager — Main CLI / GUI Entrypoint.
 
 Usage:
-    python main.py                  Launch default Desktop GUI (GTK4 on Linux, CustomTkinter on Windows)
-    python main.py --gui            Launch Linux GTK4 GUI
-    python main.py --win            Launch Windows CustomTkinter GUI
+    python main.py                  Launch Linux Desktop GUI (GTK4)
+    python main.py --gui            Launch Linux Desktop GUI (GTK4)
     python main.py --ats            Run high-speed ATS Direct Scraper for saved companies
     python main.py --backfill       Backfill saved companies from existing database jobs
     python main.py --scrape         Run Google Search Scraper (Fast mode)
-    python main.py --rank           Run Groq AI LLM Ranker
-    python main.py --filter         Run 100% Deterministic Pre-Filter (US, Senior, Non-Tech)
+    python main.py --extract        Stage 1: Extract structured JDs via Playwright + Groq
+    python main.py --jd-filter      Stage 2: Deterministic 0-token deep JD filter
+    python main.py --ai-rank        Stage 3: AI Rank clean jobs from DB (0 browser overhead)
+    python main.py --rank           Full Pipeline: Extract JDs -> Deep Filter -> AI Rank
+    python main.py --limits         Check live Groq API token & request limits across 7 keys
     python main.py --test           Run the automated test suite
 """
 import sys
@@ -35,15 +37,17 @@ for p in [ROOT_DIR, SRC_DIR]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Job Scraper & AI Tracker System")
+    parser = argparse.ArgumentParser(description="Job Scraper & AI Tracker System (Linux)")
     parser.add_argument("--gui", action="store_true", help="Launch Linux GTK4 GUI")
-    parser.add_argument("--win", action="store_true", help="Launch Windows CustomTkinter GUI")
     parser.add_argument("--ats", action="store_true", help="Run direct ATS scraper for saved companies")
     parser.add_argument("--backfill", action="store_true", help="Backfill company ATS boards from database")
     parser.add_argument("--seed", action="store_true", help="Seed database with top tech ATS companies")
     parser.add_argument("--scrape", action="store_true", help="Run Google search scraper (Fast)")
-    parser.add_argument("--rank", action="store_true", help="Run Groq AI LLM ranker")
+    parser.add_argument("--extract", action="store_true", help="Stage 1: Extract structured JDs from web pages via Playwright + Groq")
     parser.add_argument("--filter", action="store_true", help="Run deterministic pre-filter (0 AI tokens)")
+    parser.add_argument("--jd-filter", action="store_true", help="Stage 2: Deterministic deep JD filter on scraped jobs (0 AI tokens)")
+    parser.add_argument("--ai-rank", action="store_true", help="Stage 3: AI Rank clean jobs from DB against candidate profile (0 browser overhead)")
+    parser.add_argument("--rank", action="store_true", help="Full Pipeline: Extract JDs -> Deep Filter -> AI Rank")
     parser.add_argument("--limits", action="store_true", help="Check live Groq API rate limits & remaining quota across all keys")
     parser.add_argument("--test", action="store_true", help="Run unit test suite")
 
@@ -75,22 +79,29 @@ def main():
         added = seed_starter_companies()
         print(f"🌱 Added {added} starter tech companies to ATS pool. Total companies: {get_company_count()}")
 
-
     elif args.scrape:
         import asyncio
         from src.scrapers.intern_scraper_fast import scrape_google_jobs
         asyncio.run(scrape_google_jobs())
 
+    elif args.extract:
+        from src.ranking.rank_internships import rank_jobs
+        rank_jobs(mode="extract")
+
+    elif args.ai_rank:
+        from src.ranking.rank_internships import rank_jobs
+        rank_jobs(mode="rank")
+
     elif args.rank:
         from src.ranking.rank_internships import rank_jobs
-        rank_jobs()
+        rank_jobs(mode="full")
 
     elif args.filter:
         from src.ranking.job_filter import apply_deterministic_filter_to_db
         print("="*60)
         print("⚡ RUNNING SMART TIER DETERMINISTIC FILTER (0 AI TOKENS)")
         print("="*60)
-        res = apply_deterministic_filter_to_db()
+        res = apply_deterministic_filter_to_db(sync_locations=False)
         print(f"📊 Jobs scanned:              {res['scanned']}")
         print(f"   🚫 Senior / Supervisor:     {res['senior_ignored']}")
         print(f"   🚫 Non-tech / Helpdesk:     {res['non_tech_ignored']}")
@@ -104,35 +115,29 @@ def main():
         print(f"   ✅ Total Active Jobs:       {res['passed']}")
         print("="*60)
 
-    elif args.win:
-        from src.gui.win_gui import JobAppWindow
-        app = JobAppWindow()
-        app.mainloop()
+    elif args.jd_filter:
+        from src.ranking.job_filter import apply_deep_jd_filter_to_db
+        print("="*60)
+        print("🎯 RUNNING 2ND PHASE DEEP JD FILTER (0 AI TOKENS)")
+        print("="*60)
+        res = apply_deep_jd_filter_to_db()
+        print(f"📊 Jobs scanned:              {res['scanned']}")
+        print(f"   🚫 Experience >= 1 year:    {res['exp_ignored']}")
+        print(f"   🚫 Senior / Lead / Staff:   {res['senior_ignored']}")
+        print(f"   🚫 Non-tech / Trade roles:  {res['non_tech_ignored']}")
+        print(f"   🚫 US-based location:       {res['us_ignored']}")
+        print(f"   🚫 Canada-based location:   {res['canada_ignored']}")
+        print(f"   🚫 Security clearance:      {res['clearance_ignored']}")
+        print(f"   ----------------------------------------")
+        print(f"   🎯 Total Ignored (NA):      {res['total_ignored']}")
+        print(f"   ✅ Clean Candidates for AI: {res['passed']}")
+        print("="*60)
 
     else:
-        # Default: Launch appropriate GUI for platform
-        import platform
-        if platform.system() == "Windows" or args.win:
-            try:
-                from src.gui.win_gui import JobAppWindow
-                app = JobAppWindow()
-                app.mainloop()
-            except Exception as e:
-                print(f"Windows GUI error: {e}")
-        else:
-            try:
-                from src.gui.gui import JobApp
-                app = JobApp()
-                app.run(sys.argv)
-            except Exception as e:
-                print(f"Launching Linux GTK4 GUI error: {e}")
-                print("Falling back to CustomTkinter GUI...")
-                try:
-                    from src.gui.win_gui import JobAppWindow
-                    app = JobAppWindow()
-                    app.mainloop()
-                except Exception as e2:
-                    print(f"Could not launch GUI: {e2}")
+        # Launch Linux GTK4 GUI
+        from src.gui.gui import JobApp
+        app = JobApp()
+        app.run(sys.argv)
 
 
 if __name__ == "__main__":

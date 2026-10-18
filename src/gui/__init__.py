@@ -1,5 +1,5 @@
 """
-GUI package for Linux (GTK4) and Windows (CustomTkinter) desktop interfaces.
+GUI package for Linux (GTK4) desktop interface.
 """
 import sys
 import os
@@ -12,9 +12,4 @@ for _p in [_SRC_DIR, _ROOT_DIR]:
 
 from src.gui.gui import JobApp, JobAppWindow
 
-try:
-    from src.gui.win_gui import JobAppWindow as JobAppWindowWin
-except ImportError:
-    JobAppWindowWin = None
-
-__all__ = ["JobApp", "JobAppWindow", "JobAppWindowWin"]
+__all__ = ["JobApp", "JobAppWindow"]

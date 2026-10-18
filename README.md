@@ -163,8 +163,7 @@ web-scraper-job-search/
 │   │   └── reset_ranks.py          # Utility to reset ranks for re-evaluation
 │   └── gui/
 │       ├── __init__.py
-│       ├── gui.py                  # Linux GTK4 GUI dashboard
-│       └── win_gui.py              # Windows CustomTkinter GUI dashboard
+│       └── gui.py                  # Linux GTK4 GUI dashboard
 ├── tests/
 │   ├── test_db.py                  # Unit tests for SQLite DB & deletions
 │   ├── test_ats_parser.py          # Unit tests for ATS platform detection

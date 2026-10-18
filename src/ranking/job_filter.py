@@ -96,6 +96,33 @@ EXPERIENCE_PATTERNS = [
 ]
 EXPERIENCE_REGEX = re.compile("|".join(EXPERIENCE_PATTERNS), re.I)
 
+# Explicit experience threshold patterns (Disqualifies roles requiring >= 1 year)
+EXPERIENCE_EXCEEDED_PATTERNS = [
+    # Explicit 1+ or 2+ or more years: e.g. "1+ years", "1+ yr", "2+ years", "5+ yrs", "10+ years"
+    r"\b(?:1\s*\+|[2-9]\+?|\d{2,}\+?)\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|exp|software|development|professional|relevant|industry|work))?\b",
+
+    # Ranges starting at 1 or more: "1-2 years", "1 to 3 yrs", "2-5 years" (safeguard against "0-1" or "0 to 1")
+    r"(?:^|[^\d\-])(?:[1-9]|\d{2,})\s*(?:[-–]|to)\s*\d+\s*(?:years?|yrs?)\b",
+
+    # Minimum / at least: "at least 1 year", "minimum 1 year", "min 1 yr", "min. 1 year", "minimum of 1 year"
+    r"\b(?:at\s+least|minimum(?:\s+of)?|min\.?)\s*(?:1|one|[2-9]|\d+)\s*(?:\+)?\s*(?:years?|yrs?)\b",
+
+    # "Requires 1 year of experience" / "1 year minimum"
+    r"\b(?:requires?|required)\s+(?:a\s+minimum\s+of\s+)?(?:1|one|[2-9]|\d+)\s*(?:years?|yrs?)\b",
+    r"\b(?:1|one|[2-9]|\d+)\s*(?:years?|yrs?)\s+minimum\b",
+
+    # Textual numbers: "one+ years", "two years of experience", etc.
+    r"\b(?:one\s*\+|two|three|four|five|six|seven|eight|nine|ten)\s*(?:\+)?\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|exp|software|development|professional|relevant))?\b",
+]
+EXPERIENCE_EXCEEDED_REGEX = re.compile("|".join(EXPERIENCE_EXCEEDED_PATTERNS), re.I)
+
+# Safeguard regex for 0-experience/entry-level/intern expressions (e.g. "0-1 years", "0 to 1 year", "fresher")
+EXPERIENCE_ENTRY_SAFEGUARD_REGEX = re.compile(
+    r"\b(?:0\s*(?:[-–]|to)\s*[12]\s*(?:years?|yrs?)|no\s+experience|0\s+years?|fresh\s*(?:grad(?:uate)?|er)?|intern(?:ship)?|entry\s*level|student)\b",
+    re.I
+)
+
+
 
 # ──────────────────────────────────────────────
 #  Patterns for Non-Tech Roles
@@ -297,10 +324,22 @@ NON_US_REGIONS = [
     "brazil", "sao paulo", "japan", "tokyo"
 ]
 
+# Unambiguous US state abbreviations (strictly uppercase, preceded by comma)
+# "IN" is omitted because it is the country code for India (e.g. Bangalore, IN)
+# "CA" is checked separately because CA is Canada (e.g. Toronto, CA)
+# "DE" is omitted because DE is Germany (e.g. Berlin, DE)
+SAFE_US_STATE_ABBRS = [
+    "AK", "AL", "AR", "AZ", "CO", "CT", "DC", "FL", "GA", "HI",
+    "IA", "ID", "IL", "KS", "KY", "LA", "MA", "MD", "ME", "MI",
+    "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM",
+    "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
+    "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY"
+]
+
 US_COUNTRY_REGEX = re.compile("|".join(US_COUNTRY_PATTERNS), re.I)
 US_STATES_REGEX = re.compile(r"\b(" + "|".join(US_STATES) + r")\b", re.I)
 US_CITIES_REGEX = re.compile(r"\b(" + "|".join(US_CITIES) + r")\b", re.I)
-US_STATE_ABBR_REGEX = re.compile(r"(?:,\s*|\s+)(" + "|".join(US_STATE_ABBRS) + r")(?:\s*,\s*USA|\s*,\s*United States|\s*$|[,\s\)\-])", re.I)
+US_STATE_ABBR_REGEX = re.compile(r",\s*(" + "|".join(SAFE_US_STATE_ABBRS) + r")(?:\s*,\s*(?:USA|United States|US)\b|\s*$|\s*[,\)\-])")
 NON_US_REGEX = re.compile(r"\b(" + "|".join(NON_US_REGIONS) + r")\b", re.I)
 
 # ──────────────────────────────────────────────
@@ -396,6 +435,41 @@ def is_career_hub(title: str) -> tuple[bool, str]:
     return False, ""
 
 
+def is_experience_exceeded(exp_text: str) -> tuple[bool, str]:
+    """
+    Evaluates whether an experience string requires 1 or more years of experience.
+    Returns (True, reason) if experience >= 1 year is required.
+    Allows 0-experience, '0-1 year', 'None', freshers, interns, and students.
+    """
+    if not exp_text:
+        return False, ""
+
+    clean = normalize_text(str(exp_text)).strip()
+    clean_lower = clean.lower()
+
+    if clean_lower in ["none", "null", "n/a", "no", "not specified", "0", "0 years", "0-1", "0-1 year", "0-1 years"]:
+        return False, ""
+
+    # Safeguards: 0-1 year, freshers, students, internships
+    if re.search(r"\b0\s*(?:[-–]|to)\s*1\s*(?:years?|yrs?)", clean, re.I):
+        return False, ""
+    if any(k in clean_lower for k in ["no experience", "fresher", "fresh graduate", "intern", "student"]) and not re.search(r"\b(?:1\s*\+|[1-9]|\d{2,})\s*(?:years?|yrs?)", clean, re.I):
+        return False, ""
+
+    # Check for >= 1 year requirement (e.g. "1+ years", "2+ years", "1-2 years", "min 1 year")
+    m = EXPERIENCE_EXCEEDED_REGEX.search(clean)
+    if m:
+        return True, f"Requires experience >= 1 year: '{m.group(0).strip()}'"
+
+    # Simple "1 year" check (e.g. "1 year of experience" or "1 year")
+    m_simple = re.search(r"\b1\s*(?:year|yr)\b", clean_lower)
+    if m_simple and not re.search(r"\b0\s*(?:[-–]|to)\s*1\b", clean_lower):
+        return True, "Requires 1 year of experience"
+
+    return False, ""
+
+
+
 def is_early_career(title: str, jd_text: str = "") -> tuple[bool, str]:
     """Returns (True, reason) if role matches explicit Early Career / Intern / Junior / Apprentice patterns."""
     if title:
@@ -466,10 +540,6 @@ def is_us_based(title: str = "", location: str = "", jd_text: str = "") -> tuple
         m = US_STATES_REGEX.search(jd_header)
         if m:
             return True, f"US state in JD: '{m.group(0)}'"
-        if not has_non_us:
-            m = US_STATE_ABBR_REGEX.search(jd_header)
-            if m:
-                return True, f"US state postal code in JD: '{m.group(1)}'"
 
     return False, ""
 
@@ -654,10 +724,10 @@ def sync_ats_locations_to_db(conn=None) -> int:
     if conn is None:
         conn = get_conn()
 
-    # Fast exit: if no jobs exist or none lack location, skip network scraping completely
+    # Fast exit: if no active New jobs lack location, skip network scraping completely
     try:
         missing_loc = conn.execute(
-            "SELECT 1 FROM jobs WHERE details IS NULL OR details NOT LIKE '%location%' LIMIT 1"
+            "SELECT 1 FROM jobs WHERE status = 'New' AND (details IS NULL OR details NOT LIKE '%location%') LIMIT 1"
         ).fetchone()
         if not missing_loc:
             if close_after:
@@ -705,7 +775,7 @@ def sync_ats_locations_to_db(conn=None) -> int:
     return updated
 
 
-def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move_to_na: bool = True, sync_locations: bool = True) -> dict:
+def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move_to_na: bool = True, sync_locations: bool = False) -> dict:
     """
     Runs smart 3-tier deterministic pre-filtering over SQLite database in bulk.
     - Tier 3: Instantly marks jobs as rank='IGNORE', status='NA'.
@@ -732,7 +802,10 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
     cur = conn.execute("UPDATE jobs SET status='NA' WHERE rank='IGNORE' AND status='New'")
     already_ignored_moved = cur.rowcount
 
-    query = "SELECT url, title, details, reason, rank FROM jobs WHERE status = 'New' OR rank = 'UNKNOWN'"
+    if only_unknown:
+        query = "SELECT url, title, details, reason, rank FROM jobs WHERE status = 'New' AND rank = 'UNKNOWN'"
+    else:
+        query = "SELECT url, title, details, reason, rank FROM jobs WHERE status = 'New'"
     rows = conn.execute(query).fetchall()
 
     stats = {
@@ -810,6 +883,174 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
                 (tier_res["reason"], url)
             )
             stats["tier2_general_swe"] += 1
+            stats["passed"] += 1
+
+    conn.commit()
+    if close_after:
+        conn.close()
+
+    return stats
+
+
+def evaluate_deep_jd_filter(title: str, jd_text: str = "", details: dict = None) -> tuple[bool, str]:
+    """
+    Second-phase deterministic deep filter operating on JD text and structured details.
+    Disqualifies:
+      1. Experience requirement >= 1 year (from details['experience_required'] or JD text)
+      2. Senior / Lead / Manager / Staff roles (from title or structured job_name)
+      3. Non-tech roles (both title and detailed responsibilities/skills)
+      4. US or Canada location (from details['location'] or JD body)
+      5. Security clearance or US citizenship requirements
+    Returns: (should_ignore: bool, reason: str)
+    """
+    clean_title = (title or "").strip()
+    details = details or {}
+
+    # 1. Experience check on details["experience_required"]
+    exp_field = details.get("experience_required")
+    if exp_field:
+        is_exp, exp_reason = is_experience_exceeded(str(exp_field))
+        if is_exp:
+            return True, exp_reason
+
+    # 2. Experience check on raw/clean JD text
+    if jd_text:
+        has_safeguard = bool(EXPERIENCE_ENTRY_SAFEGUARD_REGEX.search(jd_text))
+        m_exp = EXPERIENCE_EXCEEDED_REGEX.search(jd_text)
+        if m_exp and not (has_safeguard and "0" in m_exp.group(0)):
+            matched_str = m_exp.group(0).lower()
+            if not any(dur in matched_str for dur in ["contract", "duration", "program", "placement"]):
+                return True, f"Requires experience >= 1 year in JD: '{m_exp.group(0)}'"
+
+    # 3. Senior / Lead check on title or structured job_name
+    is_sr, sr_reason = is_senior_or_lead(clean_title)
+    if is_sr:
+        return True, sr_reason
+    if details.get("job_name"):
+        is_sr_det, sr_det_reason = is_senior_or_lead(details["job_name"])
+        if is_sr_det:
+            return True, sr_det_reason
+
+    # 4. Location check on structured location or JD
+    loc_field = details.get("location") or ""
+    if loc_field:
+        is_us, us_reason = is_us_based(title=clean_title, location=loc_field, jd_text=jd_text)
+        if is_us:
+            return True, us_reason
+        is_can, can_reason = is_canada_based(title=clean_title, location=loc_field, jd_text=jd_text)
+        if is_can:
+            return True, can_reason
+    elif jd_text:
+        is_us, us_reason = is_us_based(title=clean_title, location="", jd_text=jd_text)
+        if is_us:
+            return True, us_reason
+        is_can, can_reason = is_canada_based(title=clean_title, location="", jd_text=jd_text)
+        if is_can:
+            return True, can_reason
+
+    # 5. Non-tech check on title
+    is_nt, nt_reason = is_non_tech(clean_title)
+    if is_nt:
+        return True, nt_reason
+
+    # 6. Non-tech check on structured fields (skills_required / responsibilities)
+    skills = details.get("skills_required") or []
+    skills_str = " ".join(str(s) for s in skills) if isinstance(skills, list) else str(skills)
+    resps = details.get("responsibilities") or []
+    resps_str = " ".join(str(r) for r in resps) if isinstance(resps, list) else str(resps)
+    combined_det_text = f"{skills_str} {resps_str}".strip()
+
+    if combined_det_text:
+        hm = HARD_NON_TECH_REGEX.search(combined_det_text)
+        if hm and not TECH_SAFEGUARD_REGEX.search(combined_det_text):
+            return True, f"Non-tech responsibilities/skills: '{hm.group(0)}'"
+
+    # 7. Security clearance / US citizenship in JD
+    if jd_text:
+        if re.search(r"\b(?:active\s+)?(?:secret|top\s+secret|ts/sci|polygraph)\s+(?:security\s+)?clearance\b", jd_text, re.I):
+            return True, "Security clearance required in JD"
+        if re.search(r"\bmust\s+be\s+a\s+(?:u\.?s\.?|united\s+states)\s+citizen\b", jd_text, re.I):
+            return True, "US citizenship required in JD"
+
+    return False, ""
+
+
+def apply_deep_jd_filter_to_db(conn=None, move_to_na: bool = True) -> dict:
+    """
+    Applies the second-phase deterministic deep filter across jobs in SQLite database.
+    Evaluates jobs in status='New' or rank='UNKNOWN' that have details or raw JD text.
+    Moves disqualified jobs to rank='IGNORE', status='NA'.
+    Returns stats dict.
+    """
+    import sqlite3
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+        init_db(conn)
+    elif not conn.row_factory:
+        conn.row_factory = sqlite3.Row
+
+    query = "SELECT url, title, details, reason, rank FROM jobs WHERE status = 'New'"
+    rows = conn.execute(query).fetchall()
+
+    stats = {
+        "scanned": len(rows),
+        "exp_ignored": 0,
+        "senior_ignored": 0,
+        "non_tech_ignored": 0,
+        "us_ignored": 0,
+        "canada_ignored": 0,
+        "clearance_ignored": 0,
+        "total_ignored": 0,
+        "passed": 0
+    }
+
+    status_target_ignore = "NA" if move_to_na else "New"
+
+    for r in rows:
+        if isinstance(r, (tuple, list)):
+            url, title, det_raw = r[0], r[1] or "", r[2]
+            reason_existing = r[3] or ""
+        else:
+            url = r["url"]
+            title = r["title"] or ""
+            det_raw = r["details"]
+            reason_existing = r["reason"] or ""
+
+        # NEVER overwrite or re-evaluate jobs that have already been evaluated by AI
+        if reason_existing.startswith("[AI Verified]") or reason_existing.startswith("[AI-Evaluated]") or reason_existing.startswith("AI:"):
+            stats["passed"] += 1
+            continue
+
+        det = None
+        if det_raw:
+            try:
+                det = json.loads(det_raw)
+            except Exception:
+                det = None
+
+        should_ignore, reason = evaluate_deep_jd_filter(title=title, jd_text="", details=det)
+        if should_ignore:
+            ignore_reason = f"[Deep JD Filter] {reason}"
+            conn.execute(
+                "UPDATE jobs SET rank='IGNORE', status=?, reason=? WHERE url=?",
+                (status_target_ignore, ignore_reason, url)
+            )
+            stats["total_ignored"] += 1
+            reason_lower = reason.lower()
+            if "experience" in reason_lower:
+                stats["exp_ignored"] += 1
+            elif "senior" in reason_lower or "lead" in reason_lower or "principal" in reason_lower or "manager" in reason_lower:
+                stats["senior_ignored"] += 1
+            elif "non-tech" in reason_lower:
+                stats["non_tech_ignored"] += 1
+            elif "us" in reason_lower or "united states" in reason_lower:
+                stats["us_ignored"] += 1
+            elif "canada" in reason_lower or "canad" in reason_lower:
+                stats["canada_ignored"] += 1
+            elif "clearance" in reason_lower or "citizen" in reason_lower:
+                stats["clearance_ignored"] += 1
+        else:
             stats["passed"] += 1
 
     conn.commit()

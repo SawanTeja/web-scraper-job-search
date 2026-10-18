@@ -51,10 +51,15 @@ def get_all_groq_keys():
     return keys
 
 
+DAILY_TOKENS_PER_KEY = 200_000   # Groq Free Tier TPD limit for qwen/qwen3.8-27b and openai/gpt-oss-20b
+TOKENS_PER_JOB = 1_800           # Typical tokens per candidate job (Extraction + LLM Evaluation)
+MIN_TPM_BUFFER_JOB = 1_500       # Minimum TPM tokens in rolling 60s window to safely process a job
+
+
 def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
     """
-    Checks rate limits for a single Groq key via a 1-token raw response.
-    Returns structured stats dict.
+    Checks rate limits & token health for a single Groq key via a 1-token raw response.
+    Returns structured stats dict evaluated strictly by TOKEN capacity (TPM & TPD).
     """
     from groq import Groq
     import groq
@@ -78,16 +83,44 @@ def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
         rst_req = headers.get("x-ratelimit-reset-requests", "N/A")
         rst_tok = headers.get("x-ratelimit-reset-tokens", "N/A")
 
+        used_req = max(0, lim_req - rem_req)
+        # Estimate daily tokens consumed (Groq free tier limit is 200k tokens/day)
+        # Evaluated jobs average ~900 tokens per API call (Extraction ~800, Ranking ~1000)
+        est_used_daily_tokens = min(DAILY_TOKENS_PER_KEY, used_req * 900)
+        est_rem_daily_tokens = max(0, DAILY_TOKENS_PER_KEY - est_used_daily_tokens)
+        daily_tok_pct = (est_rem_daily_tokens / DAILY_TOKENS_PER_KEY) * 100
+
+        # Health is evaluated STRICTLY by token capacity (TPM & TPD), not request counts
+        if est_rem_daily_tokens <= 0:
+            status = "TPD_EXHAUSTED"
+            status_label = "🚫 Daily Tokens Used"
+        elif rem_tok == 0:
+            status = "TPM_BUSY"
+            status_label = f"🟠 TPM Empty ({rst_tok})"
+        elif rem_tok < MIN_TPM_BUFFER_JOB:
+            status = "TPM_LOW"
+            status_label = f"🟡 TPM Low ({rem_tok:,}/8k)"
+        elif rem_tok < 5000:
+            status = "HEALTHY"
+            status_label = f"🟢 Ready ({rem_tok:,}/8k TPM)"
+        else:
+            status = "HEALTHY"
+            status_label = "🟢 Token Buffer Healthy"
+
         return {
             "index": idx,
             "masked_key": masked,
-            "status": "HEALTHY",
-            "status_label": "🟢 Healthy",
-            "remaining_requests": rem_req,
-            "limit_requests": lim_req,
-            "used_requests": max(0, lim_req - rem_req),
+            "status": status,
+            "status_label": status_label,
             "remaining_tokens": rem_tok,
             "limit_tokens": lim_tok,
+            "est_remaining_daily_tokens": est_rem_daily_tokens,
+            "est_used_daily_tokens": est_used_daily_tokens,
+            "limit_daily_tokens": DAILY_TOKENS_PER_KEY,
+            "daily_token_pct": daily_tok_pct,
+            "remaining_requests": rem_req,
+            "limit_requests": lim_req,
+            "used_requests": used_req,
             "reset_requests": rst_req,
             "reset_tokens": rst_tok,
             "error": None
@@ -103,18 +136,42 @@ def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
         rst_tok = h.get("x-ratelimit-reset-tokens", "N/A")
 
         err_msg = str(e)
-        is_tpm = "tokens_per_minute" in err_msg.lower() or "tpm" in err_msg.lower()
+        err_lower = err_msg.lower()
+        is_tpd = any(x in err_lower for x in ["tokens_per_day", "tokens per day", "tpd"])
+        is_tpm = any(x in err_lower for x in ["tokens_per_minute", "tokens per minute", "tpm"])
+
+        if is_tpd:
+            status = "TPD_EXHAUSTED"
+            status_label = "🚫 Daily Token Limit Reached"
+            est_rem_daily = 0
+            est_used_daily = DAILY_TOKENS_PER_KEY
+        elif is_tpm:
+            status = "TPM_BUSY"
+            status_label = f"🟠 TPM Rate Limited ({rst_tok})"
+            used_req = max(0, lim_req - rem_req)
+            est_used_daily = min(DAILY_TOKENS_PER_KEY, used_req * 900)
+            est_rem_daily = max(0, DAILY_TOKENS_PER_KEY - est_used_daily)
+        else:
+            status = "RATE_LIMITED"
+            status_label = "🔴 Rate Limited"
+            used_req = max(0, lim_req - rem_req)
+            est_used_daily = min(DAILY_TOKENS_PER_KEY, used_req * 900)
+            est_rem_daily = max(0, DAILY_TOKENS_PER_KEY - est_used_daily)
 
         return {
             "index": idx,
             "masked_key": masked,
-            "status": "RATE_LIMITED",
-            "status_label": "🟡 TPM Busy" if is_tpm else "🔴 Rate Limited",
+            "status": status,
+            "status_label": status_label,
+            "remaining_tokens": rem_tok,
+            "limit_tokens": lim_tok,
+            "est_remaining_daily_tokens": est_rem_daily,
+            "est_used_daily_tokens": est_used_daily,
+            "limit_daily_tokens": DAILY_TOKENS_PER_KEY,
+            "daily_token_pct": (est_rem_daily / DAILY_TOKENS_PER_KEY) * 100,
             "remaining_requests": rem_req,
             "limit_requests": lim_req,
             "used_requests": max(0, lim_req - rem_req),
-            "remaining_tokens": rem_tok,
-            "limit_tokens": lim_tok,
             "reset_requests": rst_req,
             "reset_tokens": rst_tok,
             "error": err_msg
@@ -126,11 +183,15 @@ def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
             "masked_key": masked,
             "status": "ERROR",
             "status_label": "🔴 Error",
+            "remaining_tokens": 0,
+            "limit_tokens": 8000,
+            "est_remaining_daily_tokens": 0,
+            "est_used_daily_tokens": 0,
+            "limit_daily_tokens": DAILY_TOKENS_PER_KEY,
+            "daily_token_pct": 0,
             "remaining_requests": 0,
             "limit_requests": 1000,
             "used_requests": 0,
-            "remaining_tokens": 0,
-            "limit_tokens": 8000,
             "reset_requests": "N/A",
             "reset_tokens": "N/A",
             "error": str(e)
@@ -140,6 +201,7 @@ def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
 def check_all_groq_limits(model="qwen/qwen3.8-27b", max_workers=10):
     """
     Checks rate limits across all configured Groq keys concurrently.
+    Evaluates health and capacity strictly by token limits (TPM & TPD).
     Returns a unified quota summary dictionary.
     """
     keys = get_all_groq_keys()
@@ -147,6 +209,13 @@ def check_all_groq_limits(model="qwen/qwen3.8-27b", max_workers=10):
         return {
             "total_keys": 0,
             "keys": [],
+            "total_daily_tokens": 0,
+            "total_remaining_tokens": 0,
+            "total_used_tokens": 0,
+            "token_based_capacity": 0,
+            "fallback_tokens": 0,
+            "fallback_capacity": 0,
+            "combined_capacity": 0,
             "total_remaining_requests": 0,
             "total_limit_requests": 0,
             "total_used_requests": 0,
@@ -168,20 +237,37 @@ def check_all_groq_limits(model="qwen/qwen3.8-27b", max_workers=10):
     tot_lim_req = sum(r["limit_requests"] for r in results)
     tot_used_req = sum(r["used_requests"] for r in results)
 
+    tot_daily_tokens = len(keys) * DAILY_TOKENS_PER_KEY
+    tot_rem_tokens = sum(r["est_remaining_daily_tokens"] for r in results)
+    tot_used_tokens = sum(r["est_used_daily_tokens"] for r in results)
+
+    # Real job capacity based STRICTLY on tokens, not requests!
+    # (Each evaluated job takes ~1,800 tokens total for extraction + ranking)
+    token_based_capacity = tot_rem_tokens // TOKENS_PER_JOB
+
+    # Fallback model quota: openai/gpt-oss-20b provides fresh 200k tokens per key
+    fallback_tokens = len(keys) * DAILY_TOKENS_PER_KEY
+    fallback_capacity = fallback_tokens // TOKENS_PER_JOB
+    combined_capacity = token_based_capacity + fallback_capacity
+
     # Earliest or representative reset time
     reset_times = [r["reset_requests"] for r in results if r["reset_requests"] != "N/A"]
     daily_reset = reset_times[0] if reset_times else "N/A"
 
-    # Each job requires 2 requests: 1 for extraction + 1 for ranking
-    estimated_jobs = tot_rem_req // 2
-
     return {
         "total_keys": len(keys),
         "keys": results,
+        "total_daily_tokens": tot_daily_tokens,
+        "total_remaining_tokens": tot_rem_tokens,
+        "total_used_tokens": tot_used_tokens,
+        "token_based_capacity": token_based_capacity,
+        "fallback_tokens": fallback_tokens,
+        "fallback_capacity": fallback_capacity,
+        "combined_capacity": combined_capacity,
         "total_remaining_requests": tot_rem_req,
         "total_limit_requests": tot_lim_req,
         "total_used_requests": tot_used_req,
-        "estimated_jobs_today": estimated_jobs,
+        "estimated_jobs_today": token_based_capacity,  # Real job capacity based strictly on tokens!
         "daily_reset_in": daily_reset,
         "model": model,
         "error": None
@@ -189,10 +275,10 @@ def check_all_groq_limits(model="qwen/qwen3.8-27b", max_workers=10):
 
 
 def run_limits_cli():
-    """Prints a formatted report of Groq API limits in the terminal."""
-    print("=" * 72)
-    print("🔑 CHECKING GROQ API LIMITS & QUOTA (ALL CONFIGURED KEYS)")
-    print("=" * 72)
+    """Prints a formatted report of Groq API token limits & health in the terminal."""
+    print("=" * 80)
+    print("🔑 CHECKING GROQ API TOKEN LIMITS & HEALTH (ALL CONFIGURED KEYS)")
+    print("=" * 80)
 
     t0 = time.time()
     data = check_all_groq_limits()
@@ -202,30 +288,39 @@ def run_limits_cli():
         print(f"❌ {data['error']}")
         return
 
-    print(f"⚡ Checked {data['total_keys']} keys in {duration:.2f}s (Model: {data['model']})\n")
-    print(f"📊 OVERALL DAILY QUOTA:")
-    print(f"   • Total Active Keys:          {data['total_keys']}")
-    print(f"   • Daily Requests Remaining:   {data['total_remaining_requests']:,} / {data['total_limit_requests']:,} "
-          f"({(data['total_remaining_requests'] / (data['total_limit_requests'] or 1))*100:.1f}% remaining)")
-    print(f"   • Daily Requests Used Today:  {data['total_used_requests']:,}")
-    print(f"   • Capacity for Today:         ~{data['estimated_jobs_today']:,} candidate jobs (at 2 reqs/job)")
+    rem_pct = (data['total_remaining_tokens'] / (data['total_daily_tokens'] or 1)) * 100
+    used_pct = 100.0 - rem_pct
+
+    print(f"⚡ Checked {data['total_keys']} keys in {duration:.2f}s (Primary Model: {data['model']})\n")
+    print(f"📊 OVERALL DAILY TOKEN QUOTA (TPD - The Real Bottleneck):")
+    print(f"   • Total Active Keys:          {data['total_keys']} keys configured")
+    print(f"   • Total Daily Token Quota:    {data['total_daily_tokens']:,} tokens/day ({DAILY_TOKENS_PER_KEY:,}/key)")
+    print(f"   • Daily Tokens Consumed:      ~{data['total_used_tokens']:,} tokens ({used_pct:.1f}% used today)")
+    print(f"   • Daily Tokens Remaining:     ~{data['total_remaining_tokens']:,} tokens ({rem_pct:.1f}% remaining)")
+    print(f"   • Real Job Capacity Today:    ~{data['token_based_capacity']:,} candidate jobs (at ~1,800 tokens/job)")
+    print(f"   • Fallback Model Capacity:    +{data['fallback_capacity']:,} candidate jobs (openai/gpt-oss-20b: +{data['fallback_tokens']:,} tokens)")
+    print(f"   • Total Available Capacity:   ~{data['combined_capacity']:,} candidate jobs across both models")
     print(f"   • Daily Reset In:             {data['daily_reset_in']} (at 00:00 UTC)")
-    print("\n" + "-" * 72)
-    print(f"{'Key #':<6} {'Masked Key':<16} {'Daily Requests':<18} {'TPM Buffer':<16} {'Status':<12}")
-    print("-" * 72)
+    print("\n" + "-" * 80)
+    print(f"{'Key #':<6} {'Masked Key':<15} {'TPM Buffer (60s)':<18} {'Est. Daily Tokens':<18} {'Token Health Status':<20}")
+    print("-" * 80)
 
     for k in data["keys"]:
-        req_str = f"{k['remaining_requests']}/{k['limit_requests']}"
-        tok_str = f"{k['remaining_tokens']}/{k['limit_tokens']}"
-        print(f"#{k['index']:<5} {k['masked_key']:<16} {req_str:<18} {tok_str:<16} {k['status_label']}")
+        tpm_str = f"{k['remaining_tokens']:,} / {k['limit_tokens']:,}"
+        rem_k = k['est_remaining_daily_tokens'] // 1000
+        lim_k = k['limit_daily_tokens'] // 1000
+        tpd_str = f"{rem_k}k / {lim_k}k ({k['daily_token_pct']:.0f}%)"
+        print(f"#{k['index']:<5} {k['masked_key']:<15} {tpm_str:<18} {tpd_str:<18} {k['status_label']}")
 
-    print("-" * 72)
+    print("-" * 80)
     print("💡 Notes:")
-    print("   • RPD (Requests/Day): Resets once daily at 00:00 UTC (1,000 req/key/day).")
-    print("   • TPM (Tokens/Minute): Rolling 60s window (8,000 tokens/key/min). Automatically recovers in seconds.")
-    print("   • To expand capacity: Add GROQ_API_KEY_6, GROQ_API_KEY_7, etc. to .env")
-    print("=" * 72)
+    print("   • Health is evaluated strictly by TOKEN capacity (TPM & TPD), not request counts.")
+    print("   • Daily Token Limit (TPD): 200,000 tokens/day per key (the real bottleneck on Groq).")
+    print("   • Minute Token Limit (TPM): 8,000 tokens/min rolling buffer. A candidate job takes ~1,800 tokens.")
+    print("   • To expand capacity: Add GROQ_API_KEY_8, GROQ_API_KEY_9, etc. to .env (+200k tokens / key)")
+    print("=" * 80)
 
 
 if __name__ == "__main__":
     run_limits_cli()
+

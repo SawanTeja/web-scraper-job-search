@@ -181,6 +181,118 @@ class TestJobFilter(unittest.TestCase):
         self.assertFalse(is_already_ai_ranked("Reset for re-evaluation"))
         self.assertFalse(is_already_ai_ranked(""))
 
+    def test_experience_exceeded(self):
+        from src.ranking.job_filter import is_experience_exceeded
+        # Roles requiring 1 or more years must be filtered out
+        disqualify_cases = [
+            "1+ year", "1+ years", "1-2 years", "1 - 3 years", "2+ years",
+            "3+ years", "5 years", "Minimum 1 year", "at least 1 year",
+            "1 year of experience", "1 year", "1 yr", "Requires 1 year", "2 years"
+        ]
+        for exp in disqualify_cases:
+            exceeded, reason = is_experience_exceeded(exp)
+            self.assertTrue(exceeded, f"Expected experience exceeded for: '{exp}'")
+
+        # Roles for freshers, 0-experience, 0-1 year, or entry-level must NOT be filtered out
+        allow_cases = [
+            "0-1 year", "0-1 years", "0 to 1 year", "None", "null", "no", "0 years",
+            "Fresher", "fresh graduate", "No experience required", "Internship", "Student"
+        ]
+        for exp in allow_cases:
+            exceeded, reason = is_experience_exceeded(exp)
+            self.assertFalse(exceeded, f"Unexpected experience exceeded for: '{exp}' (reason: {reason})")
+
+    def test_evaluate_deep_jd_filter(self):
+        from src.ranking.job_filter import evaluate_deep_jd_filter
+
+        # 1. Experience >= 1 year in details
+        drop, reason = evaluate_deep_jd_filter("Software Engineer", details={"experience_required": "1+ year"})
+        self.assertTrue(drop)
+        self.assertIn("1+ year", reason)
+
+        drop, reason = evaluate_deep_jd_filter("Junior Developer", details={"experience_required": "1-3 years"})
+        self.assertTrue(drop)
+        self.assertIn("1-3 years", reason)
+
+        # 2. Experience >= 1 year in raw JD text
+        drop, reason = evaluate_deep_jd_filter("Software Engineer", jd_text="Requirements: Must have at least 2+ years of experience in React.")
+        self.assertTrue(drop)
+        self.assertIn("experience", reason.lower())
+
+        # 3. Location in details: US or Canada
+        drop, reason = evaluate_deep_jd_filter("Software Engineer", details={"location": "Toronto, ON, Canada"})
+        self.assertTrue(drop)
+        self.assertIn("Canad", reason)
+
+        drop, reason = evaluate_deep_jd_filter("Software Engineer", details={"location": "Austin, Texas, United States"})
+        self.assertTrue(drop)
+        self.assertIn("US", reason)
+
+        # 4. Security clearance in JD
+        drop, reason = evaluate_deep_jd_filter("Software Engineer", jd_text="Active Secret Security Clearance required for this role.")
+        self.assertTrue(drop)
+        self.assertIn("clearance", reason.lower())
+
+        # 5. Clean candidates: must pass!
+        drop, reason = evaluate_deep_jd_filter("Software Engineering Intern", details={"experience_required": "0-1 year", "location": "Bangalore, India"})
+        self.assertFalse(drop, f"Clean candidate was unexpectedly dropped: {reason}")
+
+        drop, reason = evaluate_deep_jd_filter("Junior Developer", details={"experience_required": "None", "location": "Berlin, Germany"})
+        self.assertFalse(drop, f"Clean candidate was unexpectedly dropped: {reason}")
+
+    def test_has_structured_jd(self):
+        from src.ranking.rank_internships import has_structured_jd
+
+        # Google search scraped minimal location metadata (NOT extracted yet)
+        self.assertFalse(has_structured_jd(None))
+        self.assertFalse(has_structured_jd({}))
+        self.assertFalse(has_structured_jd({"location": "Chennai, India"}))
+        self.assertFalse(has_structured_jd('{"location": "London, UK"}'))
+
+        # Fully extracted schema from Groq LLM
+        full_details = {
+            "job_name": "Junior SDE",
+            "company": "Acme",
+            "location": "Berlin",
+            "experience_required": "0-1 year",
+            "skills_required": ["Python", "C++"]
+        }
+        self.assertTrue(has_structured_jd(full_details))
+        import json
+        self.assertTrue(has_structured_jd(json.dumps(full_details)))
+
+    def test_filter_never_touches_na_or_applied_jobs(self):
+        import sqlite3
+        from src.core.db import init_db
+        from src.ranking.job_filter import apply_deterministic_filter_to_db, apply_deep_jd_filter_to_db
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+
+        # Insert jobs: one New, one NA with rank UNKNOWN, one Applied with rank UNKNOWN
+        conn.execute("INSERT INTO jobs (url, title, status, rank) VALUES ('https://test.com/new', 'Software Engineer Intern', 'New', 'UNKNOWN')")
+        conn.execute("INSERT INTO jobs (url, title, status, rank) VALUES ('https://test.com/na', 'Software Engineer', 'NA', 'UNKNOWN')")
+        conn.execute("INSERT INTO jobs (url, title, status, rank) VALUES ('https://test.com/applied', 'Junior Developer', 'Applied', 'UNKNOWN')")
+        conn.commit()
+
+        # Run Smart Tier filter
+        stats = apply_deterministic_filter_to_db(conn=conn, sync_locations=False)
+        self.assertEqual(stats["scanned"], 1)  # Only the 'New' job scanned!
+
+        # Verify NA and Applied jobs were never altered
+        na_row = conn.execute("SELECT status, rank FROM jobs WHERE url='https://test.com/na'").fetchone()
+        self.assertEqual(na_row["status"], "NA")
+        self.assertEqual(na_row["rank"], "UNKNOWN")
+
+        app_row = conn.execute("SELECT status, rank FROM jobs WHERE url='https://test.com/applied'").fetchone()
+        self.assertEqual(app_row["status"], "Applied")
+        self.assertEqual(app_row["rank"], "UNKNOWN")
+
+        # Run Deep JD filter
+        deep_stats = apply_deep_jd_filter_to_db(conn=conn)
+        self.assertEqual(deep_stats["scanned"], 1)  # Only the 'New' job scanned!
+
 
 if __name__ == "__main__":
     unittest.main()
