@@ -95,6 +95,40 @@ class TestGroqLimits(unittest.TestCase):
             self.assertEqual(resp, fallback_resp)
             self.assertEqual(mgr.active_model, "openai/gpt-oss-20b", "MUST switch to fallback model when 100% of keys hit daily limit")
 
+    def test_tpm_cooldown_sleeps_60s_when_all_keys_rate_limited(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from src.ranking.rank_internships import GroqManager
+        import groq
+
+        with patch("asyncio.sleep") as mock_sleep:
+            mock_sleep.return_value = None
+            mgr = GroqManager()
+            mock_c1 = MagicMock()
+            mock_c2 = MagicMock()
+            mgr.clients = [mock_c1, mock_c2]
+            mgr.total_keys = 2
+            mgr.daily_exhausted_keys = set()
+            mgr.active_model = mgr.primary_model
+
+            tpm_error = groq.RateLimitError(
+                "Rate limit reached for model on tokens per minute (TPM): Limit 8000, Used 8000. Please try again in 4s.",
+                response=MagicMock(headers={}),
+                body={}
+            )
+            success_resp = MagicMock()
+
+            # Attempt 0: Key 1 fails TPM -> rotate to Key 2, sleep(1)
+            # Attempt 1: Key 2 fails TPM -> all 2 keys tried -> sleep(60)
+            # Attempt 2: Key 1 succeeds after cooldown
+            mock_c1.chat.completions.create = AsyncMock(side_effect=[tpm_error, success_resp])
+            mock_c2.chat.completions.create = AsyncMock(side_effect=tpm_error)
+
+            mgr.current_idx = 0
+            resp = asyncio.run(mgr.chat_completion(messages=[{"role": "user", "content": "test"}]))
+            self.assertEqual(resp, success_resp)
+            mock_sleep.assert_any_call(60)
+
 
 if __name__ == "__main__":
     unittest.main()

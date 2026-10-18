@@ -147,11 +147,11 @@ class GroqManager:
                     # Rolling per-minute rate limit (TPM/RPM) - NEVER switch models on per-minute limits!
                     print(f"   ⚠️ Per-minute TPM cooldown on Key #{key_num}/{self.total_keys}. Rotating...")
                     self.rotate(reason="rate-limit")
-                    # If all active keys have been tried within this minute, pause for rolling token bucket to drain
+                    # If all active keys have been tried within this minute, pause for rolling token bucket to refill
                     active_keys_count = max(1, self.total_keys - len(self.daily_exhausted_keys))
                     if (attempt + 1) % active_keys_count == 0:
-                        print(f"   ⏳ All active keys in rolling TPM cooldown. Pausing 6s for token bucket to drain...")
-                        await asyncio.sleep(6)
+                        print(f"   ⏳ All active keys in rolling TPM cooldown. Pausing 60s for token bucket to refill...")
+                        await asyncio.sleep(60)
                     else:
                         await asyncio.sleep(1) # Small pause before retrying on next key
             except Exception as e:
