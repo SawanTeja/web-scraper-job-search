@@ -80,7 +80,7 @@ def resolve_script_path(script_filename):
 class JobAppWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Job Scraper & Ranker")
-        self.set_default_size(1000, 700)
+        self.set_default_size(1300, 750)
         
         # Ensure we clean up any child processes when closed
         self.connect("close-request", self.on_close_request)
@@ -121,6 +121,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         # --- HEADER / GLOBAL ACTIONS ---
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        header_box.set_size_request(-1, 38)
         self.vbox.append(header_box)
 
         self.scrape_btn = Gtk.Button(label="Scrape Jobs")
@@ -164,7 +165,16 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         self.status_label = Gtk.Label(label="Ready.")
         self.status_label.set_hexpand(True)
-        self.status_label.set_halign(Gtk.Align.END)
+        self.status_label.set_halign(Gtk.Align.FILL)
+        self.status_label.set_valign(Gtk.Align.CENTER)
+        self.status_label.set_justify(Gtk.Justification.RIGHT)
+        self.status_label.set_wrap(True)
+        self.status_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.status_label.set_lines(2)
+        self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.status_label.add_css_class("status-header-label")
+        self.status_label.set_tooltip_text("Ready.")
+        self.status_label.connect("notify::label", lambda lbl, pspec: lbl.set_tooltip_text(lbl.get_text()))
         header_box.append(self.status_label)
 
         # Notebook for Tabs
@@ -280,6 +290,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         # Row 2: Secondary Utilities, Pre-Filter, Limits, and Live Status
         prio_row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        prio_row2.set_size_request(-1, 38)
         priority_header.append(prio_row2)
 
         self.prio_filter_btn = Gtk.Button(label="⚡ Pre-Filter Titles")
@@ -296,6 +307,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
         prio_row2.append(self.reset_rank_btn)
 
         self.sort_status_label = Gtk.Label(label="")
+        self.sort_status_label.set_hexpand(True)
+        self.sort_status_label.set_halign(Gtk.Align.START)
+        self.sort_status_label.set_valign(Gtk.Align.CENTER)
+        self.sort_status_label.set_wrap(True)
+        self.sort_status_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.sort_status_label.set_lines(2)
+        self.sort_status_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.sort_status_label.add_css_class("status-header-label")
+        self.sort_status_label.connect("notify::label", lambda lbl, pspec: lbl.set_tooltip_text(lbl.get_text()))
         prio_row2.append(self.sort_status_label)
 
         # Backwards compatibility alias
@@ -339,6 +359,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
     def setup_css(self):
         css_provider = Gtk.CssProvider()
         css = b"""
+            .status-header-label {
+                font-size: 12px;
+                opacity: 0.9;
+            }
             .rank-label {
                 padding: 4px 8px;
                 border-radius: 4px;
