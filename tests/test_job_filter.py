@@ -168,6 +168,20 @@ class TestJobFilter(unittest.TestCase):
         self.assertEqual(t3_us["tier"], 3)
         self.assertEqual(t3_us["rank"], "IGNORE")
 
+        # Multi-location list input handling (regression test for AttributeError: 'list' object has no attribute 'strip')
+        t_list_valid = categorize_job_tier("Software Engineer", ["Lisbon, Portugal", "Madrid, Spain"])
+        self.assertEqual(t_list_valid["tier"], 2)
+        self.assertEqual(t_list_valid["rank"], "UNKNOWN")
+
+        t_list_us = categorize_job_tier("Software Engineer", ["Chicago, IL", "Remote"])
+        self.assertEqual(t_list_us["tier"], 3)
+        self.assertEqual(t_list_us["rank"], "IGNORE")
+
+        # Dict location input handling
+        t_dict = categorize_job_tier("Junior Frontend Developer", {"city": "Munich", "country": "Germany"})
+        self.assertEqual(t_dict["tier"], 1)
+        self.assertEqual(t_dict["rank"], "UNKNOWN")
+
     def test_ai_ranked_preservation(self):
         # Jobs marked by AI must NEVER be re-ranked by AI
         self.assertTrue(is_already_ai_ranked("[AI Verified] Excellent backend match"))

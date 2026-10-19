@@ -1112,52 +1112,24 @@ class JobAppWindow(Gtk.ApplicationWindow):
         thread.start()
 
     def run_scraper(self, script_name="intern_scraper.py"):
-        import time
         try:
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
             process = subprocess.Popen([venv_python, resolve_script_path(script_name)], cwd=os.getcwd())
-
-            while process.poll() is None:
-                time.sleep(30)
-                GLib.idle_add(self.periodic_sync_and_rank)
-
+            process.wait()
             GLib.idle_add(self.on_scrape_finished, process.returncode == 0)
         except Exception as e:
             print(f"Error running scraper: {e}")
             GLib.idle_add(self.on_scrape_finished, False)
 
-    def periodic_sync_and_rank(self):
-        """Reload DB from SQLite and incrementally update the UI while scraper is still running."""
-        new_db = self.load_db()
-        added_count = 0
-        render_queue = []
-        for link, data in new_db.items():
-            if link not in self.jobs_db:
-                self.jobs_db[link] = data
-            
-            # If we haven't processed this job for the UI yet (meaning it's new to the UI session)
-            if link not in self.rendered_jobs:
-                render_queue.append((self._create_main_job_row, (link, data)))
-                added_count += 1
-
-        if render_queue:
-            self._enqueue_rows(render_queue)
-        if added_count > 0:
-            self.status_label.set_text(f"Scraping in progress... discovered {added_count} new jobs live!")
-            self._prio_dirty = True
-        return False
-
     def on_scrape_finished(self, success):
         self.scrape_btn.set_sensitive(True)
         if success:
-            self.jobs_db = load_db()
-            self.refresh_ui()
-            self.status_label.set_text("Scraping finished!")
+            self.status_label.set_text("✅ Scraping finished! Click 'Refresh Everything' to view new jobs.")
         else:
-            self.status_label.set_text("Scraping failed.")
+            self.status_label.set_text("⚠️ Scraping stopped or failed.")
 
     def on_scrape_ats_clicked(self, button):
         self.status_label.set_text("Scraping saved company ATS boards... (Check terminal output for progress)")
@@ -1167,18 +1139,13 @@ class JobAppWindow(Gtk.ApplicationWindow):
         thread.start()
 
     def run_ats_scraper_thread(self):
-        import time
         try:
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
             process = subprocess.Popen([venv_python, resolve_script_path("ats_scraper.py")], cwd=os.getcwd())
-
-            while process.poll() is None:
-                time.sleep(5)
-                GLib.idle_add(self.periodic_sync_and_rank)
-
+            process.wait()
             GLib.idle_add(self.on_ats_scrape_finished, process.returncode == 0)
         except Exception as e:
             print(f"Error running ATS scraper: {e}")
@@ -1187,10 +1154,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
     def on_ats_scrape_finished(self, success):
         self.scrape_ats_btn.set_sensitive(True)
         if success:
-            self.jobs_db = load_db()
-            self.refresh_ui()
             comp_cnt = get_company_count()
-            self.status_label.set_text(f"ATS Scraping finished! ({comp_cnt} companies saved)")
+            self.status_label.set_text(f"✅ ATS Scraping finished ({comp_cnt} companies)! Click 'Refresh Everything' to view new jobs.")
+        else:
+            self.status_label.set_text("⚠️ ATS Scraping stopped or failed.")
 
     def on_view_companies_clicked(self, button):
         if not hasattr(self, "companies_win") or self.companies_win is None:
@@ -1212,18 +1179,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     from job_filter import apply_deterministic_filter_to_db
                 stats = apply_deterministic_filter_to_db(only_unknown=False, move_to_na=True)
                 def update_gui():
-                    self.jobs_db = load_db()
-                    self.page_offsets["New"] = self.page_size
-                    self.refresh_ui()
                     self.fast_filter_btn.set_sensitive(True)
                     if hasattr(self, 'prio_filter_btn'):
                         self.prio_filter_btn.set_sensitive(True)
-                    fresh_count = sum(1 for d in self.jobs_db.values() if d.get('status') == 'New')
                     tier1_count = stats.get('tier1_early_career', 0)
                     tier2_count = stats.get('tier2_general_swe', 0)
                     total_ignored = stats.get('total_ignored', 0)
                     msg = (f"⚡ Smart Tier: {tier1_count} Early Career (HIGH) | {tier2_count} General SWE | "
-                           f"Ignored {total_ignored} (Senior/Helpdesk/US/Hubs) -> NA | Fresh Active: {fresh_count}")
+                           f"Ignored {total_ignored} -> NA | Click 'Refresh Everything' to view updated lists")
                     self.status_label.set_text(msg)
                     if hasattr(self, 'sort_status_label'):
                         self.sort_status_label.set_text(msg)
@@ -1253,13 +1216,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     from job_filter import apply_deep_jd_filter_to_db
                 stats = apply_deep_jd_filter_to_db(move_to_na=True)
                 def update_gui():
-                    self.jobs_db = load_db()
-                    self.refresh_ui()
                     if hasattr(self, 'prio_deep_filter_btn'):
                         self.prio_deep_filter_btn.set_sensitive(True)
                     msg = (f"🎯 Deep JD Filter: {stats['total_ignored']} Ignored ({stats['exp_ignored']} exp>=1yr, "
                            f"{stats['senior_ignored']} senior, {stats['non_tech_ignored']} non-tech, {stats['us_ignored']} US, {stats['canada_ignored']} Canada) | "
-                           f"Clean Candidates for AI: {stats['passed']}")
+                           f"Clean Candidates for AI: {stats['passed']} | Click 'Refresh Everything' to view updated lists")
                     self.status_label.set_text(msg)
                     if hasattr(self, 'sort_status_label'):
                         self.sort_status_label.set_text(msg)
@@ -1353,11 +1314,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.set_pipeline_buttons_sensitive(True)
         self.stop_sort_btn.set_sensitive(False)
         if success:
-            self.sort_status_label.set_text(f"✅ {label_name} finished!")
+            msg = f"✅ {label_name} finished! Click 'Refresh Everything' to view updated jobs."
         else:
-            self.sort_status_label.set_text(f"⚠️ {label_name} stopped or encountered an error.")
-        self.jobs_db = load_db()
-        self.refresh_ui()
+            msg = f"⚠️ {label_name} stopped or encountered an error."
+        self.sort_status_label.set_text(msg)
+        self.status_label.set_text(msg)
 
     def on_extract_clicked(self, button=None):
         self.run_pipeline("extract", "Stage 1: JD Extraction")

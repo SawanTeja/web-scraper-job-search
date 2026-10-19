@@ -172,7 +172,7 @@ def fetch_workday_jobs(identifier: str) -> list[dict]:
         return []
     tenant, server, site = parts[0], parts[1], parts[2]
     url = f"https://{tenant}.{server}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
-    payload = json.dumps({"appliedFacets": {}, "limit": 50, "offset": 0, "searchText": ""}).encode("utf-8")
+    payload = json.dumps({"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={
         "User-Agent": USER_AGENT,
         "Content-Type": "application/json",
@@ -471,17 +471,18 @@ def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
                 
                 # Smart 3-tier deterministic categorization (Tier 1 HIGH, Tier 2 SWE, Tier 3 IGNORE)
                 try:
-                    from src.ranking.job_filter import categorize_job_tier
+                    from src.ranking.job_filter import categorize_job_tier, clean_location_input
                 except ImportError:
                     try:
-                        from ranking.job_filter import categorize_job_tier
+                        from ranking.job_filter import categorize_job_tier, clean_location_input
                     except ImportError:
-                        from job_filter import categorize_job_tier
-                tier_res = categorize_job_tier(title=title, location=location)
+                        from job_filter import categorize_job_tier, clean_location_input
+                clean_loc = clean_location_input(location)
+                tier_res = categorize_job_tier(title=title, location=clean_loc)
                 initial_rank = tier_res["rank"]
                 initial_status = tier_res["status"]
                 initial_reason = tier_res["reason"]
-                details_blob = {"location": location} if location else None
+                details_blob = {"location": clean_loc} if clean_loc else None
 
                 inserted = insert_or_ignore_job(
                     url=url,

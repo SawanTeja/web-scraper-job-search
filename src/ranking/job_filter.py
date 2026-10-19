@@ -481,9 +481,23 @@ def is_early_career(title: str, jd_text: str = "") -> tuple[bool, str]:
     return False, ""
 
 
+def clean_location_input(loc) -> str:
+    """Normalize any location representation (str, list, dict, None) into a clean string."""
+    if not loc:
+        return ""
+    if isinstance(loc, str):
+        return loc.strip()
+    if isinstance(loc, (list, tuple, set)):
+        return " ".join(clean_location_input(x) for x in loc if x).strip()
+    if isinstance(loc, dict):
+        return " ".join(clean_location_input(v) for v in loc.values() if v).strip()
+    return str(loc).strip()
+
+
 def is_us_based(title: str = "", location: str = "", jd_text: str = "") -> tuple[bool, str]:
     """Returns (True, reason) if role is located in the USA."""
-    loc_combined = f"{title} {location}".strip()
+    clean_loc = clean_location_input(location)
+    loc_combined = f"{title} {clean_loc}".strip()
     norm_combined = normalize_text(loc_combined)
 
     # 1. Non-US Override check: avoid false positives with state abbreviations (e.g. Bangalore, IN or Toronto, CA)
@@ -506,9 +520,9 @@ def is_us_based(title: str = "", location: str = "", jd_text: str = "") -> tuple
             return True, f"US country code detected in title: '{m.group(0)}'"
 
     # 3. Check location string directly
-    if location:
-        if re.search(r"\b(?:US|USA|U\.S\.A?)\b", location, re.I):
-            return True, f"US country code in location: '{location}'"
+    if clean_loc:
+        if re.search(r"\b(?:US|USA|U\.S\.A?)\b", clean_loc, re.I):
+            return True, f"US country code in location: '{clean_loc}'"
 
     # 4. Check combined title + location with standard patterns
     if loc_combined:
@@ -546,7 +560,8 @@ def is_us_based(title: str = "", location: str = "", jd_text: str = "") -> tuple
 
 def is_canada_based(title: str = "", location: str = "", jd_text: str = "") -> tuple[bool, str]:
     """Returns (True, reason) if role is located in Canada."""
-    loc_combined = f"{title} {location}".strip()
+    clean_loc = clean_location_input(location)
+    loc_combined = f"{title} {clean_loc}".strip()
     norm_combined = normalize_text(loc_combined)
 
     # 1. Non-Canada Override: e.g. London, UK or Melbourne, Australia
@@ -571,20 +586,20 @@ def is_canada_based(title: str = "", location: str = "", jd_text: str = "") -> t
             return True, f"Canadian province in title: '{m.group(0)}'"
 
     # 3. Check location string directly
-    if location:
-        m = CANADA_COUNTRY_REGEX.search(location)
+    if clean_loc:
+        m = CANADA_COUNTRY_REGEX.search(clean_loc)
         if m:
-            return True, f"Canadian country identifier in location: '{location}'"
-        m = CANADA_CITIES_REGEX.search(location)
+            return True, f"Canadian country identifier in location: '{clean_loc}'"
+        m = CANADA_CITIES_REGEX.search(clean_loc)
         if m:
             return True, f"Canadian city detected in location: '{m.group(0)}'"
-        m = CANADA_PROVINCES_REGEX.search(location)
+        m = CANADA_PROVINCES_REGEX.search(clean_loc)
         if m:
             return True, f"Canadian province in location: '{m.group(0)}'"
-        m = CANADA_VICTORIA_REGEX.search(location)
+        m = CANADA_VICTORIA_REGEX.search(clean_loc)
         if m:
             return True, f"Victoria, BC (Canada) in location: '{m.group(0)}'"
-        m = CANADA_PROVINCE_ABBR_REGEX.search(location)
+        m = CANADA_PROVINCE_ABBR_REGEX.search(clean_loc)
         if m:
             return True, f"Canadian province postal code in location: '{m.group(1)}'"
 
@@ -615,7 +630,7 @@ def categorize_job_tier(title: str, location: str = "", jd_text: str = "") -> di
                 Rank: UNKNOWN, Status: New. (Ready for Groq LLM ranking)
     """
     clean_title = (title or "").strip()
-    clean_loc = (location or "").strip()
+    clean_loc = clean_location_input(location)
 
     # --- Tier 3 Checks (Deterministic Ignore) ---
     # 1. Senior / Lead / Manager / Supervisor / Pleno / 3+ yrs
@@ -757,7 +772,7 @@ def sync_ats_locations_to_db(conn=None) -> int:
         futs = [ex.submit(fetch_comp, c) for c in companies]
         for fut in as_completed(futs):
             for j in fut.result():
-                u, loc = j.get('url'), j.get('location')
+                u, loc = j.get('url'), clean_location_input(j.get('location'))
                 if u and loc:
                     url_to_loc[u] = loc
 
@@ -843,7 +858,7 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
         if det_raw:
             try:
                 det = json.loads(det_raw)
-                location = det.get("location") or ""
+                location = clean_location_input(det.get("location"))
                 jd_snippet = det.get("about_job") or ""
             except Exception:
                 pass
@@ -932,7 +947,7 @@ def evaluate_deep_jd_filter(title: str, jd_text: str = "", details: dict = None)
             return True, sr_det_reason
 
     # 4. Location check on structured location or JD
-    loc_field = details.get("location") or ""
+    loc_field = clean_location_input(details.get("location"))
     if loc_field:
         is_us, us_reason = is_us_based(title=clean_title, location=loc_field, jd_text=jd_text)
         if is_us:
