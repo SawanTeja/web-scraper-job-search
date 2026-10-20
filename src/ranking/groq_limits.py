@@ -27,8 +27,8 @@ load_dotenv(os.path.join(_ROOT_DIR, ".env"))
 def get_all_groq_keys():
     """Extracts all Groq API keys configured in environment or .env file."""
     keys = []
-    # 1. Numbered keys GROQ_API_KEY_1 .. 25
-    for i in range(1, 26):
+    # 1. Numbered keys GROQ_API_KEY_1 .. 100
+    for i in range(1, 101):
         k = os.environ.get(f"GROQ_API_KEY_{i}")
         if k and k.strip():
             clean = k.strip().strip("'\"")

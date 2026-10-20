@@ -319,7 +319,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.prio_filter_btn.connect("clicked", self.on_fast_filter_clicked)
         prio_row2.append(self.prio_filter_btn)
 
-        self.prio_limits_btn = Gtk.Button(label="🔑 API Limits (7 Keys)")
+        self.prio_limits_btn = Gtk.Button(label="🔑 API Limits")
         self.prio_limits_btn.connect("clicked", self.on_check_limits_clicked)
         prio_row2.append(self.prio_limits_btn)
 
@@ -1453,7 +1453,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
             return
 
-        key_count = sum(1 for i in range(1, 26) if os.environ.get(f"GROQ_API_KEY_{i}"))
+        key_count = sum(1 for i in range(1, 101) if os.environ.get(f"GROQ_API_KEY_{i}"))
         if key_count == 0 and os.environ.get("GROQ_API_KEY"):
             key_count = 1
         key_info = f"({key_count} Groq API keys in circular rotation)" if key_count > 0 else ""

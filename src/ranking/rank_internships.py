@@ -39,8 +39,8 @@ FALLBACK_MODEL = "openai/gpt-oss-20b"
 class GroqManager:
     def __init__(self):
         keys = []
-        # Support numbered keys: GROQ_API_KEY_1 to GROQ_API_KEY_25
-        for i in range(1, 26):
+        # Support numbered keys: GROQ_API_KEY_1 to GROQ_API_KEY_100
+        for i in range(1, 101):
             k = os.environ.get(f"GROQ_API_KEY_{i}")
             if k and k.strip():
                 clean_k = k.strip().strip("'\"")
@@ -116,9 +116,9 @@ class GroqManager:
             except groq.RateLimitError as e:
                 err_str = str(e).lower()
                 # 1. Distinguish between rolling per-minute limits (TPM / RPM) and genuine DAILY limits (TPD / RPD)
-                # TPM / RPM recover in seconds; DAILY limits (TPD / RPD) exhaust quota until 00:00 UTC
-                is_per_minute = any(x in err_str for x in ["tokens per minute", "tokens_per_minute", "tpm", "requests per minute", "requests_per_minute", "rpm"]) or ("please try again in" in err_str and ("s." in err_str or "ms." in err_str))
-                is_daily = not is_per_minute and any(x in err_str for x in ["tokens_per_day", "tokens per day", "tpd", "requests_per_day", "requests per day", "rpd", "daily"])
+                # Check DAILY limits first (TPD / RPD) since Groq daily errors also contain "please try again in XmYs"
+                is_daily = any(x in err_str for x in ["tokens_per_day", "tokens per day", "tpd", "requests_per_day", "requests per day", "rpd", "daily"])
+                is_per_minute = not is_daily and (any(x in err_str for x in ["tokens per minute", "tokens_per_minute", "tpm", "requests per minute", "requests_per_minute", "rpm"]) or "please try again in" in err_str)
 
                 if is_daily:
                     self.daily_exhausted_keys.add(key_num)
