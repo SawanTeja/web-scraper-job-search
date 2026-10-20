@@ -461,6 +461,16 @@ async def extract_structured_jds(conn=None):
             already_extracted_count += 1
             continue
 
+        # Auto-ignore modal popup URLs that have no job descriptions
+        if "oneclick-ui" in link:
+            update_job(link, conn, rank="IGNORE", status="NA", reason="[Invalid URL] SmartRecruiters modal popup")
+            continue
+
+        # If previous extraction already failed to find text, move to NA to unblock queue
+        if rank == "ERROR" and "Failed to extract meaningful text." in reason:
+            update_job(link, conn, status="NA")
+            continue
+
         is_tier1 = "[Tier 1:" in reason or (rank == "HIGH")
         prio = 0 if is_tier1 else 1
         candidate_items.append((prio, link, data))
@@ -547,7 +557,20 @@ async def extract_structured_jds(conn=None):
                         }""")
                         jd_text = clean_text(fallback_text)[:2800]
 
+                    # Check child iframes (e.g. iCIMS, Oracle Taleo, Workday embeds)
                     if len(jd_text) < 100:
+                        for frame in page.frames:
+                            if frame != page.main_frame:
+                                try:
+                                    frame_text = await frame.inner_text("body", timeout=3000)
+                                    frame_clean = clean_text(frame_text)
+                                    if len(frame_clean) > len(jd_text):
+                                        jd_text = frame_clean[:2800]
+                                except Exception:
+                                    pass
+
+                    if len(jd_text) < 100:
+                        print(f"   ⚠️ Could not extract text from page (<100 chars). Skipped.\n")
                         return "ERROR", "Failed to extract meaningful text.", None
 
                     # 1. Pre-Extraction Guard: Check raw JD text before spending extraction LLM tokens
@@ -574,7 +597,7 @@ async def extract_structured_jds(conn=None):
                         return "ERROR", "Failed to parse structured JD JSON.", None
 
                 rank, reason, details = await asyncio.wait_for(fetch_and_extract(), timeout=90)
-                new_status = "NA" if rank == "IGNORE" else "New"
+                new_status = "NA" if rank in ("IGNORE", "ERROR") else "New"
                 update_job(url, conn, rank=rank, reason=reason, status=new_status,
                            **({"details": details} if details else {}))
                 conn.commit()
@@ -582,7 +605,7 @@ async def extract_structured_jds(conn=None):
 
             except asyncio.TimeoutError:
                 print(f"   ⚠️ Timeout error: Took too long to process.\n")
-                update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.")
+                update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.", status="NA")
                 conn.commit()
             except Exception as e:
                 print(f"   ⚠️ Error: {e}\n")

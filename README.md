@@ -1,26 +1,39 @@
-# ATS Internship Scraper & Local AI Tracker
+# ATS Job Scraper & Groq AI Application Tracker
 
-An autonomous web scraper and job application tracking system that searches for fresh internships across various ATS platforms (Greenhouse, Lever, Workday, etc.), automatically ranks them against your unique candidate profile using a local LLM, and provides a modern GTK4 GUI to manage your applications.
+An autonomous web scraper and job application tracking system that searches for fresh internships and early-career tech roles across 30+ Applicant Tracking Systems (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, etc.), automatically extracts and ranks them against your unique candidate profile using **Groq Cloud API** (high-speed LPU inference), and provides a modern GTK4 GUI dashboard to manage your applications.
 
-## Features
+---
 
-- **Automated Job Scraping**: Uses Playwright to search Google for roles across 31+ popular Applicant Tracking Systems (ATS) and tech career portals.
-- **Anti-Bot Mechanisms**: Built-in human-like scrolling, mouse movements, and random navigation to bypass CAPTCHAs while scraping Google search results.
-- **Local AI Ranking Engine**: Integrates with an offline `Ollama` instance running **Llama 3.1** to privately evaluate fetched job descriptions against your personal resume/skills and classify them (HIGH, MEDIUM, LOW, IGNORE).
-- **GTK4 Graphical Interface**: A sleek, modern dashboard built with Python GTK4 to manage fresh leads, track ongoing applications, and sort job postings by AI priority.
-- **Offline Data Storage**: Job details are seamlessly managed in a lightweight local JSON database (`jobs_db.json`).
+## Key Features
+
+- **High-Speed ATS Direct Scraper**: Directly queries company career boards across Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, Workable, BambooHR, Jobvite, and Recruitee—bypassing search engine rate limits and CAPTCHAs.
+- **Google Discovery Scraper**: Scrapes Google Search with Playwright and anti-bot stealth measures to discover new companies and job postings, automatically expanding your company pool.
+- **3-Tier 0-Token Deterministic Pre-Filter**: Instantly disqualifies Senior/Lead/Manager roles, non-tech positions (sales, marketing, HR, retail), and ineligible locations (US, Canada) in <1 second—**using 0 AI tokens** to conserve your quotas.
+- **Groq AI Multi-Key Rotation**: High-speed AI inference using **Qwen 2.5 32B / Qwen 3.8 27B** with automatic fallback to **GPT-OSS 20B**. Seamlessly rotates across multiple Groq API keys (e.g. 7+ keys) with per-minute TPM cooldown management and daily quota rollover.
+- **3-Stage Ranking Pipeline**:
+  1. *Stage 1 (Extract JDs)*: Uses Playwright to load job pages (including child `<iframe>` support for iCIMS/Taleo) and Groq LLM to extract clean, structured JSON schemas.
+  2. *Stage 2 (Deep JD Filter)*: Deterministic 0-token filter checking years of experience (>=1 yr), security clearance, and trade roles.
+  3. *Stage 3 (AI Rank)*: Evaluates surviving clean postings against your candidate resume/criteria (HIGH, MEDIUM, LOW, IGNORE)—**100% in Python + AsyncGroq with 0 browser overhead**.
+- **Modern Linux GTK4 GUI**:
+  - Live filter by AI Rank (ALL, HIGH, MEDIUM, LOW, UNKNOWN, IGNORE).
+  - **Keyword Search**: Instant debounced search for keywords (e.g. `intern`, `internship`, `python`, `remote`, company names).
+  - One-click application tracking: `Fresh`, `Applied`, `Ongoing`, `Rejected`, and `NA`.
+  - Saved Companies Manager with platform filtering and seeding.
+  - Live Groq API Quotas & Rate Limits dialog.
+- **High-Performance SQLite Storage**: Jobs and companies stored in `jobs_db.sqlite` with WAL mode for concurrent read/write and deleted URL tombstoning to prevent re-scraping dismissed jobs.
 
 ---
 
 ## Setup & Installation
 
-Ensure you have Python 3.x installed.
-
 ### 1. Environment Setup
 
+Ensure you have Python 3.10+ installed.
+
 ```bash
-# Clone the repository and navigate into the folder
-cd web-scraper
+# Clone the repository and navigate into the project directory
+git clone https://github.com/SawanTeja/web-scraper-job-search.git
+cd web-scraper-job-search
 
 # Create a virtual environment
 python3 -m venv scraper_env
@@ -29,175 +42,157 @@ python3 -m venv scraper_env
 source scraper_env/bin/activate
 
 # Install dependencies
-pip install playwright asyncio groq python-dotenv playwright-stealth PyGObject
+pip install -r requirements.txt
 
 # Install Playwright browser binaries
 playwright install chromium
 ```
 
-> **Note**: To run the GUI (`gui.py`), you must be on a Linux system with GTK4 libraries available, or have the relevant GObject/GTK4 bindings installed for your OS. For Windows users, the GUI is unsupported out-of-the-box unless you use WSL (Windows Subsystem for Linux) with GUI support enabled, or use the command-line scripts.
+> **Note**: The desktop GUI (`main.py` / `src/gui/gui.py`) requires Linux GTK4 libraries (`PyGObject`). All scraping and ranking features can also be run entirely via the CLI on headless environments.
 
-### 2. Groq AI Setup
+---
 
-This project uses the Groq Cloud API for fast model inference.
+### 2. Groq API Configuration
 
-1. Create a `.env` file in the root of your project folder.
-2. Add your Groq API key:
+This project uses the Groq Cloud API for ultra-fast structured extraction and job fit evaluation. You can configure a single key or multiple keys for automatic circular rotation:
+
+1. Create a `.env` file in the project root:
 ```bash
-GROQ_API_KEY=your_actual_api_key_here
+cp .env.example .env  # or create a new .env file
+```
+
+2. Add your Groq API key(s):
+
+```env
+# Single key:
+GROQ_API_KEY="gsk_your_primary_key_here"
+
+# OR Multi-Key Circular Rotation (Recommended to maximize daily quotas):
+GROQ_API_KEY_1="gsk_key_one..."
+GROQ_API_KEY_2="gsk_key_two..."
+GROQ_API_KEY_3="gsk_key_three..."
+GROQ_API_KEY_4="gsk_key_four..."
+GROQ_API_KEY_5="gsk_key_five..."
+GROQ_API_KEY_6="gsk_key_six..."
+GROQ_API_KEY_7="gsk_key_seven..."
+
+# OR comma-separated:
+# GROQ_API_KEYS="gsk_key1,gsk_key2,gsk_key3"
+```
+
+You can verify your configured keys and live token quotas at any time:
+```bash
+python main.py --limits
 ```
 
 ---
 
 ## How to Use
 
-### 1. Using the Scrapers
-- **Direct ATS Scraper (Fastest, No Google rate limits)**:
-  Scrapes saved companies' career boards directly across Greenhouse, Lever, Ashby, SmartRecruiters, Workday, etc.:
-  ```bash
-  python main.py --ats
-  ```
-  *(To backfill companies from your existing database, run `python main.py --backfill`)*
-
-- **Google Discovery Scraper**:
-  Discovers new companies and job links via Google searches and automatically saves the company ATS platform for direct future scraping:
-  ```bash
-  python main.py --scrape
-  ```
-
-### 2. The Dashboard (GUI)
-Run the graphical interface to manage everything from one place:
-
+### 1. Launch the Desktop GUI Dashboard
 ```bash
-# On Linux (GTK4):
 python main.py
-# or: python main.py --gui
-
-# On Windows:
-python main.py --win
+# or:
+python main.py --gui
 ```
-- **Scrape Companies**: Click the "🏢 Scrape Companies" button to instantly scrape all saved companies' ATS boards directly (bypasses Google rate limits).
-- **Filter US/Senior Jobs**: Click "⚡ Filter US/Senior" to instantly auto-ignore US-based, Senior/Lead/Manager, and non-tech roles in <1s (uses 0 AI tokens!).
-- **Scrape Jobs**: Click "Scrape Jobs" to run the Google discovery scraper.
-- **AI Rank/Sort Jobs**: Head to the "Priority Sorting" tab and click the AI Rank button to evaluate remaining fresh candidate listings using LLM.
-- **Track Status**: Move jobs between `New`, `Applied`, `Ongoing`, `Rejected`, and `NA` (with auto-expiry of stale 'New' jobs after 24 hours).
-
-### 3. Running Modules Manually
-All modules can be executed directly via `main.py` CLI or through `src/`:
-- **Fast Deterministic Pre-Filter (0 AI tokens)**: `python main.py --filter` (or `python src/ranking/job_filter.py`)
-- **ATS Direct Scraper**: `python main.py --ats` (or `python src/scrapers/ats_scraper.py`)
-- **Google Scraper**: `python main.py --scrape` (or `python src/scrapers/intern_scraper_fast.py`)
-- **AI Ranker**: `python main.py --rank` (or `python src/ranking/rank_internships.py`)
-- **Unit Test Suite**: `python main.py --test`
+From the GUI you can:
+- **Search Keywords**: Use the top-right search box in *Fresh Jobs* to search `intern`, `internship`, `backend`, `react`, etc.
+- **Filter by Rank**: View only `HIGH`, `MEDIUM`, or `LOW` priority listings.
+- **🏢 Scrape Companies**: Run high-speed ATS board scraping across all saved companies.
+- **📋 Saved Companies**: Browse, search, add, or seed top tech company career boards.
+- **⚡ Smart Tier Filter**: Instant 0-token pre-filter on scraped jobs.
+- **🔑 API Limits**: Inspect live remaining tokens and requests across all Groq keys.
+- **Priority Sorting Tab**: Run Stages 1, 2, and 3 or the Full Auto Pipeline.
 
 ---
 
-## Customizing for YOUR Job Search (Important!)
+### 2. Command-Line Workflows
 
-To make this tool find jobs tailored strictly for you, you need to edit a few specific variables in the scripts. **Do this before running the scraper!**
+All components can be triggered via `main.py`:
 
-### 1. Editing What to Search For (`intern_scraper.py`)
+| Command | Action | Description |
+| :--- | :--- | :--- |
+| `python main.py --ats` | **Direct ATS Scraper** | High-speed direct scraping across all saved company ATS boards |
+| `python main.py --scrape` | **Google Scraper** | Playwright discovery scraper across Google search queries |
+| `python main.py --filter` | **0-Token Pre-Filter** | Pre-filters Senior, non-tech, US/Canada locations (0 AI tokens) |
+| `python main.py --extract` | **Stage 1: Extract JDs** | Headless browser fetch + Groq structured JSON extraction |
+| `python main.py --jd-filter` | **Stage 2: Deep JD Filter** | Deep qualification filter on extracted requirements (0 tokens) |
+| `python main.py --ai-rank` | **Stage 3: AI Rank** | Evaluates clean jobs against your resume using Groq LLM |
+| `python main.py --rank` | **Full Pipeline** | Runs Stage 1 ➔ Stage 2 ➔ Stage 3 in a continuous pipeline |
+| `python main.py --limits` | **Groq Quota Inspector** | Live RPD / TPM / TPD quota monitor across all Groq API keys |
+| `python main.py --seed` | **Seed Companies** | Populates ATS company pool with 45+ top tech company boards |
+| `python main.py --backfill` | **Backfill Companies** | Discovers and adds ATS companies from existing database jobs |
+| `python main.py --test` | **Run Test Suite** | Runs automated test suite (database, filter, limits, search) |
 
-Open `intern_scraper.py` and modify the following lists at the top of the file:
+---
 
-- **`SITES`**: This contains the domains the scraper restricts its Google searches to. You can add or remove ATS domains or career portals (e.g., `jobs.apple.com`, `careers.google.com`).
-- **`SEARCH_QUERIES`**: This dictates exactly what keywords you want to search for. Update this to match your desired graduation year, role, and tech stack.
-  
-  *Example:*
-  ```python
-  SEARCH_QUERIES = [
-      '(data scientist OR machine learning) (intern OR internship) 2026',
-      '(python OR pytorch OR tensorflow) (intern OR internship)'
-  ]
-  ```
+## Customizing for YOUR Background & Preferences
 
-### 2. Personalizing the AI Evaluator (`rank_internships.py`)
+### 1. Personalizing the Candidate Profile & AI Ranking
+Open [`src/ranking/rank_internships.py`](file:///home/sawan/Tejashvi/web-scraper-job-search/src/ranking/rank_internships.py) and update `CANDIDATE_PROFILE` (around line 180):
 
-The AI ranks jobs based on a strict set of rules mapped to your resume. Open `rank_internships.py` and modify the following constants:
-
-#### A. Your Candidate Profile
-Update the `CANDIDATE_PROFILE` string to accurately reflect your education, skills, prior internships, and career goals. **The AI uses this text to decide if a job is a good fit.**
-
-*Example:*
 ```python
 CANDIDATE_PROFILE = """
 Candidate Background:
-Education: B.S. Computer Science
-Core Skills: Python, AWS, Docker, React...
-...
+- Education: B.S. in Computer Science / Software Engineering
+- Core Programming Languages: Python, C++, TypeScript, Go
+- Frameworks & Technologies: React, Node.js, FastAPI, Docker
+- Career Goals: Internships & Early Career Software Engineering
 """
 ```
 
-#### B. The Ranking Rules Prompt
-Scroll down to the `prompt` string inside the `evaluate_job_with_llm` function. Here you dictate exactly what roles you love and what roles you hate.
+The AI Evaluator reads this profile and scores jobs according to your prompt rules in `src/ranking/rank_internships.py` (`evaluate_job_with_llm`).
 
-- **`IGNORE (HARD VETO)`**: Add keywords and roles here that you absolutely NEVER want to see (e.g., "UI/UX, IT Support, unpaid internships, required clearance"). The AI will filter these out instantly.
-- **`HIGH`**: Define your dream roles (e.g., "AI infrastructure roles, Python backend engineering, Quant roles").
-- **`MEDIUM / LOW`**: Define acceptable but non-ideal roles.
-
-By tweaking these guardrails, the AI will accurately isolate your best-fit job opportunities!
+### 2. Customizing Search Queries
+Open [`src/scrapers/intern_scraper_fast.py`](file:///home/sawan/Tejashvi/web-scraper-job-search/src/scrapers/intern_scraper_fast.py) to configure:
+- `SEARCH_QUERIES`: Target roles, graduation years, tech stacks.
+- `SITES`: Target ATS platforms or custom career portals.
 
 ---
 
-## Project Architecture & Structure
-
-The codebase is organized into clean, modular packages under `src/` with root entrypoints for seamless execution and backwards compatibility:
+## Project Structure
 
 ```
 web-scraper-job-search/
 ├── src/
 │   ├── core/
 │   │   ├── __init__.py
-│   │   └── db.py                   # SQLite engine, schemas, migrations, tombstones
-│   ├── scrapers/
-│   │   ├── __init__.py
-│   │   ├── ats_parser.py           # Deterministic ATS URL & platform detection
-│   │   ├── ats_scraper.py          # High-speed direct ATS scraping pool
-│   │   ├── intern_scraper.py       # Google Playwright scraper (Standard)
-│   │   ├── intern_scraper_fast.py  # Google Playwright scraper (Fast)
-│   │   └── intern_scraper_overnight.py # Google Playwright scraper (Overnight)
+│   │   └── db.py                   # SQLite database (WAL mode, migrations, tombstones)
 │   ├── ranking/
 │   │   ├── __init__.py
-│   │   ├── job_filter.py           # Deterministic pre-filter (US, Senior, Non-Tech)
-│   │   ├── rank_internships.py     # Groq LLM AI ranker with key rotation
-│   │   └── reset_ranks.py          # Utility to reset ranks for re-evaluation
+│   │   ├── groq_limits.py          # Parallel live Groq quota & rate-limit checker
+│   │   ├── job_filter.py           # Deterministic 0-token pre-filter & deep JD filter
+│   │   ├── rank_internships.py     # 3-Stage Groq LLM ranking pipeline & circular key rotation
+│   │   └── reset_ranks.py          # Rank reset utility
+│   ├── scrapers/
+│   │   ├── __init__.py
+│   │   ├── ats_parser.py           # ATS platform & company identifier detection
+│   │   ├── ats_scraper.py          # Multi-threaded direct ATS scraping engine
+│   │   ├── intern_scraper.py       # Google Playwright scraper (Standard)
+│   │   ├── intern_scraper_fast.py  # Google Playwright scraper (Fast)
+│   │   └── intern_scraper_overnight.py # Google Playwright scraper (Overnight batch)
 │   └── gui/
 │       ├── __init__.py
-│       └── gui.py                  # Linux GTK4 GUI dashboard
+│       └── gui.py                  # Linux GTK4 GUI dashboard (Search, Ranks, ATS Manager)
 ├── tests/
-│   ├── test_db.py                  # Unit tests for SQLite DB & deletions
-│   ├── test_ats_parser.py          # Unit tests for ATS platform detection
-│   └── test_job_filter.py          # Unit tests for deterministic filters
-├── main.py                         # Unified CLI / GUI launcher entrypoint
-├── jobs_db.sqlite                  # SQLite database (WAL mode, persistent)
+│   ├── test_ats_parser.py          # Unit tests for ATS parser
+│   ├── test_db.py                  # Unit tests for SQLite DB operations & tombstones
+│   ├── test_groq_limits.py         # Unit tests for Groq key rotation & fallback model
+│   ├── test_gui_search.py          # Unit tests for GUI keyword search matching
+│   └── test_job_filter.py          # Unit tests for deterministic 0-token filters
+├── main.py                         # Unified entrypoint (CLI & GUI launcher)
+├── jobs_db.sqlite                  # SQLite database file (auto-created)
 ├── prompts.json                    # Groq LLM prompt templates
-├── requirements.txt                # Python dependencies
-├── setup.md                        # Setup guide
+├── requirements.txt                # Python package dependencies
 └── README.md                       # Documentation
 ```
 
 ---
 
-## Troubleshooting
+## Running the Automated Tests
 
-### `ModuleNotFoundError: No module named 'distutils'` or `AttributeError: 'Version' object has no attribute 'version'`
-If you are using Python 3.12 or newer, you might encounter an error when running `indeed_scraper.py` because the `distutils` module has been removed from the standard library, which breaks the `undetected_chromedriver` package.
+Verify that database handlers, ATS parsers, Groq key rotation, deterministic filters, and GUI search logic are working properly:
 
-**To fix this:**
-Open the patcher file inside your virtual environment. The path usually looks like this:
-`scraper_env/lib64/python3.1X/site-packages/undetected_chromedriver/patcher.py` or `scraper_env/lib/python3.1X/site-packages/undetected_chromedriver/patcher.py`
-
-Replace this import at the top of the file:
-```python
-from distutils.version import LooseVersion
+```bash
+python main.py --test
 ```
-With this mock class:
-```python
-class LooseVersion:
-    def __init__(self, vstring):
-        self.vstring = str(vstring)
-        self.version = [int(x) if x.isdigit() else x for x in self.vstring.split('.')]
-    def __str__(self):
-        return self.vstring
-```
-Save the file, and the scraper should now boot up without crashing!

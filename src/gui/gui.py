@@ -100,6 +100,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self._batch_source_id = None
         # Track whether priority tab needs refresh
         self._prio_dirty = True
+        # Search state
+        self.search_query = ""
+        self._search_timeout_id = None
         # Pagination
         self.page_size = 50
         self.page_offsets = {
@@ -200,6 +203,25 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.rank_filter_drop.set_selected(0)  # Default: ALL
         self.rank_filter_drop.connect("notify::selected", self.on_rank_filter_changed)
         self.filter_box.append(self.rank_filter_drop)
+
+        # Result count badge/label
+        self.filter_stats_label = Gtk.Label(label="")
+        self.filter_stats_label.add_css_class("dim-label")
+        self.filter_box.append(self.filter_stats_label)
+
+        # Spacer pushing search to right part
+        filter_spacer = Gtk.Box()
+        filter_spacer.set_hexpand(True)
+        self.filter_box.append(filter_spacer)
+
+        # Search Entry at right part
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_placeholder_text("🔍 Search keywords (e.g. intern, python, company)...")
+        self.search_entry.set_size_request(350, -1)
+        self.search_entry.set_halign(Gtk.Align.END)
+        self.search_entry.connect("search-changed", self.on_search_changed)
+        self.search_entry.connect("stop-search", lambda e: e.set_text(""))
+        self.filter_box.append(self.search_entry)
 
         fresh_vbox.append(self.filter_box)
 
@@ -578,6 +600,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 active_filter = self.get_active_rank_filter()
                 if active_filter != "ALL":
                     items = [(l, d) for l, d in items if d.get("rank", "UNKNOWN") == active_filter]
+                if self.search_query:
+                    items = [(l, d) for l, d in items if self._job_matches_search(d, l, self.search_query)]
+
+                total_fresh = counts["New"]
+                if hasattr(self, "filter_stats_label"):
+                    if self.search_query or active_filter != "ALL":
+                        self.filter_stats_label.set_text(f"({len(items)} matching of {total_fresh})")
+                    else:
+                        self.filter_stats_label.set_text(f"({total_fresh} jobs)")
 
             limit = self.page_offsets.get(status, self.page_size)
             for link, data in items[:limit]:
@@ -585,6 +616,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
             if len(items) > limit:
                 render_queue.append((self._create_load_more_btn, (status, len(items) - limit)))
+            elif not items and status == "New" and self.search_query:
+                render_queue.append((self._create_empty_search_row, (self.search_query,)))
 
         # Only render priority tab if it's currently visible
         current_page = self.notebook.get_current_page()
@@ -619,6 +652,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 recent_jobs[link] = data
 
         sorted_jobs = sorted(recent_jobs.items(), key=lambda x: get_rank_weight(x[1].get("rank", "UNKNOWN")))
+        if self.search_query:
+            sorted_jobs = [(l, d) for l, d in sorted_jobs if self._job_matches_search(d, l, self.search_query)]
         prio_limit = self.page_offsets.get("Priority Sorting", self.page_size)
 
         for link, data in sorted_jobs[:prio_limit]:
@@ -650,7 +685,16 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def load_more(self, status):
         self.page_offsets[status] += self.page_size
-        self.refresh_ui()
+        if status == "New":
+            self._repopulate_fresh_jobs()
+        elif status == "Priority Sorting":
+            self._cancel_pending_batch()
+            self.clear_listbox(self.prio_listbox)
+            render_queue = []
+            self._build_priority_queue(render_queue)
+            self._enqueue_rows(render_queue)
+        else:
+            self.refresh_ui()
 
     def _create_main_job_row(self, link, data):
         """Create and append a single main job row."""
@@ -663,6 +707,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
         if status == "New":
             active_filter = self.get_active_rank_filter()
             if active_filter != "ALL" and rank != active_filter:
+                return
+            if getattr(self, "search_query", None) and not self._job_matches_search(data, link, self.search_query):
                 return
 
         self.rendered_jobs.add(link)
@@ -977,6 +1023,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
             f"Fresh: {counts['New']} | Applied: {counts['Applied']} | "
             f"Ongoing: {counts['Ongoing']} | Rejected: {counts['Rejected']} | NA: {counts['NA']}"
         )
+        if hasattr(self, "filter_stats_label"):
+            active_filter = self.get_active_rank_filter()
+            matching = [
+                d for d in self.jobs_db.values()
+                if d.get("status", "New") == "New"
+                and (active_filter == "ALL" or d.get("rank", "UNKNOWN") == active_filter)
+                and (not getattr(self, "search_query", None) or self._job_matches_search(d, "", self.search_query))
+            ]
+            if getattr(self, "search_query", None) or active_filter != "ALL":
+                self.filter_stats_label.set_text(f"({len(matching)} matching of {counts['New']})")
+            else:
+                self.filter_stats_label.set_text(f"({counts['New']} jobs)")
 
     def on_apply_clicked(self, button, link):
         self._last_btn_click_time = time.time()
@@ -1051,16 +1109,96 @@ class JobAppWindow(Gtk.ApplicationWindow):
         idx = self.rank_filter_drop.get_selected()
         return self.rank_filter_options[idx] if idx < len(self.rank_filter_options) else "ALL"
 
-    def on_rank_filter_changed(self, dropdown, pspec):
-        """Re-populate only the Fresh Jobs listbox when filter changes."""
+    def _job_matches_search(self, data, link, query):
+        """Check if job matches the search query (supports comma OR and space AND)."""
+        if not query:
+            return True
+        title = data.get("title") or ""
+        company = data.get("company") or ""
+        ats = data.get("ats_platform") or ""
+        reason = data.get("reason") or ""
+        details = data.get("details") or ""
+        if isinstance(details, (dict, list)):
+            try:
+                details_str = json.dumps(details)
+            except Exception:
+                details_str = str(details)
+        else:
+            details_str = str(details)
+
+        target_str = f"{title} {company} {ats} {link} {details_str} {reason}".lower()
+
+        or_clauses = [clause.strip() for clause in query.lower().split(",") if clause.strip()]
+        if not or_clauses:
+            return True
+
+        for clause in or_clauses:
+            and_tokens = [tok.strip() for tok in clause.split() if tok.strip()]
+            if and_tokens and all(token in target_str for token in and_tokens):
+                return True
+        return False
+
+    def _create_empty_search_row(self, query):
+        """Row shown when no jobs match the search query."""
+        row = Gtk.ListBoxRow()
+        row.set_selectable(False)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(40)
+        box.set_margin_bottom(40)
+        box.set_halign(Gtk.Align.CENTER)
+
+        icon = Gtk.Label(label="🔍")
+        box.append(icon)
+
+        lbl = Gtk.Label(label=f"No fresh jobs found matching '{query}'")
+        lbl.add_css_class("dim-label")
+        box.append(lbl)
+
+        row.set_child(box)
+        self.fresh_listbox.append(row)
+
+    def on_search_changed(self, entry):
+        """Debounce search input and filter jobs in real-time."""
+        if self._search_timeout_id is not None:
+            GLib.source_remove(self._search_timeout_id)
+            self._search_timeout_id = None
+        self._search_timeout_id = GLib.timeout_add(150, self._apply_search)
+
+    def _apply_search(self):
+        """Callback to execute search filtering."""
+        self._search_timeout_id = None
+        self.search_query = self.search_entry.get_text().strip()
+        self.page_offsets["New"] = self.page_size
+        self.page_offsets["Priority Sorting"] = self.page_size
+        self._prio_dirty = True
+        self._repopulate_fresh_jobs()
+        if self.notebook.get_current_page() == self.priority_page_num:
+            self._cancel_pending_batch()
+            self.clear_listbox(self.prio_listbox)
+            render_queue = []
+            self._build_priority_queue(render_queue)
+            self._enqueue_rows(render_queue)
+            self._prio_dirty = False
+        return False
+
+    def _repopulate_fresh_jobs(self):
+        """Re-populate only the Fresh Jobs listbox with current rank filter and search query."""
         self._cancel_pending_batch()
         self.clear_listbox(self.fresh_listbox)
-        self.page_offsets["New"] = self.page_size
 
         active_filter = self.get_active_rank_filter()
         items = [(l, d) for l, d in self.jobs_db.items() if d.get("status", "New") == "New"]
         if active_filter != "ALL":
             items = [(l, d) for l, d in items if d.get("rank", "UNKNOWN") == active_filter]
+        if self.search_query:
+            items = [(l, d) for l, d in items if self._job_matches_search(d, l, self.search_query)]
+
+        total_fresh = sum(1 for d in self.jobs_db.values() if d.get("status", "New") == "New")
+        if hasattr(self, "filter_stats_label"):
+            if self.search_query or active_filter != "ALL":
+                self.filter_stats_label.set_text(f"({len(items)} matching of {total_fresh})")
+            else:
+                self.filter_stats_label.set_text(f"({total_fresh} jobs)")
 
         limit = self.page_offsets.get("New", self.page_size)
         render_queue = []
@@ -1068,7 +1206,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
             render_queue.append((self._create_main_job_row, (link, data)))
         if len(items) > limit:
             render_queue.append((self._create_load_more_btn, ("New", len(items) - limit)))
+        elif not items and self.search_query:
+            render_queue.append((self._create_empty_search_row, (self.search_query,)))
         self._enqueue_rows(render_queue)
+
+    def on_rank_filter_changed(self, dropdown, pspec):
+        """Re-populate only the Fresh Jobs listbox when filter changes."""
+        self.page_offsets["New"] = self.page_size
+        self._repopulate_fresh_jobs()
 
 
 
