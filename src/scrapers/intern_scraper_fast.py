@@ -43,7 +43,7 @@ SITES = [
     "smartrecruiters.com",
 
     # Enterprise ATS
-    # "myworkdayjobs.com", #uncomment if you want to scrape myworkdays
+    "myworkdayjobs.com", #uncomment if you want to scrape myworkdays
     "icims.com",
     "jobvite.com",
     "bamboohr.com",
