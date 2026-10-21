@@ -104,12 +104,22 @@ class GroqManager:
             target_model = model or self.active_model
             client = self.get_client()
             key_num = self.current_idx + 1
+            current_key = self.keys[self.current_idx]
             try:
                 response = await client.chat.completions.create(
                     model=target_model,
                     messages=messages,
                     temperature=temperature
                 )
+                # Record real tokens used locally for live GUI quota tracking
+                if hasattr(response, "usage") and response.usage:
+                    toks = getattr(response.usage, "total_tokens", 0)
+                    try:
+                        from src.ranking.groq_tracker import record_usage
+                        record_usage(current_key, toks, target_model)
+                    except Exception:
+                        pass
+
                 # Successful call: advance circular index so next request uses next key in ring
                 self.current_idx = (self.current_idx + 1) % self.total_keys
                 return response
@@ -121,6 +131,11 @@ class GroqManager:
                 is_per_minute = not is_daily and (any(x in err_str for x in ["tokens per minute", "tokens_per_minute", "tpm", "requests per minute", "requests_per_minute", "rpm"]) or "please try again in" in err_str)
 
                 if is_daily:
+                    try:
+                        from src.ranking.groq_tracker import mark_key_exhausted
+                        mark_key_exhausted(current_key, self.active_model)
+                    except Exception:
+                        pass
                     self.daily_exhausted_keys.add(key_num)
                     exhausted_count = len(self.daily_exhausted_keys)
                     print(f"   ⚠️ Key #{key_num}/{self.total_keys} reached DAILY quota limit ({exhausted_count}/{self.total_keys} keys exhausted on {self.active_model}).")

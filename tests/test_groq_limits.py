@@ -38,7 +38,9 @@ class TestGroqLimits(unittest.TestCase):
         from src.ranking.rank_internships import GroqManager
         import groq
 
-        with patch("asyncio.sleep", return_value=None):
+        with patch("asyncio.sleep", return_value=None), \
+             patch("src.ranking.groq_tracker.mark_key_exhausted"), \
+             patch("src.ranking.groq_tracker.record_usage"):
             mgr = GroqManager()
             mock_c1 = MagicMock()
             mock_c2 = MagicMock()

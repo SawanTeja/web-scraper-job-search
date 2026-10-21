@@ -2122,6 +2122,9 @@ class GroqLimitsWindowGTK(Gtk.Window):
 
         def worker():
             try:
+                import importlib, sys
+                if "src.ranking.groq_limits" in sys.modules:
+                    importlib.reload(sys.modules["src.ranking.groq_limits"])
                 from src.ranking.groq_limits import check_all_groq_limits
                 data = check_all_groq_limits()
                 GLib.idle_add(self._on_limits_loaded, data)
@@ -2217,7 +2220,13 @@ class GroqLimitsWindowGTK(Gtk.Window):
             tpd_box.set_hexpand(True)
             rem_k = k['est_remaining_daily_tokens'] // 1000
             lim_k = k['limit_daily_tokens'] // 1000
-            tpd_lbl = Gtk.Label(label=f"<b>Daily Tokens:</b> ~{rem_k}k / {lim_k}k ({k['daily_token_pct']:.0f}%)")
+            used_tok = k.get('est_used_daily_tokens', 0)
+            calls = k.get('actual_calls', 0)
+            if used_tok > 0:
+                tpd_text = f"<b>Daily:</b> ~{rem_k}k/{lim_k}k left ({k['daily_token_pct']:.0f}%) • <small>{used_tok:,} used ({calls} calls)</small>"
+            else:
+                tpd_text = f"<b>Daily:</b> ~{rem_k}k / {lim_k}k left ({k['daily_token_pct']:.0f}%)"
+            tpd_lbl = Gtk.Label(label=tpd_text)
             tpd_lbl.set_use_markup(True)
             tpd_lbl.set_halign(Gtk.Align.START)
             tpd_box.append(tpd_lbl)

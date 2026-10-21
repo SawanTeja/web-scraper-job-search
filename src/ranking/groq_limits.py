@@ -82,30 +82,52 @@ def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
         lim_tok = int(headers.get("x-ratelimit-limit-tokens", 8000))
         rst_req = headers.get("x-ratelimit-reset-requests", "N/A")
         rst_tok = headers.get("x-ratelimit-reset-tokens", "N/A")
-
         used_req = max(0, lim_req - rem_req)
-        # Estimate daily tokens consumed (Groq free tier limit is 200k tokens/day)
-        # Evaluated jobs average ~900 tokens per API call (Extraction ~800, Ranking ~1000)
-        est_used_daily_tokens = min(DAILY_TOKENS_PER_KEY, used_req * 900)
-        est_rem_daily_tokens = max(0, DAILY_TOKENS_PER_KEY - est_used_daily_tokens)
-        daily_tok_pct = (est_rem_daily_tokens / DAILY_TOKENS_PER_KEY) * 100
+        header_used_tokens = used_req * 900  # Groq live header used requests
 
-        # Health is evaluated STRICTLY by token capacity (TPM & TPD), not request counts
-        if est_rem_daily_tokens <= 0:
+        # Query real daily token consumption from local usage tracker
+        try:
+            from src.ranking.groq_tracker import get_key_daily_usage
+            usage_info = get_key_daily_usage(key)
+            local_used_tokens = usage_info.get("tokens_used", 0)
+            local_calls = usage_info.get("calls_count", 0)
+            is_exhausted = usage_info.get("daily_exhausted", False)
+        except Exception:
+            local_used_tokens = 0
+            local_calls = 0
+            is_exhausted = False
+
+        # Merge live Groq header metrics with local tracking
+        actual_used_tokens = max(header_used_tokens, local_used_tokens)
+        actual_calls = max(used_req, local_calls)
+
+        if is_exhausted or actual_used_tokens >= DAILY_TOKENS_PER_KEY:
+            est_used_daily_tokens = DAILY_TOKENS_PER_KEY
+            est_rem_daily_tokens = 0
+            daily_tok_pct = 0.0
             status = "TPD_EXHAUSTED"
-            status_label = "🚫 Daily Tokens Used"
-        elif rem_tok == 0:
-            status = "TPM_BUSY"
-            status_label = f"🟠 TPM Empty ({rst_tok})"
-        elif rem_tok < MIN_TPM_BUFFER_JOB:
-            status = "TPM_LOW"
-            status_label = f"🟡 TPM Low ({rem_tok:,}/8k)"
-        elif rem_tok < 5000:
-            status = "HEALTHY"
-            status_label = f"🟢 Ready ({rem_tok:,}/8k TPM)"
+            status_label = "🚫 Daily Quota Exhausted"
         else:
-            status = "HEALTHY"
-            status_label = "🟢 Token Buffer Healthy"
+            est_used_daily_tokens = min(DAILY_TOKENS_PER_KEY, actual_used_tokens)
+            est_rem_daily_tokens = max(0, DAILY_TOKENS_PER_KEY - est_used_daily_tokens)
+            daily_tok_pct = (est_rem_daily_tokens / DAILY_TOKENS_PER_KEY) * 100
+
+            # Health is evaluated STRICTLY by token capacity (TPM & TPD), not request counts
+            if daily_tok_pct <= 15:
+                status = "TPD_LOW"
+                status_label = f"🟡 Daily Low ({daily_tok_pct:.0f}%)"
+            elif rem_tok == 0:
+                status = "TPM_BUSY"
+                status_label = f"🟠 TPM Empty ({rst_tok})"
+            elif rem_tok < MIN_TPM_BUFFER_JOB:
+                status = "TPM_LOW"
+                status_label = f"🟡 TPM Low ({rem_tok:,}/8k)"
+            elif rem_tok < 5000:
+                status = "HEALTHY"
+                status_label = f"🟢 Ready ({rem_tok:,}/8k TPM)"
+            else:
+                status = "HEALTHY"
+                status_label = "🟢 Token Buffer Healthy"
 
         return {
             "index": idx,
@@ -121,6 +143,7 @@ def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
             "remaining_requests": rem_req,
             "limit_requests": lim_req,
             "used_requests": used_req,
+            "actual_calls": actual_calls,
             "reset_requests": rst_req,
             "reset_tokens": rst_tok,
             "error": None
@@ -141,6 +164,11 @@ def check_single_key(idx_and_key, model="qwen/qwen3.8-27b", timeout=6.0):
         is_tpm = any(x in err_lower for x in ["tokens_per_minute", "tokens per minute", "tpm"])
 
         if is_tpd:
+            try:
+                from src.ranking.groq_tracker import mark_key_exhausted
+                mark_key_exhausted(key, model)
+            except Exception:
+                pass
             status = "TPD_EXHAUSTED"
             status_label = "🚫 Daily Token Limit Reached"
             est_rem_daily = 0
@@ -250,9 +278,14 @@ def check_all_groq_limits(model="qwen/qwen3.8-27b", max_workers=10):
     fallback_capacity = fallback_tokens // TOKENS_PER_JOB
     combined_capacity = token_based_capacity + fallback_capacity
 
-    # Earliest or representative reset time
-    reset_times = [r["reset_requests"] for r in results if r["reset_requests"] != "N/A"]
-    daily_reset = reset_times[0] if reset_times else "N/A"
+    # Calculate real countdown to Groq's daily reset at midnight UTC (00:00 UTC)
+    import datetime
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    midnight_utc = (now_utc + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    diff = midnight_utc - now_utc
+    hours, remainder = divmod(diff.seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    daily_reset = f"{hours}h {minutes}m"
 
     return {
         "total_keys": len(keys),
