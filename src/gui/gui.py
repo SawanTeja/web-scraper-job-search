@@ -300,7 +300,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.ai_rank_btn.connect("clicked", self.on_ai_rank_clicked)
         prio_row1.append(self.ai_rank_btn)
 
-        self.full_pipeline_btn = Gtk.Button(label="🚀 Full Pipeline (1➔2➔3)")
+        self.full_pipeline_btn = Gtk.Button(label="🚀 Stream Pipeline (Extract➔Filter➔Rank)")
         self.full_pipeline_btn.connect("clicked", self.on_full_pipeline_clicked)
         prio_row1.append(self.full_pipeline_btn)
 
@@ -415,6 +415,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             .platform-bamboohr { background-color: #2da44e; }
             .platform-jobvite { background-color: #9a6700; }
             .platform-recruitee { background-color: #545d68; }
+            .platform-keka { background-color: #f05a28; }
             .platform-ats { background-color: #444c56; }
             .stats-banner {
                 background-color: rgba(255, 255, 255, 0.05);
@@ -1496,7 +1497,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.run_pipeline("rank", "Stage 3: AI Rank Clean Jobs")
 
     def on_full_pipeline_clicked(self, button=None):
-        self.run_pipeline("full", "Full Pipeline (1➔2➔3)")
+        self.run_pipeline("full", "Stream Pipeline (Extract ➔ Filter ➔ Rank)")
 
     def on_sort_clicked(self, button=None):
         # Backwards compatibility
@@ -1626,7 +1627,7 @@ class AddCompanyWindow(Gtk.Window):
         vbox.append(header)
 
         sub_label = Gtk.Label(
-            label="Paste any job URL or career page from Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, etc."
+            label="Paste any job URL or career page from Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, Keka, etc."
         )
         sub_label.set_wrap(True)
         sub_label.set_max_width_chars(55)
@@ -1688,7 +1689,7 @@ class AddCompanyWindow(Gtk.Window):
         res = parse_ats_info(url, resolve_google=False)
         if not res:
             self.status_label.set_markup(
-                "<span color='#cf222e'>❌ Could not detect ATS platform.<br/>Supported: Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, Recruitee</span>"
+                "<span color='#cf222e'>❌ Could not detect ATS platform.<br/>Supported: Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, Recruitee, Keka</span>"
             )
             return
 
@@ -1742,7 +1743,7 @@ class CompaniesWindow(Gtk.Window):
 
         self.platform_options = [
             "ALL", "greenhouse", "lever", "ashby", "smartrecruiters",
-            "workday", "breezy", "workable", "bamboohr", "jobvite", "recruitee"
+            "workday", "breezy", "workable", "bamboohr", "jobvite", "recruitee", "keka"
         ]
         self.platform_model = Gtk.StringList.new([p.upper() for p in self.platform_options])
         self.platform_drop = Gtk.DropDown(model=self.platform_model)

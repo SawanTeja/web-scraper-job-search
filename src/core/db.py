@@ -384,6 +384,13 @@ STARTER_COMPANIES = [
     ("Visa", "smartrecruiters", "Visa", "https://jobs.smartrecruiters.com/Visa"),
     ("Bosch Group", "smartrecruiters", "BoschGroup", "https://jobs.smartrecruiters.com/BoschGroup"),
     ("Twitter", "smartrecruiters", "Twitter", "https://jobs.smartrecruiters.com/Twitter"),
+
+    # Top Keka
+    ("Aura Cloud", "keka", "auracloud", "https://auracloud.keka.com/careers"),
+    ("Pramana", "keka", "pramana", "https://pramana.keka.com/careers"),
+    ("CloudSufi", "keka", "cloudsufi", "https://cloudsufi.keka.com/careers"),
+    ("Comprinno", "keka", "comprinno", "https://comprinno.keka.com/careers"),
+    ("Ketto", "keka", "ketto", "https://ketto.keka.com/careers"),
 ]
 
 

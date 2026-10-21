@@ -32,6 +32,7 @@ SITES = [
     "bamboohr.com",
     "breezy.hr",
     "recruitee.com",
+    "keka.com/careers",
 ]
 
 # The "Broad Tech" Dragnet

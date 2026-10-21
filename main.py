@@ -10,7 +10,7 @@ Usage:
     python main.py --extract        Stage 1: Extract structured JDs via Playwright + Groq
     python main.py --jd-filter      Stage 2: Deterministic 0-token deep JD filter
     python main.py --ai-rank        Stage 3: AI Rank clean jobs from DB (0 browser overhead)
-    python main.py --rank           Full Pipeline: Extract JDs -> Deep Filter -> AI Rank
+    python main.py --rank           Stream Pipeline: Extract JD -> Filter Immediately -> AI Rank
     python main.py --limits         Check live Groq API token & request limits across 7 keys
     python main.py --test           Run the automated test suite
 """
@@ -47,7 +47,7 @@ def main():
     parser.add_argument("--filter", action="store_true", help="Run deterministic pre-filter (0 AI tokens)")
     parser.add_argument("--jd-filter", action="store_true", help="Stage 2: Deterministic deep JD filter on scraped jobs (0 AI tokens)")
     parser.add_argument("--ai-rank", action="store_true", help="Stage 3: AI Rank clean jobs from DB against candidate profile (0 browser overhead)")
-    parser.add_argument("--rank", action="store_true", help="Full Pipeline: Extract JDs -> Deep Filter -> AI Rank")
+    parser.add_argument("--rank", action="store_true", help="Stream Pipeline: Extract JD -> Filter Immediately -> AI Rank Immediately")
     parser.add_argument("--limits", action="store_true", help="Check live Groq API rate limits & remaining quota across all keys")
     parser.add_argument("--test", action="store_true", help="Run unit test suite")
 

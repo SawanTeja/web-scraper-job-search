@@ -167,6 +167,18 @@ ATS_PATTERNS = [
             "job_id": m.group(4) if m.lastindex >= 4 else None,
         }
     ),
+    # Keka: <company>.keka.com/careers(?:/jobdetails/<id>|/applyjob/<id>)?
+    (
+        "keka",
+        re.compile(r"https?://(?!www\.)([a-zA-Z0-9\-]+)\.keka\.com/careers/?(?:(?:jobdetails|applyjob)/(\d+))?", re.I),
+        lambda m: {
+            "ats_platform": "keka",
+            "identifier": m.group(1).lower(),
+            "company_name": m.group(1).replace("-", " ").replace("_", " ").title(),
+            "career_url": f"https://{m.group(1).lower()}.keka.com/careers",
+            "job_id": m.group(2) if m.lastindex >= 2 else None,
+        }
+    ),
 ]
 
 

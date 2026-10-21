@@ -426,13 +426,13 @@ def has_structured_jd(details) -> bool:
     return any(k in details for k in schema_fields)
 
 
-async def extract_structured_jds(conn=None):
+async def extract_structured_jds(conn=None, auto_rank: bool = True):
     """
     Stage 1 Pipeline:
     Uses Playwright to fetch web pages for active jobs that lack structured JD details.
     Runs Pre-Extraction Guard to eliminate non-tech/senior roles with 0 tokens.
-    Extracts structured schema with Groq LLM, runs Post-Extraction Guard,
-    and saves JSON details into the database.
+    Extracts structured schema with Groq LLM, runs Post-Extraction Guard (filters immediately),
+    and if auto_rank=True, applies Groq AI ranking immediately.
     """
     if os.path.exists("stop.flag"):
         try:
@@ -598,15 +598,26 @@ async def extract_structured_jds(conn=None):
                     print(f"   🧠 Extracting structured details with Groq ({active_model_name})...")
                     details = await extract_job_details_with_llm(title, jd_text)
 
-                    # 2. Post-Extraction Guard: Check structured details before saving
+                    # 2. Post-Extraction Guard: Filter out immediately
                     if details:
                         should_drop_det, det_reason = evaluate_deep_jd_filter(title, jd_text=jd_text, details=details)
                         if should_drop_det:
-                            print(f"   🛑 Filtered by Post-Extraction Guard: {det_reason} (Saved AI ranking tokens!)")
+                            print(f"   🛑 Filtered out by Deep Filter: {det_reason} (Saved AI ranking tokens!)")
                             return "IGNORE", f"[Deep JD Filter] {det_reason}", details
 
-                        print(f"   ✅ Structured JD Extracted and saved to DB.")
-                        return "UNKNOWN", "[JD Extracted] Ready for Deep Filter / AI Ranking", details
+                        if auto_rank:
+                            print(f"   ✅ Structured JD Extracted.")
+                            active_model_name = groq_manager.active_model.split('/')[-1]
+                            print(f"   🧠 Ranking candidate fit with Groq ({active_model_name})...")
+                            rank, reason = await evaluate_job_with_llm(details, "", title)
+                            print(f"   📊 AI Result: {rank} - {reason}")
+                            ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
+                            if isinstance(details, dict):
+                                details["ai_evaluated"] = True
+                            return rank, ai_reason, details
+                        else:
+                            print(f"   ✅ Structured JD Extracted and saved to DB.")
+                            return "UNKNOWN", "[JD Extracted] Ready for Deep Filter / AI Ranking", details
                     else:
                         print(f"   ⚠️ Extraction failed to parse valid JSON.")
                         return "ERROR", "Failed to parse structured JD JSON.", None
@@ -743,37 +754,311 @@ async def rank_clean_jobs(conn=None):
         conn.close()
 
 
+async def process_stream_pipeline(conn=None):
+    """
+    Real-Time Unified Stream Pipeline:
+    For every active candidate job:
+      1. FIND / Extract JD (uses cached schema if already in DB, otherwise Playwright + Groq)
+      2. Filter out immediately using deterministic Deep JD Filter (0 ranking tokens used)
+      3. If not filtered out, apply AI ranking immediately via Groq LLM
+      4. Immediately updates and commits each job to the database in real-time
+    """
+    if os.path.exists("stop.flag"):
+        try:
+            os.remove("stop.flag")
+        except Exception:
+            pass
+
+    close_conn = False
+    if conn is None:
+        conn = get_conn()
+        init_db(conn)
+        close_conn = True
+
+    try:
+        from src.ranking.job_filter import (
+            apply_deterministic_filter_to_db,
+            evaluate_deterministic_ignore,
+            evaluate_deep_jd_filter
+        )
+    except ImportError:
+        from job_filter import (
+            apply_deterministic_filter_to_db,
+            evaluate_deterministic_ignore,
+            evaluate_deep_jd_filter
+        )
+
+    # 1. Instant deterministic title pre-filter (0 tokens)
+    filter_stats = apply_deterministic_filter_to_db(conn=conn, only_unknown=True, sync_locations=False)
+    if filter_stats["total_ignored"] > 0:
+        print(f"🧹 Title Pre-Filter: Auto-ignored {filter_stats['total_ignored']} jobs ({filter_stats['senior_ignored']} Senior, {filter_stats['non_tech_ignored']} Non-tech, {filter_stats['us_ignored']} US) - 0 tokens used!")
+
+    jobs_db = load_db(conn)
+
+    candidate_items = []
+    skipped_count = 0
+
+    for link, data in jobs_db.items():
+        if data.get("status") != "New":
+            continue
+        rank = data.get("rank", "UNKNOWN")
+        reason = data.get("reason", "")
+        details = data.get("details")
+
+        if is_already_ai_ranked(reason, details):
+            skipped_count += 1
+            continue
+
+        # Auto-ignore modal popup URLs that have no job descriptions
+        if "oneclick-ui" in link:
+            update_job(link, conn, rank="IGNORE", status="NA", reason="[Invalid URL] SmartRecruiters modal popup")
+            continue
+
+        # If previous extraction already failed to find text, move to NA to unblock queue
+        if rank == "ERROR" and "Failed to extract meaningful text." in reason:
+            update_job(link, conn, status="NA")
+            continue
+
+        is_tier1 = "[Tier 1:" in reason or (rank == "HIGH")
+        prio = 0 if is_tier1 else 1
+        candidate_items.append((prio, link, data))
+
+    if skipped_count > 0:
+        print(f"🔒 Skipped {skipped_count} jobs already evaluated by AI.")
+
+    if not candidate_items:
+        print("ℹ️  No candidate jobs needing processing.")
+        if close_conn:
+            conn.close()
+        return
+
+    candidate_items.sort(key=lambda x: x[0])
+    tier1_count = sum(1 for p, _, _ in candidate_items if p == 0)
+    tier2_count = len(candidate_items) - tier1_count
+    with_cached_jd = sum(1 for _, _, d in candidate_items if has_structured_jd(d.get("details")))
+    need_extract = len(candidate_items) - with_cached_jd
+
+    print("\n" + "="*60)
+    print("🚀 RUNNING REAL-TIME STREAM PIPELINE (Extract ➔ Filter Immediately ➔ AI Rank)")
+    print("="*60)
+    print(f"📊 Candidate jobs to process: {len(candidate_items)}")
+    print(f"   ⭐ Priority 1: {tier1_count} Early Career / Intern jobs")
+    print(f"   💻 Priority 2: {tier2_count} General Software / Tech jobs")
+    print(f"   📦 {with_cached_jd} jobs with cached JDs (0 browser fetch needed)")
+    print(f"   🌐 {need_extract} jobs needing Playwright JD extraction\n")
+
+    processed_ranked = 0
+    processed_filtered = 0
+    browser_extract_count = 0
+
+    playwright_instance = None
+    browser = None
+    context = None
+
+    try:
+        if need_extract > 0:
+            playwright_instance = await async_playwright().start()
+            browser = await playwright_instance.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+
+        for index, (prio, url, data) in enumerate(candidate_items):
+            if os.path.exists("stop.flag"):
+                print("🛑 Pause requested. Exiting gracefully...")
+                try:
+                    os.remove("stop.flag")
+                except Exception:
+                    pass
+                break
+
+            title = data.get("title", "Unknown")
+            details = data.get("details")
+            location = (details or {}).get("location", "") if isinstance(details, dict) else ""
+            tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
+
+            # Fast deterministic pre-check on title/location
+            should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
+            if should_ignore:
+                print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} {title}")
+                print(f"   🛑 Filtered out by Title/Location: {ignore_reason} (0 tokens used!)\n")
+                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deterministic] {ignore_reason}")
+                conn.commit()
+                processed_filtered += 1
+                continue
+
+            # ─────────────────────────────────────────────────────────────
+            # STEP 1: FIND / EXTRACT JD
+            # ─────────────────────────────────────────────────────────────
+            jd_text = ""
+            if has_structured_jd(details):
+                if isinstance(details, str):
+                    try:
+                        details = json.loads(details)
+                    except Exception:
+                        pass
+                print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} [Cached JD] Evaluating: {title}")
+            else:
+                if not context and playwright_instance:
+                    browser = await playwright_instance.chromium.launch(headless=True)
+                    context = await browser.new_context(
+                        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    )
+                elif not playwright_instance:
+                    playwright_instance = await async_playwright().start()
+                    browser = await playwright_instance.chromium.launch(headless=True)
+                    context = await browser.new_context(
+                        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    )
+
+                browser_extract_count += 1
+                if browser_extract_count > 1 and browser_extract_count % 50 == 0:
+                    await context.close()
+                    context = await browser.new_context(
+                        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    )
+
+                print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} Extracting & Evaluating: {title}")
+                page = await context.new_page()
+                await Stealth().apply_stealth_async(page)
+                page.set_default_timeout(30000)
+
+                try:
+                    try:
+                        await page.goto(url, wait_until="networkidle", timeout=20000)
+                    except Exception:
+                        try:
+                            await page.goto(url, wait_until="domcontentloaded", timeout=10000)
+                        except Exception:
+                            await asyncio.sleep(2)
+
+                    await page.wait_for_timeout(3000)
+                    raw_text = await page.inner_text("body", timeout=10000)
+                    jd_text = clean_text(raw_text)[:2800]
+
+                    if len(jd_text) < 100:
+                        fallback_text = await page.evaluate("""() => {
+                            return Array.from(document.querySelectorAll('p, li, div, span'))
+                                .map(el => el.innerText)
+                                .join(' ');
+                        }""")
+                        jd_text = clean_text(fallback_text)[:2800]
+
+                    if len(jd_text) < 100:
+                        for frame in page.frames:
+                            if frame != page.main_frame:
+                                try:
+                                    frame_text = await frame.inner_text("body", timeout=3000)
+                                    frame_clean = clean_text(frame_text)
+                                    if len(frame_clean) > len(jd_text):
+                                        jd_text = frame_clean[:2800]
+                                except Exception:
+                                    pass
+
+                    if len(jd_text) < 100:
+                        print(f"   ⚠️ Could not extract text from page (<100 chars). Skipped.\n")
+                        update_job(url, conn, rank="ERROR", status="NA", reason="Failed to extract meaningful text.")
+                        conn.commit()
+                        continue
+
+                    # Pre-Extraction Guard: Check raw JD text before spending extraction LLM tokens
+                    should_drop_raw, raw_reason = evaluate_deep_jd_filter(title, jd_text=jd_text)
+                    if should_drop_raw:
+                        print(f"   🛑 Filtered by Pre-Extraction Guard: {raw_reason} (0 AI tokens used!)\n")
+                        update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {raw_reason}")
+                        conn.commit()
+                        processed_filtered += 1
+                        continue
+
+                    active_model_name = groq_manager.active_model.split('/')[-1]
+                    print(f"   🧠 Extracting structured details with Groq ({active_model_name})...")
+                    details = await extract_job_details_with_llm(title, jd_text)
+                    if not details:
+                        print(f"   ⚠️ Extraction failed to parse valid JSON.\n")
+                        update_job(url, conn, rank="ERROR", status="NA", reason="Failed to parse structured JD JSON.")
+                        conn.commit()
+                        continue
+                    print(f"   ✅ Structured JD Extracted.")
+                except asyncio.TimeoutError:
+                    print(f"   ⚠️ Timeout error: Took too long to process.\n")
+                    update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.", status="NA")
+                    conn.commit()
+                    continue
+                except Exception as e:
+                    print(f"   ⚠️ Extraction Error: {e}\n")
+                    update_job(url, conn, rank="ERROR", reason=f"Exception: {str(e)}")
+                    conn.commit()
+                    continue
+                finally:
+                    await page.close()
+
+            # ─────────────────────────────────────────────────────────────
+            # STEP 2: FILTER OUT IMMEDIATELY
+            # ─────────────────────────────────────────────────────────────
+            should_drop_det, det_reason = evaluate_deep_jd_filter(title, jd_text=jd_text, details=details)
+            if should_drop_det:
+                print(f"   🛑 Filtered by Deep Filter: {det_reason} (Saved AI ranking tokens!)\n")
+                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {det_reason}",
+                           **({"details": details} if details else {}))
+                conn.commit()
+                processed_filtered += 1
+                continue
+
+            # ─────────────────────────────────────────────────────────────
+            # STEP 3: IF NOT FILTERED OUT ➔ APPLY AI RANKING IMMEDIATELY
+            # ─────────────────────────────────────────────────────────────
+            active_model_name = groq_manager.active_model.split('/')[-1]
+            print(f"   🧠 Ranking candidate fit with Groq ({active_model_name})...")
+            rank, reason = await evaluate_job_with_llm(details, "", title)
+            print(f"   📊 AI Result: {rank} - {reason}\n")
+
+            new_status = "NA" if rank == "IGNORE" else "New"
+            ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
+            if isinstance(details, dict):
+                details["ai_evaluated"] = True
+
+            update_job(url, conn, rank=rank, reason=ai_reason, status=new_status,
+                       **({"details": details} if details else {}))
+            conn.commit()
+            processed_ranked += 1
+
+    finally:
+        if context:
+            try:
+                await context.close()
+            except Exception:
+                pass
+        if browser:
+            try:
+                await browser.close()
+            except Exception:
+                pass
+        if playwright_instance:
+            try:
+                await playwright_instance.stop()
+            except Exception:
+                pass
+
+    print("="*60)
+    print(f"✅ Stream Pipeline Completed! {processed_ranked} jobs AI-ranked, {processed_filtered} jobs filtered out.")
+    print("="*60)
+    if close_conn:
+        conn.close()
+
+
 async def process_and_rank_jobs(mode: str = "full"):
     """
-    Main controller for the multi-stage ranking pipeline:
-      - mode='extract': Only runs Stage 1 (Playwright JD Extraction & JSON parsing)
-      - mode='rank':    Only runs Stage 3 (AI Ranking on clean DB jobs without browser)
-      - mode='full':    Runs Stage 1 -> Stage 2 (Deep Filter) -> Stage 3 (AI Rank)
+    Main controller for the ranking pipeline:
+      - mode='full':    Stream Pipeline (Extract JD ➔ Filter Immediately ➔ AI Rank Immediately)
+      - mode='extract': Stage 1 Playwright JD Extraction without auto-ranking
+      - mode='rank':    Stage 3 AI Ranking on clean DB jobs without browser
     """
     if mode == "extract":
-        await extract_structured_jds()
+        await extract_structured_jds(auto_rank=False)
     elif mode == "rank":
         await rank_clean_jobs()
     elif mode == "full":
-        print("\n" + "="*60)
-        print("🚀 RUNNING FULL END-TO-END PIPELINE (Extract ➔ Deep Filter ➔ AI Rank)")
-        print("="*60)
-        await extract_structured_jds()
-        if os.path.exists("stop.flag"):
-            return
-
-        try:
-            from src.ranking.job_filter import apply_deep_jd_filter_to_db
-        except ImportError:
-            from job_filter import apply_deep_jd_filter_to_db
-        print("\n" + "="*60)
-        print("🎯 RUNNING STAGE 2: DEEP JD FILTER (0 AI TOKENS)")
-        print("="*60)
-        apply_deep_jd_filter_to_db(move_to_na=True)
-        if os.path.exists("stop.flag"):
-            return
-
-        await rank_clean_jobs()
+        await process_stream_pipeline()
 
 
 def rank_jobs(mode: str = "full"):

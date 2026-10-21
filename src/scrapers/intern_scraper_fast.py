@@ -50,6 +50,7 @@ SITES = [
     "successfactors.com",
     "taleo.net",
     "oraclecloud.com",
+    "keka.com/careers",
 ]
 
 # The "Broad Tech" Dragnet (proven query format from 06936ea)

@@ -355,6 +355,36 @@ def fetch_oraclecloud_jobs(identifier: str) -> list[dict]:
     return results
 
 
+def fetch_keka_jobs(identifier: str) -> list[dict]:
+    """Fetches jobs via Keka Hire career portal public JSON API."""
+    career_url = f"https://{identifier}.keka.com/careers"
+    req = urllib.request.Request(career_url, headers={"User-Agent": USER_AGENT})
+    results = []
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+        guids = re.findall(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', html)
+        if not guids:
+            return results
+        guid = guids[0]
+        api_url = f"https://{identifier}.keka.com/careers/api/embedjobs/default/active/{guid}"
+        req2 = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req2, timeout=8) as r2:
+            data = json.loads(r2.read().decode("utf-8"))
+            for j in data:
+                jid = j.get("id")
+                if not jid:
+                    continue
+                title = j.get("title", "Unknown Title").strip()
+                locs = j.get("jobLocations", [])
+                loc_str = ", ".join([l.get("city", "") for l in locs if isinstance(l, dict) and l.get("city")])
+                full_url = f"https://{identifier}.keka.com/careers/jobdetails/{jid}"
+                results.append({"title": title, "url": full_url, "location": loc_str})
+    except Exception:
+        pass
+    return results
+
+
 # Mapping of ATS platform name to fetch function
 PLATFORM_FETCHERS = {
     "greenhouse": fetch_greenhouse_jobs,
@@ -369,6 +399,7 @@ PLATFORM_FETCHERS = {
     "jobvite": fetch_jobvite_jobs,
     "icims": fetch_icims_jobs,
     "oraclecloud": fetch_oraclecloud_jobs,
+    "keka": fetch_keka_jobs,
 }
 
 
