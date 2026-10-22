@@ -30,3 +30,6 @@ groq_daily_usage.json
 error.log
 stop.flag
 browser_cache/
+
+# Local Study Guides & Documentation
+Guide/
