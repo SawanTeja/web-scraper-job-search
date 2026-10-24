@@ -328,6 +328,29 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.reset_rank_btn.connect("clicked", self.on_reset_rank_clicked)
         prio_row2.append(self.reset_rank_btn)
 
+        # Tier Target Mode Dropdown (Tier 1 vs Tier 1 & 2) inside Priority Sorting
+        prio_tier_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        prio_tier_lbl = Gtk.Label(label="🎯 Tier Scope:")
+        prio_tier_lbl.add_css_class("dim-label")
+        prio_tier_box.append(prio_tier_lbl)
+
+        self.tier_options = [
+            "⭐ Tier 1 Only (Early Career / Intern - Saves Tokens)",
+            "🌟 Tier 1 & Tier 2 (All Tech / SWE Roles)"
+        ]
+        tier_model = Gtk.StringList.new(self.tier_options)
+        self.tier_dropdown = Gtk.DropDown.new(tier_model, None)
+        self.tier_dropdown.set_selected(0)
+        self.tier_dropdown.set_tooltip_text(
+            "Target AI Ranking & Scraper Scope:\n"
+            "• Tier 1 Only: Only extract & rank Early Career / Internships (Saves Groq tokens on low quota days!)\n"
+            "• Tier 1 & 2: Process both Early Career and general SWE / Developer roles."
+        )
+        self.tier_dropdown.connect("notify::selected", self.on_tier_mode_changed)
+        self.prio_tier_dropdown = self.tier_dropdown
+        prio_tier_box.append(self.tier_dropdown)
+        prio_row2.append(prio_tier_box)
+
         self.sort_status_label = Gtk.Label(label="")
         self.sort_status_label.set_hexpand(True)
         self.sort_status_label.set_halign(Gtk.Align.START)
@@ -1250,12 +1273,36 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self._enqueue_rows(render_queue)
             self._prio_dirty = False
 
+    def get_active_tier_mode(self) -> str:
+        """Return 'tier1' if Tier 1 Only is selected, else 'all'."""
+        if hasattr(self, 'tier_dropdown'):
+            idx = self.tier_dropdown.get_selected()
+            return "tier1" if idx == 0 else "all"
+        return "all"
+
+    def get_active_tier_mode_label(self) -> str:
+        if self.get_active_tier_mode() == "tier1":
+            return "⭐ Tier 1 Only (Early Career / Intern - Saves Tokens)"
+        return "🌟 Tier 1 & Tier 2 (All Tech / SWE Roles)"
+
+    def on_tier_mode_changed(self, dropdown, pspec):
+        idx = dropdown.get_selected()
+        mode_label = self.get_active_tier_mode_label()
+        if idx == 0:
+            msg = f"🎯 Scope set to: {mode_label} — Saves Groq tokens on low quota days!"
+        else:
+            msg = f"🎯 Scope set to: {mode_label} — Processing both Early Career & General SWE."
+        self.status_label.set_text(msg)
+        if hasattr(self, 'sort_status_label'):
+            self.sort_status_label.set_text(msg)
+
     def on_scrape_clicked(self, button):
+        active_mode = self.get_active_tier_mode_label()
         dialog = Gtk.MessageDialog(
             transient_for=self,
             message_type=Gtk.MessageType.QUESTION,
             text="Select Scraping Speed",
-            secondary_text="Choose the scraper speed. 'Fast' may encounter more CAPTCHAs requiring manual solving."
+            secondary_text=f"Current Scope: {active_mode}\nChoose scraper speed."
         )
         dialog.add_button("⚡ Fast", 1)
         dialog.add_button("🚶 Medium (Default)", 2)
@@ -1275,7 +1322,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
         elif response_id == 3:
             script_name = "intern_scraper_overnight.py"
 
-        self.status_label.set_text(f"Scraping started ({script_name})... (Check terminal output for progress)")
+        tier_label = self.get_active_tier_mode_label()
+        self.status_label.set_text(f"Scraping started ({script_name} | {tier_label})... (Check terminal output for progress)")
         self.scrape_btn.set_sensitive(False)
         thread = threading.Thread(target=self.run_scraper, args=(script_name,))
         thread.daemon = True
@@ -1287,7 +1335,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
-            process = subprocess.Popen([venv_python, resolve_script_path(script_name)], cwd=os.getcwd())
+            env = dict(os.environ)
+            tier_mode = self.get_active_tier_mode()
+            env["SCRAPER_TIER_MODE"] = tier_mode
+
+            cmd = [venv_python, resolve_script_path(script_name)]
+            if tier_mode == "tier1":
+                cmd.append("--tier1-only")
+
+            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
             process.wait()
             GLib.idle_add(self.on_scrape_finished, process.returncode == 0)
         except Exception as e:
@@ -1302,7 +1358,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.status_label.set_text("⚠️ Scraping stopped or failed.")
 
     def on_scrape_ats_clicked(self, button):
-        self.status_label.set_text("Scraping saved company ATS boards... (Check terminal output for progress)")
+        tier_label = self.get_active_tier_mode_label()
+        self.status_label.set_text(f"Scraping saved company ATS boards ({tier_label})... (Check terminal output for progress)")
         self.scrape_ats_btn.set_sensitive(False)
         thread = threading.Thread(target=self.run_ats_scraper_thread)
         thread.daemon = True
@@ -1314,7 +1371,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
-            process = subprocess.Popen([venv_python, resolve_script_path("ats_scraper.py")], cwd=os.getcwd())
+            env = dict(os.environ)
+            tier_mode = self.get_active_tier_mode()
+            env["SCRAPER_TIER_MODE"] = tier_mode
+
+            cmd = [venv_python, resolve_script_path("ats_scraper.py")]
+            if tier_mode == "tier1":
+                cmd.append("--tier1-only")
+
+            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
             process.wait()
             GLib.idle_add(self.on_ats_scrape_finished, process.returncode == 0)
         except Exception as e:
@@ -1471,8 +1536,15 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
+            env = dict(os.environ)
+            tier_mode = self.get_active_tier_mode()
+            env["SCRAPER_TIER_MODE"] = tier_mode
+
             cmd = [venv_python, resolve_script_path("rank_internships.py"), f"--{mode}"]
-            self.rank_process = subprocess.Popen(cmd, cwd=os.getcwd())
+            if tier_mode == "tier1":
+                cmd.append("--tier1-only")
+
+            self.rank_process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
             self.rank_process.wait()
             self.rank_process = None
             GLib.idle_add(self.on_pipeline_finished, True, label_name)

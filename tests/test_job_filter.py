@@ -307,6 +307,19 @@ class TestJobFilter(unittest.TestCase):
         deep_stats = apply_deep_jd_filter_to_db(conn=conn)
         self.assertEqual(deep_stats["scanned"], 1)  # Only the 'New' job scanned!
 
+    def test_tier1_only_mode(self):
+        """Verify Tier 1 Only mode distinguishes Tier 1 (Early Career/Intern) from Tier 2 (General SWE)."""
+        t1_roles = ["Software Engineering Intern", "Junior Python Developer", "Graduate Software Engineer", "Apprentice SDE"]
+        t2_roles = ["Software Engineer", "Full Stack Developer", "Backend Engineer", "Data Engineer"]
+
+        for title in t1_roles:
+            res = categorize_job_tier(title=title)
+            self.assertEqual(res["tier"], 1, f"Expected Tier 1 for {title}")
+
+        for title in t2_roles:
+            res = categorize_job_tier(title=title)
+            self.assertEqual(res["tier"], 2, f"Expected Tier 2 for {title}")
+
 
 if __name__ == "__main__":
     unittest.main()

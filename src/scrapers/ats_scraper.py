@@ -510,6 +510,11 @@ def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
                         from job_filter import categorize_job_tier, clean_location_input
                 clean_loc = clean_location_input(location)
                 tier_res = categorize_job_tier(title=title, location=clean_loc)
+                
+                tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
+                if ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only")) and tier_res.get("tier") != 1:
+                    continue
+
                 initial_rank = tier_res["rank"]
                 initial_status = tier_res["status"]
                 initial_reason = tier_res["reason"]

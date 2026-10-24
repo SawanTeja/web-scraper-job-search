@@ -49,9 +49,13 @@ def main():
     parser.add_argument("--ai-rank", action="store_true", help="Stage 3: AI Rank clean jobs from DB against candidate profile (0 browser overhead)")
     parser.add_argument("--rank", action="store_true", help="Stream Pipeline: Extract JD -> Filter Immediately -> AI Rank Immediately")
     parser.add_argument("--limits", action="store_true", help="Check live Groq API rate limits & remaining quota across all keys")
+    parser.add_argument("--tier1-only", action="store_true", help="Only scrape/process Tier 1 (Early Career / Intern / High Priority) jobs to save tokens")
     parser.add_argument("--test", action="store_true", help="Run unit test suite")
 
     args = parser.parse_args()
+
+    if args.tier1_only:
+        os.environ["SCRAPER_TIER_MODE"] = "tier1"
 
     if args.limits:
         from src.ranking.groq_limits import run_limits_cli

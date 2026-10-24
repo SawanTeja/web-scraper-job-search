@@ -355,6 +355,10 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
                                             from job_filter import categorize_job_tier
                                     tier_res = categorize_job_tier(title=title)
 
+                                    tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
+                                    if ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only")) and tier_res.get("tier") != 1:
+                                        continue
+
                                     # Write directly to SQLite
                                     inserted = insert_or_ignore_job(
                                         final_url, title, conn,

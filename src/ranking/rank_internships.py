@@ -487,6 +487,9 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
             continue
 
         is_tier1 = "[Tier 1:" in reason or (rank == "HIGH")
+        tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
+        if tier_mode in ("tier1", "tier1_only") and not is_tier1:
+            continue
         prio = 0 if is_tier1 else 1
         candidate_items.append((prio, link, data))
 
@@ -693,6 +696,9 @@ async def rank_clean_jobs(conn=None):
             continue
 
         is_tier1 = "[Tier 1:" in reason or (rank == "HIGH")
+        tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
+        if tier_mode in ("tier1", "tier1_only") and not is_tier1:
+            continue
         prio = 0 if is_tier1 else 1
         candidate_items.append((prio, link, data))
 
@@ -820,6 +826,9 @@ async def process_stream_pipeline(conn=None):
             continue
 
         is_tier1 = "[Tier 1:" in reason or (rank == "HIGH")
+        tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
+        if tier_mode in ("tier1", "tier1_only") and not is_tier1:
+            continue
         prio = 0 if is_tier1 else 1
         candidate_items.append((prio, link, data))
 
@@ -1072,7 +1081,11 @@ if __name__ == "__main__":
     parser.add_argument("--extract", "--extract-only", dest="extract", action="store_true", help="Stage 1: Extract structured JDs via Playwright + Groq")
     parser.add_argument("--rank", "--rank-only", dest="rank", action="store_true", help="Stage 3: AI Rank clean jobs from DB (No browser required)")
     parser.add_argument("--full", action="store_true", help="Full Pipeline: Extract JDs -> Deep Filter -> AI Rank")
+    parser.add_argument("--tier1-only", action="store_true", help="Only process Tier 1 (Early Career / Intern / High Priority) jobs to save tokens")
     args = parser.parse_args()
+
+    if args.tier1_only:
+        os.environ["SCRAPER_TIER_MODE"] = "tier1"
 
     if args.extract:
         rank_jobs(mode="extract")
