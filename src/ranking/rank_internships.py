@@ -622,14 +622,6 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
                     conn.commit()
                     continue
 
-                # 1. Pre-Extraction Guard: Deterministically drop before AI tokens
-                should_drop_raw, raw_reason = evaluate_deep_jd_filter(title, jd_text=jd_text)
-                if should_drop_raw:
-                    print(f"   🛑 Filtered by Pre-Extraction Guard: {raw_reason} (0 AI tokens used!)\n")
-                    update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {raw_reason}")
-                    conn.commit()
-                    continue
-
                 # Gemini extraction with circular key rotation (1 -> 2 -> 1 -> 2)
                 details = await extract_job_details_with_llm(title, jd_text)
                 if not details:
@@ -986,15 +978,6 @@ async def process_stream_pipeline(conn=None):
                         print(f"   ⚠️ Could not extract text from page (<100 chars). Skipped.\n")
                         update_job(url, conn, rank="ERROR", status="NA", reason="Failed to extract meaningful text.")
                         conn.commit()
-                        continue
-
-                    # Pre-Extraction Guard: Check raw JD text before spending extraction LLM tokens
-                    should_drop_raw, raw_reason = evaluate_deep_jd_filter(title, jd_text=jd_text)
-                    if should_drop_raw:
-                        print(f"   🛑 Filtered by Pre-Extraction Guard: {raw_reason} (0 AI tokens used!)\n")
-                        update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {raw_reason}")
-                        conn.commit()
-                        processed_filtered += 1
                         continue
 
                     # Extract structured JD via Gemini (rotates Key #1 -> Key #2 -> Key #1...)

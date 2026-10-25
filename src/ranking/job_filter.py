@@ -98,11 +98,14 @@ EXPERIENCE_REGEX = re.compile("|".join(EXPERIENCE_PATTERNS), re.I)
 
 # Explicit experience threshold patterns (Disqualifies roles requiring >= 1 year)
 EXPERIENCE_EXCEEDED_PATTERNS = [
-    # Explicit 1+ or 2+ or more years: e.g. "1+ years", "1+ yr", "2+ years", "5+ yrs", "10+ years"
-    r"\b(?:1\s*\+|[2-9]\+?|\d{2,}\+?)\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|exp|software|development|professional|relevant|industry|work))?\b",
+    # Explicit 1+ or 2+ to 9+ years: e.g. "1+ years", "1+ yr", "2+ years", "5+ yrs"
+    r"\b(?:1\s*\+|[2-9]\+?)\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|exp|software|development|professional|relevant|industry|work))?\b",
+
+    # For multi-digit numbers (10+, 18, 40, etc.), require EXPLICIT experience phrasing to prevent matching age ("18 years old") or company history ("40 years")
+    r"\b\d{2,}\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp|software|development|professional|relevant|industry|work)\b",
 
     # Ranges starting at 1 or more: "1-2 years", "1 to 3 yrs", "2-5 years" (safeguard against "0-1" or "0 to 1")
-    r"(?:^|[^\d\-])(?:[1-9]|\d{2,})\s*(?:[-–]|to)\s*\d+\s*(?:years?|yrs?)\b",
+    r"(?:^|[^\d\-])(?:[1-9]|\d{2,})\s*(?:[-–]|to)\s*\d+\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|exp))?\b",
 
     # Minimum / at least: "at least 1 year", "minimum 1 year", "min 1 yr", "min. 1 year", "minimum of 1 year"
     r"\b(?:at\s+least|minimum(?:\s+of)?|min\.?)\s*(?:1|one|[2-9]|\d+)\s*(?:\+)?\s*(?:years?|yrs?)\b",
@@ -115,6 +118,16 @@ EXPERIENCE_EXCEEDED_PATTERNS = [
     r"\b(?:one\s*\+|two|three|four|five|six|seven|eight|nine|ten)\s*(?:\+)?\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|exp|software|development|professional|relevant))?\b",
 ]
 EXPERIENCE_EXCEEDED_REGEX = re.compile("|".join(EXPERIENCE_EXCEEDED_PATTERNS), re.I)
+
+# Anti-patterns to safeguard against age requirements, company history, and program lengths
+EXPERIENCE_AGE_OR_HISTORY_PATTERNS = [
+    r"\b(?:1[6-9]|[2-9]\d)\s+years?\s+(?:of\s+)?(?:age|old)\b",
+    r"\bat\s+least\s+18\s+years\b",
+    r"\b(?:founded|established|in\s+business|celebrating|history|over|more\s+than)\s+\d+\s+years\b",
+    r"\b\d+\s+years?\s+(?:program|placement|contract|duration|apprenticeship)\b",
+    r"\b(?:program|placement|contract|duration|apprenticeship)\s+(?:of\s+)?\d+\s+years?\b",
+]
+EXPERIENCE_AGE_OR_HISTORY_REGEX = re.compile("|".join(EXPERIENCE_AGE_OR_HISTORY_PATTERNS), re.I)
 
 # Safeguard regex for 0-experience/entry-level/intern expressions (e.g. "0-1 years", "0 to 1 year", "fresher")
 EXPERIENCE_ENTRY_SAFEGUARD_REGEX = re.compile(
@@ -138,23 +151,23 @@ NON_TECH_PATTERNS = [
     r"\b(?:marketing|social media|copywriter|content creator|seo specialist|communications specialist|public relations|\bpr\b)\b",
 
     # Finance, Accounting, Audit, Tax
-    r"\b(?:finance|accountant|accounting|financial analyst|payroll|billing|auditor|controller|treasury|transfer pricing)\b",
+    r"\b(?:finance|accountant|accounting|financial analyst|payroll|billing|auditor|controller|treasury|transfer pricing|debitorenbuchhaltung|kreditorenbuchhaltung|buchhaltung|buchhalter)\b",
 
     # Legal, Compliance, Regulatory
     r"\b(?:legal|attorney|counsel|lawyer|paralegal|compliance officer|regulatory affairs|tax advisor)\b",
 
     # Healthcare, Medical, Nursing
-    r"\b(?:nurse|nursing|physician|doctor|medical assistant|dental|healthcare assistant|pharmacist|veterinar(?:y|ian))\b",
+    r"\b(?:clinical|nurse|nursing|physician|doctor|medical assistant|dental|healthcare assistant|pharmacist|veterinar(?:y|ian))\b",
 
     # Customer Service, Helpdesk, Technical Support
     r"\b(?:customer service|customer support|client support|call center|help\s*desk|support specialist|service desk)\b",
     r"\b(?:desktop support|it support|technical support|support technique|repr[eé]sentant(?:\s+support)?)\b",
 
     # Administration, Reception, Secretarial
-    r"\b(?:receptionist|office manager|executive assistant|administrative assistant|front desk|office coordinator|clerk)\b",
+    r"\b(?:receptionist|office manager|executive assistant|administrative assistant|front desk|office coordinator|clerk|secretar(?:y|ial)|chargeback)\b",
 
     # Retail, Food Service, Hospitality, Warehouse (English & French)
-    r"\b(?:warehouse|store associate|driver|delivery|barista|cook|chef|cashier|retail|barman|waiter|hotel)\b",
+    r"\b(?:warehouse|store\s+(?:associate|assistant)|driver|delivery|barista|cook|chef|cashier|retail|barman|waiter|hotel)\b",
     r"\b(?:caissier|caissi[eè]re|commis(?:\s+[aà]\s+l['’]inventaire)?|journalier|magasinier)\b",
 
     # Physical / Civil / Mechanical Engineering & Trades
@@ -163,9 +176,10 @@ NON_TECH_PATTERNS = [
     r"\b(?:sewage|wastewater|water\s+treatment|treatment\s+plant|plumbing|plumber)\b",
     r"\b(?:nuclear\s+facility|nuclear\s+cognizant|power\s+plant\s+operator)\b",
     r"\b(?:maritime\s+technical\s+operations|vessel\s+operations)\b",
-    r"\b(?:geolog(?:y|ist|ical)|geotechnical|asbestos|metallurg(?:y|ical)|mining\s+engineer|environmental|hydrolog(?:y|ist))\b",
+    r"\b(?:geolog(?:y|ist|ical)|geotechnical|asbestos|metallurg(?:y|ist|ical)?|chemist|chemistry|mining\s+engineer|environmental|hydrolog(?:y|ist))\b",
     r"\b(?:fire\s+engineer|fire\s+safety|safety\s+officer|security\s+officer|security\s+guard|health\s+and\s+safety|ehs)\b",
     r"\b(?:traffic\s+engineer|process\s+engineer|field\s+service|warranty|surveyor|surveying)\b",
+    r"\b(?:t[eé]cnico(?:\(a\))?\s+de\s+obras|obras\s+j[uú]nior|actuarial\s+analyst|actuary)\b",
 
     # Manufacturing, Assembly, Shift Operations
     r"\b(?:subassembl(?:y|ies)|assembl(?:y|er)|shift\s+supervisor|operator|machine\s+operator|fabrication|welder|machinist|maintenance\s+technician)\b",
@@ -1169,21 +1183,23 @@ def evaluate_deep_jd_filter(title: str, jd_text: str = "", details: dict = None)
     clean_title = (title or "").strip()
     details = details or {}
 
-    # 1. Experience check on details["experience_required"]
+    # 1. Primary: Experience check on structured details["experience_required"] (Highest precision)
     exp_field = details.get("experience_required")
     if exp_field:
         is_exp, exp_reason = is_experience_exceeded(str(exp_field))
         if is_exp:
             return True, exp_reason
-
-    # 2. Experience check on raw/clean JD text
-    if jd_text:
+    elif jd_text:
+        # 2. Secondary: Experience check on raw JD text (ONLY when details did not provide structured experience)
         has_safeguard = bool(EXPERIENCE_ENTRY_SAFEGUARD_REGEX.search(jd_text))
         m_exp = EXPERIENCE_EXCEEDED_REGEX.search(jd_text)
         if m_exp and not (has_safeguard and "0" in m_exp.group(0)):
             matched_str = m_exp.group(0).lower()
             if not any(dur in matched_str for dur in ["contract", "duration", "program", "placement"]):
-                return True, f"Requires experience >= 1 year in JD: '{m_exp.group(0)}'"
+                # Safeguard against age ("18 years of age") or company history ("40 years in business")
+                span = jd_text[max(0, m_exp.start() - 25):min(len(jd_text), m_exp.end() + 25)]
+                if not EXPERIENCE_AGE_OR_HISTORY_REGEX.search(span):
+                    return True, f"Requires experience >= 1 year in JD: '{m_exp.group(0)}'"
 
     # 3. Senior / Lead check on title or structured job_name
     is_sr, sr_reason = is_senior_or_lead(clean_title)

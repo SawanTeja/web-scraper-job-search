@@ -300,12 +300,29 @@ class TestJobFilter(unittest.TestCase):
         self.assertTrue(drop)
         self.assertIn("clearance", reason.lower())
 
-        # 5. Clean candidates: must pass!
+        # 5. Age and company history in raw JD text must NOT drop clean jobs!
+        drop, reason = evaluate_deep_jd_filter("Software Engineering Graduate", jd_text="Applicants must be at least 18 years of age. Founded 40 years ago.")
+        self.assertFalse(drop, f"Unexpectedly dropped on age/history: {reason}")
+
+        # 6. Clean candidates: must pass!
         drop, reason = evaluate_deep_jd_filter("Software Engineering Intern", details={"experience_required": "0-1 year", "location": "Bangalore, India"})
         self.assertFalse(drop, f"Clean candidate was unexpectedly dropped: {reason}")
 
         drop, reason = evaluate_deep_jd_filter("Junior Developer", details={"experience_required": "None", "location": "Berlin, Germany"})
         self.assertFalse(drop, f"Clean candidate was unexpectedly dropped: {reason}")
+
+        # 7. Expanded non-tech roles must be caught deterministically
+        from src.ranking.job_filter import is_non_tech
+        for title in [
+            "Junior Store Assistant",
+            "Junior Associate - Company Secretarial",
+            "(Junior) Debitorenbuchhaltung (m/w/d)",
+            "Jr. Metallurgist",
+            "Entry Level Chemist- TASC",
+            "Clinical Graduate Program"
+        ]:
+            is_nt, nt_reason = is_non_tech(title)
+            self.assertTrue(is_nt, f"Failed to detect non-tech title: {title}")
 
     def test_has_structured_jd(self):
         from src.ranking.rank_internships import has_structured_jd
