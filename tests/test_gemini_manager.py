@@ -44,6 +44,30 @@ class TestGeminiManager(unittest.TestCase):
         self.assertEqual(gm.active_model, "gemini-3.1-flash-lite")
         self.assertEqual(len(gm.daily_exhausted_keys), 0)
 
+    @patch("src.ranking.gemini_manager.genai.Client")
+    @patch.dict(os.environ, {
+        "GEMINI_API_KEY_1": "mock_key_1",
+        "GEMINI_API_KEY_2": "mock_key_2",
+    }, clear=False)
+    def test_circular_key_rotation(self, mock_client_cls):
+        gm = GeminiManager()
+        self.assertEqual(len(gm.clients), 2)
+
+        # Call 1: Key #1
+        self.assertEqual(gm.get_current_key_num(), 1)
+        gm.advance_key()
+
+        # Call 2: Key #2
+        self.assertEqual(gm.get_current_key_num(), 2)
+        gm.advance_key()
+
+        # Call 3: Key #1 (circular wrap)
+        self.assertEqual(gm.get_current_key_num(), 1)
+        gm.advance_key()
+
+        # Call 4: Key #2
+        self.assertEqual(gm.get_current_key_num(), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

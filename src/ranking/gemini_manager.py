@@ -90,7 +90,7 @@ class GeminiManager:
         return self.available and not self.all_exhausted and bool(self.clients)
 
     def get_client_for_worker(self, preferred_key_idx: int = None):
-        """Returns (client, key_num) respecting preferred worker key index and quota state."""
+        """Returns (client, key_num) respecting preferred worker key index or current circular rotation."""
         if not self.clients:
             return None, 1
 
@@ -100,11 +100,12 @@ class GeminiManager:
             if (target_idx + 1) not in self.daily_exhausted_keys:
                 return self.clients[target_idx], target_idx + 1
 
-        # 2. Otherwise pick an available non-exhausted key
+        # 2. Pick next available non-exhausted key starting from current_key_idx (circular)
         if len(self.daily_exhausted_keys) < len(self.clients):
-            for idx in range(len(self.clients)):
-                if (idx + 1) not in self.daily_exhausted_keys:
-                    return self.clients[idx], idx + 1
+            for offset in range(len(self.clients)):
+                target_idx = (self.current_key_idx + offset) % len(self.clients)
+                if (target_idx + 1) not in self.daily_exhausted_keys:
+                    return self.clients[target_idx], target_idx + 1
 
         idx = self.current_key_idx % len(self.clients)
         return self.clients[idx], idx + 1
@@ -112,6 +113,18 @@ class GeminiManager:
     def get_client(self):
         client, _ = self.get_client_for_worker()
         return client
+
+    def get_current_key_num(self) -> int:
+        """Returns the 1-based key number that will be used for the next call."""
+        if not self.clients:
+            return 1
+        _, key_num = self.get_client_for_worker()
+        return key_num
+
+    def advance_key(self):
+        """Circularly advance pointer to the next key (e.g. 1 -> 2 -> 1 -> 2)."""
+        if self.clients:
+            self.current_key_idx = (self.current_key_idx + 1) % len(self.clients)
 
     def rotate_key(self, reason: str = ""):
         self.current_key_idx = (self.current_key_idx + 1) % len(self.clients)
@@ -204,7 +217,10 @@ Guidelines:
                         data = json.loads(match.group())
                         if isinstance(data, dict):
                             print(f"   ✨ Extracted structured JD via Gemini #{key_num} ({target_model}) [0 Groq tokens used]")
+                            # Advance circular key rotation for the next job (e.g. 1 -> 2 -> 1 -> 2)
+                            self.current_key_idx = key_num % len(self.clients)
                             return data
+                self.advance_key()
                 return None
 
             except Exception as e:
@@ -219,4 +235,5 @@ Guidelines:
                     await asyncio.sleep(1.0)
                     continue
 
+        self.advance_key()
         return None
