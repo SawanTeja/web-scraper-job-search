@@ -1,26 +1,34 @@
 # ATS Job Scraper & Groq AI Application Tracker
 
-An autonomous web scraper and job application tracking system that searches for fresh internships and early-career tech roles across 30+ Applicant Tracking Systems (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, etc.), automatically extracts and ranks them against your unique candidate profile using **Groq Cloud API** (high-speed LPU inference), and provides a modern GTK4 GUI dashboard to manage your applications.
+An autonomous web scraper and job application tracking system that searches for fresh internships and early-career tech roles across 30+ Applicant Tracking Systems (MyWorkday, Greenhouse, Lever, Ashby, SmartRecruiters, Keka, Workable, BambooHR, etc.), automatically extracts and ranks them against your candidate profile using **Groq Cloud API** (high-speed LPU inference), and provides a modern GTK4 GUI dashboard to manage applications.
 
 ---
 
 ## Key Features
 
-- **High-Speed ATS Direct Scraper**: Directly queries company career boards across Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, Workable, BambooHR, Jobvite, and Recruitee—bypassing search engine rate limits and CAPTCHAs.
-- **Google Discovery Scraper**: Scrapes Google Search with Playwright and anti-bot stealth measures to discover new companies and job postings, automatically expanding your company pool.
-- **3-Tier 0-Token Deterministic Pre-Filter**: Instantly disqualifies Senior/Lead/Manager roles, non-tech positions (sales, marketing, HR, retail), and ineligible locations (US, Canada) in <1 second—**using 0 AI tokens** to conserve your quotas.
-- **Groq AI Multi-Key Rotation**: High-speed AI inference using **Qwen 2.5 32B / Qwen 3.8 27B** with automatic fallback to **GPT-OSS 20B**. Seamlessly rotates across multiple Groq API keys (e.g. 7+ keys) with per-minute TPM cooldown management and daily quota rollover.
-- **3-Stage Ranking Pipeline**:
-  1. *Stage 1 (Extract JDs)*: Uses Playwright to load job pages (including child `<iframe>` support for iCIMS/Taleo) and Groq LLM to extract clean, structured JSON schemas.
-  2. *Stage 2 (Deep JD Filter)*: Deterministic 0-token filter checking years of experience (>=1 yr), security clearance, and trade roles.
-  3. *Stage 3 (AI Rank)*: Evaluates surviving clean postings against your candidate resume/criteria (HIGH, MEDIUM, LOW, IGNORE)—**100% in Python + AsyncGroq with 0 browser overhead**.
+- **High-Speed ATS Direct Scrapers & Keka Engine**: Directly queries company career boards across Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Keka, Breezy, Workable, BambooHR, Jobvite, and Recruitee—bypassing search engine rate limits and CAPTCHAs.
+- **ATS Company Discovery Crawler**: Dedicated CLI crawler (`--crawl-companies`) discovering and verifying company career portals across MyWorkday and all major ATS networks, expanding your company pool with zero job spam.
+- **Google Discovery Scraper**: Scrapes Google Search with Playwright and anti-bot stealth measures to discover new companies and job postings.
+- **Zero-Token Deterministic Pre-Filters**:
+  - Automatically filters Senior, Lead, Manager, Staff, and Principal roles.
+  - Disqualifies non-tech positions (sales, marketing, HR, operations, retail, trade).
+  - Filters out ineligible geographic locations: **United States, Canada, United Kingdom (London, UK), and Paris (France)**.
+  - Executes in seconds using **0 AI tokens**, categorizing roles into **Tier 1 (Early Career / Intern)**, **Tier 2 (General SWE)**, and **Tier 3 (Ignored / NA)**.
+- **Decoupled Scraping & Filtering**: Scrapers collect and preserve all unique tech job postings in `jobs_db.sqlite`, allowing you to inspect raw postings and run deterministic pre-filtering and AI ranking on demand.
+- **Groq AI Multi-Key Rotation (Up to 100 Keys)**: High-speed AI inference using **Qwen 3.8 27B / Qwen 2.5 32B** with automatic fallback to **GPT-OSS 20B**. Seamlessly rotates across up to 100 Groq API keys with per-minute TPM cooldown management and persistent daily token quota tracking (`groq_daily_usage.json`).
+- **3-Stage Ranking Pipeline with Stream Processing**:
+  - *Stage 1 (Extract JDs)*: Playwright loads job pages (including child `<iframe>` support for iCIMS/Taleo) and Groq LLM extracts clean, structured JSON schemas.
+  - *Stage 2 (Deep JD Filter)*: Deterministic 0-token filter checking years of experience (>=1 yr), security clearances, and trade roles.
+  - *Stage 3 (AI Rank)*: Evaluates surviving clean postings against your candidate criteria (HIGH, MEDIUM, LOW, IGNORE)—**100% in Python + AsyncGroq with 0 browser overhead**.
+  - *Configurable Scope*: Rank **Tier 1 Only** (Early Career / Intern to save tokens) or **Tier 1 & Tier 2** (All Tech / SWE Roles).
 - **Modern Linux GTK4 GUI**:
-  - Live filter by AI Rank (ALL, HIGH, MEDIUM, LOW, UNKNOWN, IGNORE).
-  - **Keyword Search**: Instant debounced search for keywords (e.g. `intern`, `internship`, `python`, `remote`, company names).
-  - One-click application tracking: `Fresh`, `Applied`, `Ongoing`, `Rejected`, and `NA`.
-  - Saved Companies Manager with platform filtering and seeding.
-  - Live Groq API Quotas & Rate Limits dialog.
-- **High-Performance SQLite Storage**: Jobs and companies stored in `jobs_db.sqlite` with WAL mode for concurrent read/write and deleted URL tombstoning to prevent re-scraping dismissed jobs.
+  - Live filter tabs: `ALL`, `HIGH`, `MEDIUM`, `LOW`, `UNKNOWN`, `IGNORE`.
+  - **Instant Keyword Search**: Debounced search across titles, companies, locations, and descriptions.
+  - One-click application status management: `Fresh`, `Applied`, `Ongoing`, `Rejected`, and `NA`.
+  - **Saved Companies Manager**: Browse, search, add, platform filter, or seed top tech company career boards.
+  - **Live API Quotas Dialog**: Inspect remaining tokens, requests, and reset timers across all Groq keys.
+  - Batch rendering for smooth, responsive scrolling across thousands of jobs.
+- **High-Performance SQLite Storage**: Local data stored in `jobs_db.sqlite` with WAL mode for concurrent operations and deleted URL tombstoning to prevent re-scraping dismissed jobs. Database files are fully git-ignored.
 
 ---
 
@@ -48,20 +56,20 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-> **Note**: The desktop GUI (`main.py` / `src/gui/gui.py`) requires Linux GTK4 libraries (`PyGObject`). All scraping and ranking features can also be run entirely via the CLI on headless environments.
+> **Note**: The desktop GUI (`main.py` / `src/gui/gui.py`) requires Linux GTK4 libraries (`PyGObject`). All scraping, crawling, and ranking features can also be run entirely via the CLI on headless/server environments.
 
 ---
 
 ### 2. Groq API Configuration
 
-This project uses the Groq Cloud API for ultra-fast structured extraction and job fit evaluation. You can configure a single key or multiple keys for automatic circular rotation:
+Configure one or more Groq API keys for automatic circular rotation:
 
 1. Create a `.env` file in the project root:
 ```bash
 cp .env.example .env  # or create a new .env file
 ```
 
-2. Add your Groq API key(s):
+2. Add your Groq API key(s) (supports up to 100 numbered keys):
 
 ```env
 # Single key:
@@ -80,7 +88,7 @@ GROQ_API_KEY_7="gsk_key_seven..."
 # GROQ_API_KEYS="gsk_key1,gsk_key2,gsk_key3"
 ```
 
-You can verify your configured keys and live token quotas at any time:
+Verify your keys and live token quotas at any time:
 ```bash
 python main.py --limits
 ```
@@ -95,34 +103,49 @@ python main.py
 # or:
 python main.py --gui
 ```
+
 From the GUI you can:
-- **Search Keywords**: Use the top-right search box in *Fresh Jobs* to search `intern`, `internship`, `backend`, `react`, etc.
-- **Filter by Rank**: View only `HIGH`, `MEDIUM`, or `LOW` priority listings.
-- **🏢 Scrape Companies**: Run high-speed ATS board scraping across all saved companies.
-- **📋 Saved Companies**: Browse, search, add, or seed top tech company career boards.
-- **⚡ Smart Tier Filter**: Instant 0-token pre-filter on scraped jobs.
-- **🔑 API Limits**: Inspect live remaining tokens and requests across all Groq keys.
-- **Priority Sorting Tab**: Run Stages 1, 2, and 3 or the Full Auto Pipeline.
+- **Search Keywords**: Use the top search box in *Fresh Jobs* to search `intern`, `backend`, `react`, company name, etc.
+- **Filter by Rank**: Toggle between `HIGH`, `MEDIUM`, `LOW`, `UNKNOWN`, and `IGNORE`.
+- **🏢 Scrape Companies**: Run high-speed ATS board scraping across your saved company pool.
+- **📋 Saved Companies**: Browse, search, add, or seed 45+ top tech company career boards.
+- **⚡ Smart Tier Filter**: Run instant 0-token pre-filtering with live terminal logs.
+- **🔑 API Limits**: Inspect live remaining tokens, requests, and daily usage across all keys.
+- **Priority Sorting Tab**: Run Stage 1, Stage 2, Stage 3, or the Full Auto Pipeline with your chosen AI Ranking Scope.
 
 ---
 
 ### 2. Command-Line Workflows
 
-All components can be triggered via `main.py`:
+All components can be triggered directly via `main.py`:
 
 | Command | Action | Description |
 | :--- | :--- | :--- |
 | `python main.py --ats` | **Direct ATS Scraper** | High-speed direct scraping across all saved company ATS boards |
+| `python main.py --crawl-companies` | **ATS Company Crawler** | Discovers valid corporate career portals across MyWorkday & ATS platforms |
 | `python main.py --scrape` | **Google Scraper** | Playwright discovery scraper across Google search queries |
-| `python main.py --filter` | **0-Token Pre-Filter** | Pre-filters Senior, non-tech, US/Canada locations (0 AI tokens) |
+| `python main.py --filter` | **0-Token Pre-Filter** | Pre-filters Senior, non-tech, US, Canada, UK, and Paris locations (0 tokens) |
 | `python main.py --extract` | **Stage 1: Extract JDs** | Headless browser fetch + Groq structured JSON extraction |
 | `python main.py --jd-filter` | **Stage 2: Deep JD Filter** | Deep qualification filter on extracted requirements (0 tokens) |
 | `python main.py --ai-rank` | **Stage 3: AI Rank** | Evaluates clean jobs against your resume using Groq LLM |
-| `python main.py --rank` | **Full Pipeline** | Runs Stage 1 ➔ Stage 2 ➔ Stage 3 in a continuous pipeline |
-| `python main.py --limits` | **Groq Quota Inspector** | Live RPD / TPM / TPD quota monitor across all Groq API keys |
-| `python main.py --seed` | **Seed Companies** | Populates ATS company pool with 45+ top tech company boards |
+| `python main.py --rank` | **Full Pipeline** | Runs Stage 1 ➔ Stage 2 ➔ Stage 3 in a continuous stream pipeline |
+| `python main.py --rank --tier1-only` | **Tier 1 Only Pipeline** | Restricts AI ranking to Tier 1 early career / intern roles to save tokens |
+| `python main.py --limits` | **Groq Quota Inspector** | Live RPD / TPM / TPD quota monitor across all configured Groq keys |
+| `python main.py --seed` | **Seed Companies** | Populates ATS company pool with top tech company boards |
 | `python main.py --backfill` | **Backfill Companies** | Discovers and adds ATS companies from existing database jobs |
-| `python main.py --test` | **Run Test Suite** | Runs automated test suite (database, filter, limits, search) |
+| `python main.py --test` | **Run Test Suite** | Runs automated test suite (35 unit tests) |
+
+#### Advanced Crawler Options:
+```bash
+# Target a specific platform (workday, greenhouse, lever, ashby, smartrecruiters, etc.)
+python main.py --crawl-companies --crawl-platform workday
+
+# Set max limit of companies to discover
+python main.py --crawl-companies --crawl-limit 100
+
+# Choose crawler mode: all, feeds, or google
+python main.py --crawl-companies --crawl-mode feeds
+```
 
 ---
 
@@ -168,6 +191,8 @@ web-scraper-job-search/
 │   │   ├── __init__.py
 │   │   ├── ats_parser.py           # ATS platform & company identifier detection
 │   │   ├── ats_scraper.py          # Multi-threaded direct ATS scraping engine
+│   │   ├── company_crawler.py      # ATS company discovery crawler (Workday, Greenhouse, etc.)
+│   │   ├── keka_scraper.py         # Keka and Indian tech startup ATS scraper
 │   │   ├── intern_scraper.py       # Google Playwright scraper (Standard)
 │   │   ├── intern_scraper_fast.py  # Google Playwright scraper (Fast)
 │   │   └── intern_scraper_overnight.py # Google Playwright scraper (Overnight batch)
@@ -176,12 +201,14 @@ web-scraper-job-search/
 │       └── gui.py                  # Linux GTK4 GUI dashboard (Search, Ranks, ATS Manager)
 ├── tests/
 │   ├── test_ats_parser.py          # Unit tests for ATS parser
+│   ├── test_company_crawler.py     # Unit tests for company discovery crawler
 │   ├── test_db.py                  # Unit tests for SQLite DB operations & tombstones
 │   ├── test_groq_limits.py         # Unit tests for Groq key rotation & fallback model
 │   ├── test_gui_search.py          # Unit tests for GUI keyword search matching
 │   └── test_job_filter.py          # Unit tests for deterministic 0-token filters
 ├── main.py                         # Unified entrypoint (CLI & GUI launcher)
-├── jobs_db.sqlite                  # SQLite database file (auto-created)
+├── jobs_db.sqlite                  # SQLite database file (local & git-ignored)
+├── groq_daily_usage.json           # Daily token quota tracking (local & git-ignored)
 ├── prompts.json                    # Groq LLM prompt templates
 ├── requirements.txt                # Python package dependencies
 └── README.md                       # Documentation
@@ -191,7 +218,7 @@ web-scraper-job-search/
 
 ## Running the Automated Tests
 
-Verify that database handlers, ATS parsers, Groq key rotation, deterministic filters, and GUI search logic are working properly:
+Run the full automated test suite (35 tests covering database operations, ATS parsing, company crawler, Groq multi-key rotation, deterministic filters, and GUI search logic):
 
 ```bash
 python main.py --test
