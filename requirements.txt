@@ -3,3 +3,4 @@ groq
 python-dotenv
 playwright-stealth
 customtkinter
+google-genai

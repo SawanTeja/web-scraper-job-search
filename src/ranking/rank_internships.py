@@ -31,6 +31,11 @@ try:
 except ImportError:
     from job_filter import evaluate_deep_jd_filter
 
+try:
+    from src.ranking.gemini_manager import GeminiManager
+except ImportError:
+    from gemini_manager import GeminiManager
+
 
 PRIMARY_MODEL = "qwen/qwen3.8-27b"
 FALLBACK_MODEL = "openai/gpt-oss-20b"
@@ -176,6 +181,7 @@ class GroqManager:
         return None
 
 groq_manager = GroqManager()
+gemini_manager = GeminiManager()
 
 PROMPTS_LOG_FILE = os.path.join(_ROOT_DIR, "prompts.json")
 
@@ -281,7 +287,30 @@ def validate_job_json(data):
     return True
 
 async def extract_job_details_with_llm(job_title, jd_text, retries=3):
-    """Extracts structured data from the job description using Llama-3.1-8B-Instant."""
+    """
+    Extracts structured data from the job description.
+    Priority 1: Uses Google Gemini first (gemini-3.5-flash-lite / gemini-3.1-flash-lite, 0 Groq tokens used).
+    Priority 2: If Gemini is exhausted or unavailable, automatically falls back to Groq.
+    """
+    # 1. Primary: Try Gemini extraction first (0 Groq tokens used)
+    if gemini_manager and gemini_manager.is_available():
+        data = await gemini_manager.extract_job_details(job_title, jd_text)
+        if data:
+            required_fields = [
+                "job_name", "company", "location", "salary", "job_type",
+                "experience_required", "skills_required", "skills_preferred",
+                "about_job", "responsibilities", "requirements", "nice_to_have"
+            ]
+            for f in required_fields:
+                if f not in data:
+                    data[f] = None
+            if validate_job_json(data):
+                log_prompt_to_file(job_title, "extraction_gemini", f"Title: {job_title}", json.dumps(data))
+                return data
+
+        print("   ↪️ Gemini extraction unavailable or exhausted. Falling back to Groq for JD extraction...")
+
+    # 2. Secondary: Fallback to Groq for JD extraction
     prompt = f"""
 If you produce anything other than valid JSON, the system will crash.
 Do not explain anything.
