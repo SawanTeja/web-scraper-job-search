@@ -384,6 +384,85 @@ CANADA_CITIES_REGEX = re.compile(r"\b(" + "|".join(CANADA_CITIES) + r")\b", re.I
 CANADA_PROVINCE_ABBR_REGEX = re.compile(r"(?:,\s*)(" + "|".join(CANADA_PROVINCE_ABBRS) + r")(?:\s*,\s*Canada|\s*$|[,\s\)\-])", re.I)
 CANADA_VICTORIA_REGEX = re.compile(r"\bVictoria,\s*(?:BC|Canada|British\s+Columbia)\b", re.I)
 
+# ──────────────────────────────────────────────
+#  Patterns for UK Locations
+# ──────────────────────────────────────────────
+UK_COUNTRY_PATTERNS = [
+    r"\bunited\s+kingdom\b",
+    r"\bu\.k\.?\b",
+    r"\bgreat\s+britain\b",
+    r"\bbritain\b",
+    r"\bengland\b",
+    r"\bscotland\b",
+    r"\bwales\b",
+    r"\bnorthern\s+ireland\b",
+    r"\buk\s+remote\b",
+    r"\bremote\s*[-–(]\s*(?:uk|u\.k\.|united\s+kingdom|gb)\b",
+    r"\bremote\s+(?:in|from)\s+(?:the\s+)?uk\b",
+    r"\buk\s+only\b",
+    r"\bwithin\s+(?:the\s+)?uk\b",
+    r"\buk\s+citizenship\b",
+    r"\buk\s+work\s+authori[zs]ation\b",
+    r"\bright\s+to\s+work\s+in\s+(?:the\s+)?uk\b",
+    r"\beligib(?:le|ility)\s+to\s+work\s+in\s+(?:the\s+)?uk\b",
+]
+
+UK_CITIES = [
+    "London", "Manchester", "Birmingham", "Edinburgh", "Glasgow", "Bristol",
+    "Leeds", "Sheffield", "Liverpool", "Newcastle", "Nottingham", "Cardiff",
+    "Belfast", "Southampton", "Oxford", "Brighton", "Leicester", "Coventry",
+    "Aberdeen", "Exeter", "Norwich", "Swindon", "Milton Keynes", "Slough",
+    "Guildford", "Portsmouth", "Derby", "Dundee", "Bournemouth", "Plymouth",
+    "Swansea", "Middlesbrough", "Sunderland", "Warrington", "Huddersfield",
+    "Poole", "Ipswich", "Blackpool", "Bolton", "Peterborough", "Stockport",
+    "Greater London", "Greater Manchester"
+]
+
+UK_SPECIAL_CITIES = [
+    # Cambridge (guard against Cambridge, MA)
+    r"\bCambridge,\s*(?:UK|United\s+Kingdom|England|Cambridgeshire|GB)\b",
+    # Reading (guard against common English verb "reading")
+    r"\bReading,\s*(?:UK|United\s+Kingdom|England|Berkshire|GB)\b",
+    # Bath (guard against common noun "bath")
+    r"\bBath,\s*(?:UK|United\s+Kingdom|England|Somerset|GB)\b",
+    # York (guard against "New York")
+    r"(?<!New\s)\bYork,\s*(?:UK|United\s+Kingdom|England|North\s+Yorkshire|GB)\b",
+]
+
+UK_COUNTRY_REGEX = re.compile("|".join(UK_COUNTRY_PATTERNS), re.I)
+UK_CITIES_REGEX = re.compile(r"\b(" + "|".join(UK_CITIES) + r")\b", re.I)
+UK_SPECIAL_CITIES_REGEX = re.compile("|".join(UK_SPECIAL_CITIES), re.I)
+
+
+# ──────────────────────────────────────────────
+#  Patterns for Paris / Île-de-France Locations
+# ──────────────────────────────────────────────
+PARIS_PATTERNS = [
+    r"\bparis\b",
+    r"\b(?:île-de-france|ile-de-france)\b",
+    r"\br[ée]gion\s+parisienne\b",
+    r"\bgreater\s+paris\b",
+    r"\bparis\s+area\b",
+    r"\bla\s+d[ée]fense\b",
+    r"\bparis\s+remote\b",
+    r"\bremote\s*[-–(]\s*paris\b",
+    r"\bparis,\s*(?:france|fr)\b",
+    # Key Paris tech & business suburbs
+    r"\bboulogne[- ]billancourt\b",
+    r"\bissy[- ]les[- ]moulineaux\b",
+    r"\blevallois[- ]perret\b",
+    r"\bneuilly[- ]sur[- ]seine\b",
+    r"\bcourbevoie\b",
+    r"\bsaint[- ]denis\b",
+    r"\bmassy\b",
+    r"\bsaclay\b",
+    r"\bvélizy[- ]villacoublay|velizy[- ]villacoublay\b",
+    r"\bmontrouge\b",
+    r"\bclichy\b",
+]
+
+PARIS_REGEX = re.compile("|".join(PARIS_PATTERNS), re.I)
+
 
 # ──────────────────────────────────────────────
 #  Deterministic Evaluation Functions
@@ -619,10 +698,117 @@ def is_canada_based(title: str = "", location: str = "", jd_text: str = "") -> t
     return False, ""
 
 
+def is_uk_based(title: str = "", location: str = "", jd_text: str = "") -> tuple[bool, str]:
+    """Returns (True, reason) if role is located in the United Kingdom."""
+    clean_loc = clean_location_input(location)
+    loc_combined = f"{title} {clean_loc}".strip()
+
+    # 1. Non-UK Override: e.g. London, Ontario (Canada)
+    if re.search(r"\bLondon,\s*(?:ON|Ontario|Canada)\b", loc_combined, re.I):
+        return False, ""
+
+    # 2. Check title explicitly for UK country code / country / city
+    if title:
+        m = re.search(r"(?:\b|_)(?:UK|U\.K\.)(?:\b|_)", title)
+        if m:
+            return True, f"UK country code detected in title: '{m.group(0)}'"
+        m = UK_COUNTRY_REGEX.search(title)
+        if m:
+            return True, f"UK country identifier detected in title: '{m.group(0)}'"
+        m = UK_CITIES_REGEX.search(title)
+        if m:
+            return True, f"UK city detected in title: '{m.group(0)}'"
+        m = UK_SPECIAL_CITIES_REGEX.search(title)
+        if m:
+            return True, f"UK tech hub detected in title: '{m.group(0)}'"
+
+    # 3. Check location string directly
+    if clean_loc:
+        m = re.search(r"(?:\b|_)(?:UK|U\.K\.)(?:\b|_)", clean_loc)
+        if m:
+            return True, f"UK country code in location: '{clean_loc}'"
+        m = UK_COUNTRY_REGEX.search(clean_loc)
+        if m:
+            return True, f"UK country identifier in location: '{clean_loc}'"
+        m = UK_CITIES_REGEX.search(clean_loc)
+        if m:
+            return True, f"UK city detected in location: '{m.group(0)}'"
+        m = UK_SPECIAL_CITIES_REGEX.search(clean_loc)
+        if m:
+            return True, f"UK tech hub detected in location: '{m.group(0)}'"
+        if re.search(r"\b(?:Oxford|Cambridge)\b", clean_loc, re.I) and not re.search(r"\b(?:MA|USA|United States)\b", clean_loc, re.I):
+            return True, f"UK tech hub detected in location: '{clean_loc}'"
+
+    # 4. Check combined title + location
+    if loc_combined:
+        m = UK_COUNTRY_REGEX.search(loc_combined)
+        if m:
+            return True, f"UK country identifier detected: '{m.group(0)}'"
+        m = UK_CITIES_REGEX.search(loc_combined)
+        if m:
+            return True, f"UK city detected: '{m.group(0)}'"
+        m = UK_SPECIAL_CITIES_REGEX.search(loc_combined)
+        if m:
+            return True, f"UK tech hub detected: '{m.group(0)}'"
+
+    # 5. Check full JD text header (first 800 chars)
+    if jd_text:
+        jd_header = jd_text[:800]
+        m = UK_COUNTRY_REGEX.search(jd_header)
+        if m:
+            return True, f"UK country identifier in JD: '{m.group(0)}'"
+        m = UK_CITIES_REGEX.search(jd_header)
+        if m:
+            return True, f"UK city in JD: '{m.group(0)}'"
+        m = UK_SPECIAL_CITIES_REGEX.search(jd_header)
+        if m:
+            return True, f"UK tech hub in JD: '{m.group(0)}'"
+
+    return False, ""
+
+
+def is_paris_based(title: str = "", location: str = "", jd_text: str = "") -> tuple[bool, str]:
+    """Returns (True, reason) if role is located in Paris or the Paris region (Île-de-France)."""
+    clean_loc = clean_location_input(location)
+    loc_combined = f"{title} {clean_loc}".strip()
+    norm_combined = normalize_text(loc_combined)
+
+    # Guard: Avoid Paris, TX or Paris, Texas (US city)
+    if re.search(r"\bParis,\s*(?:TX|Texas)\b", loc_combined, re.I):
+        return False, ""
+
+    # 1. Check title
+    if title:
+        m = PARIS_REGEX.search(title) or PARIS_REGEX.search(normalize_text(title))
+        if m:
+            return True, f"Paris location detected in title: '{m.group(0)}'"
+
+    # 2. Check location string directly
+    if clean_loc:
+        m = PARIS_REGEX.search(clean_loc) or PARIS_REGEX.search(normalize_text(clean_loc))
+        if m:
+            return True, f"Paris location detected: '{m.group(0)}'"
+
+    # 3. Check combined title + location
+    if loc_combined:
+        m = PARIS_REGEX.search(loc_combined) or PARIS_REGEX.search(norm_combined)
+        if m:
+            return True, f"Paris location detected: '{m.group(0)}'"
+
+    # 4. Check full JD text header (first 800 chars)
+    if jd_text:
+        jd_header = jd_text[:800]
+        m = PARIS_REGEX.search(jd_header) or PARIS_REGEX.search(normalize_text(jd_header))
+        if m:
+            return True, f"Paris location in JD: '{m.group(0)}'"
+
+    return False, ""
+
+
 def categorize_job_tier(title: str, location: str = "", jd_text: str = "") -> dict:
     """
     Evaluates a job into one of 3 Smart Tiers:
-      - Tier 3: Deterministic IGNORE (Senior, Non-Tech, US Location, Career Hub).
+      - Tier 3: Deterministic IGNORE (Senior, Non-Tech, US/Canada/UK/Paris Location, Career Hub).
                 Rank: IGNORE, Status: NA. (0 AI tokens)
       - Tier 1: High-Priority Early Career (Intern, Junior, Apprentice, New Grad, Assoc SWE).
                 Rank: HIGH, Status: New. (0 AI tokens - instant high priority in GUI)
@@ -677,7 +863,29 @@ def categorize_job_tier(title: str, location: str = "", jd_text: str = "") -> di
             "is_early_career": False,
         }
 
-    # 5. Career Hub Landing Page (e.g. "Duolingo Careers")
+    # 5. UK Location
+    is_uk, uk_reason = is_uk_based(title=clean_title, location=clean_loc, jd_text=jd_text)
+    if is_uk:
+        return {
+            "tier": 3,
+            "rank": "IGNORE",
+            "status": "NA",
+            "reason": f"[Deterministic] {uk_reason}",
+            "is_early_career": False,
+        }
+
+    # 6. Paris Location
+    is_paris, paris_reason = is_paris_based(title=clean_title, location=clean_loc, jd_text=jd_text)
+    if is_paris:
+        return {
+            "tier": 3,
+            "rank": "IGNORE",
+            "status": "NA",
+            "reason": f"[Deterministic] {paris_reason}",
+            "is_early_career": False,
+        }
+
+    # 7. Career Hub Landing Page (e.g. "Duolingo Careers")
     is_hub, hub_reason = is_career_hub(clean_title)
     if is_hub:
         return {
@@ -829,6 +1037,8 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
         "non_tech_ignored": 0,
         "us_ignored": 0,
         "canada_ignored": 0,
+        "uk_ignored": 0,
+        "paris_ignored": 0,
         "career_hub_ignored": 0,
         "total_ignored": already_ignored_moved,
         "tier1_early_career": 0,
@@ -847,11 +1057,6 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
             title = r["title"] or ""
             det_raw = r["details"]
             reason_existing = r["reason"] or ""
-
-        # NEVER overwrite or re-evaluate jobs that have already been evaluated by AI
-        if reason_existing.startswith("[AI Verified]") or reason_existing.startswith("[AI-Evaluated]") or reason_existing.startswith("AI:"):
-            stats["passed"] += 1
-            continue
 
         location = ""
         jd_snippet = ""
@@ -880,8 +1085,16 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
                 stats["us_ignored"] += 1
             elif "Canad" in tier_res["reason"] or "Victoria, BC" in tier_res["reason"]:
                 stats["canada_ignored"] += 1
+            elif "UK" in tier_res["reason"] or "United Kingdom" in tier_res["reason"]:
+                stats["uk_ignored"] += 1
+            elif "Paris" in tier_res["reason"]:
+                stats["paris_ignored"] += 1
             elif "Career hub" in tier_res["reason"]:
                 stats["career_hub_ignored"] += 1
+
+        elif reason_existing.startswith("[AI Verified]") or reason_existing.startswith("[AI-Evaluated]") or reason_existing.startswith("AI:"):
+            stats["passed"] += 1
+            continue
 
         elif tier == 1:
             conn.execute(
@@ -955,6 +1168,12 @@ def evaluate_deep_jd_filter(title: str, jd_text: str = "", details: dict = None)
         is_can, can_reason = is_canada_based(title=clean_title, location=loc_field, jd_text=jd_text)
         if is_can:
             return True, can_reason
+        is_uk, uk_reason = is_uk_based(title=clean_title, location=loc_field, jd_text=jd_text)
+        if is_uk:
+            return True, uk_reason
+        is_paris, paris_reason = is_paris_based(title=clean_title, location=loc_field, jd_text=jd_text)
+        if is_paris:
+            return True, paris_reason
     elif jd_text:
         is_us, us_reason = is_us_based(title=clean_title, location="", jd_text=jd_text)
         if is_us:
@@ -962,6 +1181,12 @@ def evaluate_deep_jd_filter(title: str, jd_text: str = "", details: dict = None)
         is_can, can_reason = is_canada_based(title=clean_title, location="", jd_text=jd_text)
         if is_can:
             return True, can_reason
+        is_uk, uk_reason = is_uk_based(title=clean_title, location="", jd_text=jd_text)
+        if is_uk:
+            return True, uk_reason
+        is_paris, paris_reason = is_paris_based(title=clean_title, location="", jd_text=jd_text)
+        if is_paris:
+            return True, paris_reason
 
     # 5. Non-tech check on title
     is_nt, nt_reason = is_non_tech(clean_title)
@@ -1015,6 +1240,8 @@ def apply_deep_jd_filter_to_db(conn=None, move_to_na: bool = True) -> dict:
         "non_tech_ignored": 0,
         "us_ignored": 0,
         "canada_ignored": 0,
+        "uk_ignored": 0,
+        "paris_ignored": 0,
         "clearance_ignored": 0,
         "total_ignored": 0,
         "passed": 0
@@ -1063,6 +1290,10 @@ def apply_deep_jd_filter_to_db(conn=None, move_to_na: bool = True) -> dict:
                 stats["us_ignored"] += 1
             elif "canada" in reason_lower or "canad" in reason_lower:
                 stats["canada_ignored"] += 1
+            elif "uk" in reason_lower or "united kingdom" in reason_lower:
+                stats["uk_ignored"] += 1
+            elif "paris" in reason_lower:
+                stats["paris_ignored"] += 1
             elif "clearance" in reason_lower or "citizen" in reason_lower:
                 stats["clearance_ignored"] += 1
         else:
@@ -1085,6 +1316,8 @@ if __name__ == "__main__":
     print(f"   🚫 Non-tech / Helpdesk:     {res['non_tech_ignored']}")
     print(f"   🚫 US-based location:       {res['us_ignored']}")
     print(f"   🚫 Canada-based location:   {res['canada_ignored']}")
+    print(f"   🚫 UK-based location:       {res.get('uk_ignored', 0)}")
+    print(f"   🚫 Paris-based location:    {res.get('paris_ignored', 0)}")
     print(f"   🚫 Career hub landing pages:{res['career_hub_ignored']}")
     print(f"   ----------------------------------------")
     print(f"   🎯 Tier 3 (Ignored / NA):   {res['total_ignored']} ({res['total_ignored']/(res['scanned'] or 1)*100:.1f}%)")

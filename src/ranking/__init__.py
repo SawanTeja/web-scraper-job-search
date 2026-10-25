@@ -11,7 +11,8 @@ for _p in [_SRC_DIR, _ROOT_DIR]:
         sys.path.insert(0, _p)
 
 from src.ranking.job_filter import (
-    is_us_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
+    is_us_based, is_canada_based, is_uk_based, is_paris_based,
+    is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
     categorize_job_tier, evaluate_deterministic_ignore, apply_deterministic_filter_to_db,
     sync_ats_locations_to_db
 )
@@ -27,7 +28,8 @@ except ImportError:
     reset_ranks = None
 
 __all__ = [
-    "is_us_based", "is_senior_or_lead", "is_non_tech", "is_career_hub", "is_early_career",
+    "is_us_based", "is_canada_based", "is_uk_based", "is_paris_based",
+    "is_senior_or_lead", "is_non_tech", "is_career_hub", "is_early_career",
     "categorize_job_tier", "evaluate_deterministic_ignore", "apply_deterministic_filter_to_db",
     "sync_ats_locations_to_db",
     "GroqManager", "rank_jobs", "reset_ranks"

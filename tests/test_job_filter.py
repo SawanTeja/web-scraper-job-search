@@ -15,13 +15,15 @@ if BASE_DIR not in sys.path:
 
 try:
     from src.ranking.job_filter import (
-        is_us_based, is_canada_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
+        is_us_based, is_canada_based, is_uk_based, is_paris_based,
+        is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
         categorize_job_tier, evaluate_deterministic_ignore
     )
     from src.ranking.rank_internships import is_already_ai_ranked
 except ImportError:
     from ranking.job_filter import (
-        is_us_based, is_canada_based, is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
+        is_us_based, is_canada_based, is_uk_based, is_paris_based,
+        is_senior_or_lead, is_non_tech, is_career_hub, is_early_career,
         categorize_job_tier, evaluate_deterministic_ignore
     )
     from ranking.rank_internships import is_already_ai_ranked
@@ -86,6 +88,45 @@ class TestJobFilter(unittest.TestCase):
         for loc in non_can_locs:
             ignored, reason = is_canada_based(location=loc)
             self.assertFalse(ignored, f"Unexpected Canada ignore for {loc}: {reason}")
+
+    def test_uk_location(self):
+        uk_locs = [
+            "London, UK", "London, United Kingdom", "Manchester, England",
+            "Edinburgh, Scotland", "Cardiff, Wales", "Bristol, UK",
+            "United Kingdom (Remote)", "Remote - UK", "UK Remote"
+        ]
+        for loc in uk_locs:
+            ignored, reason = is_uk_based(location=loc)
+            self.assertTrue(ignored, f"Expected UK ignore for location '{loc}'")
+
+        # Test UK title
+        self.assertTrue(is_uk_based(title="Software Engineer (UK)")[0])
+        self.assertTrue(is_uk_based(title="Junior Developer - UK Remote")[0])
+
+        # Non-UK locations should NOT be ignored
+        non_uk_locs = ["Bangalore, India", "Berlin, Germany", "Madrid, Spain", "Seattle, WA", "Toronto, Canada", "London, Ontario, Canada"]
+        for loc in non_uk_locs:
+            ignored, reason = is_uk_based(location=loc)
+            self.assertFalse(ignored, f"Unexpected UK ignore for '{loc}': {reason}")
+
+    def test_paris_location(self):
+        paris_locs = [
+            "Paris, France", "Paris", "Paris Area", "Île-de-France, France",
+            "La Défense, France", "Courbevoie, France", "Remote - Paris"
+        ]
+        for loc in paris_locs:
+            ignored, reason = is_paris_based(location=loc)
+            self.assertTrue(ignored, f"Expected Paris ignore for location '{loc}'")
+
+        # Test Paris title
+        self.assertTrue(is_paris_based(title="Software Engineer - Paris")[0])
+        self.assertTrue(is_paris_based(title="DevOps Intern (Paris)")[0])
+
+        # Non-Paris locations should NOT be ignored
+        non_paris_locs = ["Lyon, France", "Marseille, France", "Berlin, Germany", "Bangalore, India", "Madrid, Spain", "Paris, TX"]
+        for loc in non_paris_locs:
+            ignored, reason = is_paris_based(location=loc)
+            self.assertFalse(ignored, f"Unexpected Paris ignore for '{loc}': {reason}")
 
     def test_bitdeer_tech_role_preservation(self):
         # Must NOT flag AI infrastructure engineer as non-tech because of mining/hardware company boilerplate
@@ -167,6 +208,18 @@ class TestJobFilter(unittest.TestCase):
         t3_us = categorize_job_tier("Software Engineer", "Seattle, WA")
         self.assertEqual(t3_us["tier"], 3)
         self.assertEqual(t3_us["rank"], "IGNORE")
+
+        # Tier 3: UK Location
+        t3_uk = categorize_job_tier("Software Engineer", "London, UK")
+        self.assertEqual(t3_uk["tier"], 3)
+        self.assertEqual(t3_uk["rank"], "IGNORE")
+        self.assertEqual(t3_uk["status"], "NA")
+
+        # Tier 3: Paris Location
+        t3_paris = categorize_job_tier("Software Engineer", "Paris, France")
+        self.assertEqual(t3_paris["tier"], 3)
+        self.assertEqual(t3_paris["rank"], "IGNORE")
+        self.assertEqual(t3_paris["status"], "NA")
 
         # Multi-location list input handling (regression test for AttributeError: 'list' object has no attribute 'strip')
         t_list_valid = categorize_job_tier("Software Engineer", ["Lisbon, Portugal", "Madrid, Spain"])

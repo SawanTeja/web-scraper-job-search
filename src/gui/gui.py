@@ -1413,7 +1413,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     tier2_count = stats.get('tier2_general_swe', 0)
                     total_ignored = stats.get('total_ignored', 0)
                     msg = (f"⚡ Smart Tier: {tier1_count} Early Career (HIGH) | {tier2_count} General SWE | "
-                           f"Ignored {total_ignored} -> NA | Click 'Refresh Everything' to view updated lists")
+                           f"Ignored {total_ignored} (incl. {stats.get('uk_ignored', 0)} UK, {stats.get('paris_ignored', 0)} Paris) -> NA | Click 'Refresh Everything' to view updated lists")
                     self.status_label.set_text(msg)
                     if hasattr(self, 'sort_status_label'):
                         self.sort_status_label.set_text(msg)
@@ -1446,7 +1446,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     if hasattr(self, 'prio_deep_filter_btn'):
                         self.prio_deep_filter_btn.set_sensitive(True)
                     msg = (f"🎯 Deep JD Filter: {stats['total_ignored']} Ignored ({stats['exp_ignored']} exp>=1yr, "
-                           f"{stats['senior_ignored']} senior, {stats['non_tech_ignored']} non-tech, {stats['us_ignored']} US, {stats['canada_ignored']} Canada) | "
+                           f"{stats['senior_ignored']} senior, {stats['non_tech_ignored']} non-tech, {stats['us_ignored']} US, {stats['canada_ignored']} Canada, {stats.get('uk_ignored', 0)} UK, {stats.get('paris_ignored', 0)} Paris) | "
                            f"Clean Candidates for AI: {stats['passed']} | Click 'Refresh Everything' to view updated lists")
                     self.status_label.set_text(msg)
                     if hasattr(self, 'sort_status_label'):
