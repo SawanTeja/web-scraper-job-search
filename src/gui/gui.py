@@ -337,7 +337,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         # Tier Target Mode Dropdown (Tier 1 vs Tier 1 & 2) inside Priority Sorting
         prio_tier_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        prio_tier_lbl = Gtk.Label(label="🎯 Tier Scope:")
+        prio_tier_lbl = Gtk.Label(label="🎯 AI Ranking Scope:")
         prio_tier_lbl.add_css_class("dim-label")
         prio_tier_box.append(prio_tier_lbl)
 
@@ -349,9 +349,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.tier_dropdown = Gtk.DropDown.new(tier_model, None)
         self.tier_dropdown.set_selected(0)
         self.tier_dropdown.set_tooltip_text(
-            "Target AI Ranking & Scraper Scope:\n"
-            "• Tier 1 Only: Only extract & rank Early Career / Internships (Saves Groq tokens on low quota days!)\n"
-            "• Tier 1 & 2: Process both Early Career and general SWE / Developer roles."
+            "Target 3-Stage AI Ranking Scope:\n"
+            "• Tier 1 Only: Only extract & AI rank Early Career / Internships (Saves Groq tokens on low quota days!)\n"
+            "• Tier 1 & 2: Process both Early Career and general SWE / Developer roles.\n"
+            "Note: Scraping always collects all unique jobs without pre-filtering. Pre-filter is run manually."
         )
         self.tier_dropdown.connect("notify::selected", self.on_tier_mode_changed)
         self.prio_tier_dropdown = self.tier_dropdown
@@ -1317,9 +1318,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
         idx = dropdown.get_selected()
         mode_label = self.get_active_tier_mode_label()
         if idx == 0:
-            msg = f"🎯 Scope set to: {mode_label} — Saves Groq tokens on low quota days!"
+            msg = f"🎯 AI Ranking scope: {mode_label} (Saves tokens; scraping always collects all unique jobs)"
         else:
-            msg = f"🎯 Scope set to: {mode_label} — Processing both Early Career & General SWE."
+            msg = f"🎯 AI Ranking scope: {mode_label} (Processing both Tier 1 & 2 in AI pipeline)"
         self.status_label.set_text(msg)
         if hasattr(self, 'sort_status_label'):
             self.sort_status_label.set_text(msg)
@@ -1378,8 +1379,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.status_label.set_text("⚠️ Scraping stopped or failed.")
 
     def on_scrape_ats_clicked(self, button):
-        tier_label = self.get_active_tier_mode_label()
-        self.status_label.set_text(f"Scraping saved company ATS boards ({tier_label})... (Check terminal output for progress)")
+        self.status_label.set_text("Scraping saved company ATS boards... (All unique jobs will be saved. Pre-filter and AI ranking are manual)")
         self.scrape_ats_btn.set_sensitive(False)
         thread = threading.Thread(target=self.run_ats_scraper_thread)
         thread.daemon = True
@@ -1391,15 +1391,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
-            env = dict(os.environ)
-            tier_mode = self.get_active_tier_mode()
-            env["SCRAPER_TIER_MODE"] = tier_mode
-
             cmd = [venv_python, resolve_script_path("ats_scraper.py")]
-            if tier_mode == "tier1":
-                cmd.append("--tier1-only")
 
-            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
+            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=dict(os.environ))
             process.wait()
             GLib.idle_add(self.on_ats_scrape_finished, process.returncode == 0)
         except Exception as e:

@@ -404,7 +404,7 @@ PLATFORM_FETCHERS = {
 }
 
 
-def scrape_company_ats(company: dict, filter_tech: bool = True) -> tuple[dict, list[dict]]:
+def scrape_company_ats(company: dict, filter_tech: bool = False) -> tuple[dict, list[dict]]:
     """
     Scrapes a single company's ATS board using the appropriate platform fetcher.
     Returns (company_dict, list_of_jobs).
@@ -418,7 +418,7 @@ def scrape_company_ats(company: dict, filter_tech: bool = True) -> tuple[dict, l
 
     raw_jobs = fetcher(identifier)
 
-    # Filter for tech / engineering / intern roles
+    # Filter for tech roles if explicitly requested; otherwise keep all unique jobs
     filtered_jobs = []
     for j in raw_jobs:
         title = j.get("title", "")
@@ -435,7 +435,7 @@ def scrape_company_ats(company: dict, filter_tech: bool = True) -> tuple[dict, l
 #  Main ATS Scraper Runner
 # ──────────────────────────────────────────────
 
-def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
+def run_ats_scraper(filter_tech: bool = False, max_workers: int = 15) -> int:
     """
     Main orchestration function for direct ATS scraping.
     1. Reads saved companies from SQLite.
@@ -501,29 +501,20 @@ def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
                 known_urls.add(url)
                 location = job.get("location", "")
                 
-                # Smart 3-tier deterministic categorization (Tier 1 HIGH, Tier 2 SWE, Tier 3 IGNORE)
                 try:
-                    from src.ranking.job_filter import categorize_job_tier, clean_location_input
+                    from src.ranking.job_filter import clean_location_input
                 except ImportError:
                     try:
-                        from ranking.job_filter import categorize_job_tier, clean_location_input
+                        from ranking.job_filter import clean_location_input
                     except ImportError:
-                        from job_filter import categorize_job_tier, clean_location_input
+                        from job_filter import clean_location_input
                 clean_loc = clean_location_input(location)
-                tier_res = categorize_job_tier(title=title, location=clean_loc)
-                
-                tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
-                is_tier1_mode = ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only"))
-                if is_tier1_mode:
-                    if tier_res.get("tier") != 1:
-                        continue
-                    initial_rank = tier_res["rank"]
-                    initial_status = tier_res["status"]
-                    initial_reason = tier_res["reason"]
-                else:
-                    initial_rank = "UNKNOWN"
-                    initial_status = "New"
-                    initial_reason = ""
+
+                # All scraped jobs are stored with status='New' and rank='UNKNOWN'.
+                # Pre-filtering and tier ranking are executed strictly when user clicks 'Pre-Filter Titles'.
+                initial_rank = "UNKNOWN"
+                initial_status = "New"
+                initial_reason = ""
                 details_blob = {"location": clean_loc} if clean_loc else None
 
                 inserted = insert_or_ignore_job(

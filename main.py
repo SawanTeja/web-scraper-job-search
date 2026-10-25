@@ -53,7 +53,7 @@ def main():
     parser.add_argument("--crawl-platform", default="ALL", help="Target platform for company crawler (ALL, workday, greenhouse, lever, ashby, etc.)")
     parser.add_argument("--crawl-mode", default="all", choices=["all", "feeds", "google"], help="Company crawler engine mode")
     parser.add_argument("--crawl-limit", type=int, default=None, help="Max new companies to add via crawler")
-    parser.add_argument("--tier1-only", action="store_true", help="Only scrape/process Tier 1 (Early Career / Intern / High Priority) jobs to save tokens")
+    parser.add_argument("--tier1-only", action="store_true", help="Scope 3-stage AI ranking pipeline to Tier 1 (Early Career / Intern) jobs only")
     parser.add_argument("--test", action="store_true", help="Run unit test suite")
 
     args = parser.parse_args()

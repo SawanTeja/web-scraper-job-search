@@ -385,21 +385,12 @@ def run_keka_discovery_and_scrape(
                 known_urls.add(url)
 
                 loc = clean_location_input(j.get("location", ""))
-                tier_res = categorize_job_tier(title=title, location=loc)
-
-                tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
-                is_tier1_mode = ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only"))
-                if is_tier1_mode:
-                    if tier_res.get("tier") != 1:
-                        continue
-                    status = tier_res["status"]
-                    rank = tier_res["rank"]
-                    reason = tier_res["reason"]
-                else:
-                    status = "New"
-                    rank = "UNKNOWN"
-                    reason = ""
-
+                
+                # All scraped jobs are stored with status='New' and rank='UNKNOWN'.
+                # Pre-filtering and tier ranking are executed strictly when user clicks 'Pre-Filter Titles'.
+                status = "New"
+                rank = "UNKNOWN"
+                reason = ""
                 details = {"location": loc} if loc else None
 
                 inserted = insert_or_ignore_job(
