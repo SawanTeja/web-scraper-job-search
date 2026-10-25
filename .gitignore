@@ -16,9 +16,12 @@ __pycache__/
 *.pyd
 
 # Databases & local data
+*.db
+*.db-journal
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+jobs.db
 jobs_db.json
 prompts.json
 indeed_db.json
