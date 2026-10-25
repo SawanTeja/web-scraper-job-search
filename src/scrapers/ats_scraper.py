@@ -171,7 +171,8 @@ def fetch_workday_jobs(identifier: str) -> list[dict]:
     if len(parts) < 3:
         return []
     tenant, server, site = parts[0], parts[1], parts[2]
-    url = f"https://{tenant}.{server}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
+    base_host = f"{tenant}.{server}.myworkdayjobs.com" if server else f"{tenant}.myworkdayjobs.com"
+    url = f"https://{base_host}/wday/cxs/{tenant}/{site}/jobs"
     payload = json.dumps({"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={
         "User-Agent": USER_AGENT,
@@ -184,7 +185,7 @@ def fetch_workday_jobs(identifier: str) -> list[dict]:
             data = json.loads(r.read().decode("utf-8"))
             for item in data.get("jobPostings", []):
                 ext_path = item.get("externalPath", "")
-                full_url = f"https://{tenant}.{server}.myworkdayjobs.com/en-US/{site}{ext_path}"
+                full_url = f"https://{base_host}/en-US/{site}{ext_path}"
                 results.append({
                     "title": item.get("title", "Unknown Title").strip(),
                     "url": full_url,

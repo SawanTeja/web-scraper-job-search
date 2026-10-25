@@ -65,19 +65,29 @@ ATS_PATTERNS = [
             "job_id": m.group(2) if m.lastindex >= 2 else None,
         }
     ),
-    # Workday: <tenant>.<server>.myworkdayjobs.com/(?:en-US/)?<site>...
+    # Workday: <tenant>.<server>.myworkdayjobs.com/(?:en-US/)?<site>... or <tenant>.myworkdayjobs.com/<site>
     (
         "workday",
-        re.compile(r"https?://([^.]+)\.([^.]+)\.myworkdayjobs\.com/(?:[a-zA-Z\-]+/)?([^/?#]+)", re.I),
-        lambda m: {
-            "ats_platform": "workday",
-            "identifier": f"{m.group(1)}|{m.group(2)}|{m.group(3)}",
-            "company_name": m.group(1).replace("-", " ").replace("_", " ").title(),
-            "career_url": f"https://{m.group(1)}.{m.group(2)}.myworkdayjobs.com/{m.group(3)}",
-            "tenant": m.group(1),
-            "server": m.group(2),
-            "site": m.group(3)
-        }
+        re.compile(r"https?://(?:([a-zA-Z0-9\-_]+)\.)?([a-zA-Z0-9\-_]+)\.myworkdayjobs\.com(?:/(?:[a-zA-Z]{2}(?:-[a-zA-Z]{2})?/)?([a-zA-Z0-9\-_]+))?", re.I),
+        lambda m: (
+            lambda tenant, server, site: {
+                "ats_platform": "workday",
+                "identifier": f"{tenant}|{server}|{site}",
+                "company_name": tenant.replace("-", " ").replace("_", " ").title(),
+                "career_url": (
+                    f"https://{tenant}.{server}.myworkdayjobs.com/{site}" if server else f"https://{tenant}.myworkdayjobs.com/{site}"
+                ) if site else (
+                    f"https://{tenant}.{server}.myworkdayjobs.com" if server else f"https://{tenant}.myworkdayjobs.com"
+                ),
+                "tenant": tenant,
+                "server": server,
+                "site": site
+            }
+        )(
+            m.group(1) if m.group(1) else m.group(2),
+            m.group(2) if m.group(1) else "",
+            m.group(3) or ""
+        )
     ),
     # BambooHR: <company>.bamboohr.com/careers/<job_id>
     (

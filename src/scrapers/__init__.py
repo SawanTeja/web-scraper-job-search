@@ -17,9 +17,13 @@ from src.scrapers.ats_parser import (
 from src.scrapers.ats_scraper import (
     run_ats_scraper, scrape_company_ats, PLATFORM_FETCHERS
 )
+from src.scrapers.company_crawler import (
+    run_company_crawler, crawl_public_directories, verify_company_board
+)
 
 __all__ = [
     "parse_ats_info", "resolve_redirect_url", "clean_company_name_from_title",
     "batch_test_and_extract_companies", "ATS_PATTERNS",
-    "run_ats_scraper", "scrape_company_ats", "PLATFORM_FETCHERS"
+    "run_ats_scraper", "scrape_company_ats", "PLATFORM_FETCHERS",
+    "run_company_crawler", "crawl_public_directories", "verify_company_board"
 ]

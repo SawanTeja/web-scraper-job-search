@@ -49,6 +49,10 @@ def main():
     parser.add_argument("--ai-rank", action="store_true", help="Stage 3: AI Rank clean jobs from DB against candidate profile (0 browser overhead)")
     parser.add_argument("--rank", action="store_true", help="Stream Pipeline: Extract JD -> Filter Immediately -> AI Rank Immediately")
     parser.add_argument("--limits", action="store_true", help="Check live Groq API rate limits & remaining quota across all keys")
+    parser.add_argument("--crawl-companies", action="store_true", help="Crawl and discover valid company career portals across MyWorkday and all ATS platforms")
+    parser.add_argument("--crawl-platform", default="ALL", help="Target platform for company crawler (ALL, workday, greenhouse, lever, ashby, etc.)")
+    parser.add_argument("--crawl-mode", default="all", choices=["all", "feeds", "google"], help="Company crawler engine mode")
+    parser.add_argument("--crawl-limit", type=int, default=None, help="Max new companies to add via crawler")
     parser.add_argument("--tier1-only", action="store_true", help="Only scrape/process Tier 1 (Early Career / Intern / High Priority) jobs to save tokens")
     parser.add_argument("--test", action="store_true", help="Run unit test suite")
 
@@ -72,6 +76,14 @@ def main():
     elif args.ats:
         from src.scrapers.ats_scraper import run_ats_scraper
         run_ats_scraper()
+
+    elif args.crawl_companies:
+        from src.scrapers.company_crawler import run_company_crawler
+        run_company_crawler(
+            target_platform=args.crawl_platform,
+            mode=args.crawl_mode,
+            limit=args.crawl_limit
+        )
 
     elif args.backfill:
         from src.core.db import extract_companies_from_existing_jobs

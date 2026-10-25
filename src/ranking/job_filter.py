@@ -998,7 +998,7 @@ def sync_ats_locations_to_db(conn=None) -> int:
     return updated
 
 
-def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move_to_na: bool = True, sync_locations: bool = False) -> dict:
+def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move_to_na: bool = True, sync_locations: bool = False, verbose: bool = True) -> dict:
     """
     Runs smart 3-tier deterministic pre-filtering over SQLite database in bulk.
     - Tier 3: Instantly marks jobs as rank='IGNORE', status='NA'.
@@ -1030,6 +1030,13 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
     else:
         query = "SELECT url, title, details, reason, rank FROM jobs WHERE status = 'New'"
     rows = conn.execute(query).fetchall()
+
+    if verbose:
+        print("\n" + "=" * 62)
+        print("⚡ PRE-FILTER: SMART TIER DETERMINISTIC FILTER (0 AI Tokens)")
+        print(f"📊 Scanning {len(rows)} active jobs in database...")
+        print("=" * 62)
+        sys.stdout.flush()
 
     stats = {
         "scanned": len(rows),
@@ -1092,6 +1099,11 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
             elif "Career hub" in tier_res["reason"]:
                 stats["career_hub_ignored"] += 1
 
+            if verbose:
+                loc_txt = f" [{location}]" if location else ""
+                print(f"   🚫 [Tier 3 -> NA] {title[:48]}{loc_txt} -> {tier_res['reason']}")
+                sys.stdout.flush()
+
         elif reason_existing.startswith("[AI Verified]") or reason_existing.startswith("[AI-Evaluated]") or reason_existing.startswith("AI:"):
             stats["passed"] += 1
             continue
@@ -1103,6 +1115,9 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
             )
             stats["tier1_early_career"] += 1
             stats["passed"] += 1
+            if verbose:
+                print(f"   ⭐ [Tier 1 Priority] {title[:60]}")
+                sys.stdout.flush()
 
         else:
             # Tier 2
@@ -1116,6 +1131,26 @@ def apply_deterministic_filter_to_db(conn=None, only_unknown: bool = False, move
     conn.commit()
     if close_after:
         conn.close()
+
+    if verbose:
+        pct = stats["total_ignored"] / (stats["scanned"] or 1) * 100
+        print("=" * 62)
+        print("✨ PRE-FILTER FINISHED!")
+        print(f"   📊 Jobs scanned:              {stats['scanned']}")
+        print(f"   🚫 Senior / Supervisor:     {stats['senior_ignored']}")
+        print(f"   🚫 Non-tech / Helpdesk:     {stats['non_tech_ignored']}")
+        print(f"   🚫 US-based location:       {stats['us_ignored']}")
+        print(f"   🚫 Canada-based location:   {stats['canada_ignored']}")
+        print(f"   🚫 UK-based location:       {stats.get('uk_ignored', 0)}")
+        print(f"   🚫 Paris-based location:    {stats.get('paris_ignored', 0)}")
+        print(f"   🚫 Career hub landing pages:{stats['career_hub_ignored']}")
+        print(f"   ----------------------------------------")
+        print(f"   🎯 Tier 3 (Ignored -> NA):  {stats['total_ignored']} ({pct:.1f}%)")
+        print(f"   ⭐ Tier 1 (Early Career):   {stats['tier1_early_career']} (Priority)")
+        print(f"   💻 Tier 2 (General SWE):    {stats['tier2_general_swe']} (Ready for AI)")
+        print(f"   ✅ Clean Active Jobs:       {stats['passed']}")
+        print("=" * 62 + "\n")
+        sys.stdout.flush()
 
     return stats
 
@@ -1215,7 +1250,7 @@ def evaluate_deep_jd_filter(title: str, jd_text: str = "", details: dict = None)
     return False, ""
 
 
-def apply_deep_jd_filter_to_db(conn=None, move_to_na: bool = True) -> dict:
+def apply_deep_jd_filter_to_db(conn=None, move_to_na: bool = True, verbose: bool = True) -> dict:
     """
     Applies the second-phase deterministic deep filter across jobs in SQLite database.
     Evaluates jobs in status='New' or rank='UNKNOWN' that have details or raw JD text.
@@ -1232,6 +1267,13 @@ def apply_deep_jd_filter_to_db(conn=None, move_to_na: bool = True) -> dict:
 
     query = "SELECT url, title, details, reason, rank FROM jobs WHERE status = 'New'"
     rows = conn.execute(query).fetchall()
+
+    if verbose:
+        print("\n" + "=" * 62)
+        print("🎯 RUNNING DEEP JD FILTER (Experience, Senior, Non-Tech, Location)")
+        print(f"📊 Scanning {len(rows)} active jobs in database...")
+        print("=" * 62)
+        sys.stdout.flush()
 
     stats = {
         "scanned": len(rows),
@@ -1296,12 +1338,34 @@ def apply_deep_jd_filter_to_db(conn=None, move_to_na: bool = True) -> dict:
                 stats["paris_ignored"] += 1
             elif "clearance" in reason_lower or "citizen" in reason_lower:
                 stats["clearance_ignored"] += 1
+
+            if verbose:
+                print(f"   🚫 [Deep JD -> NA] {title[:48]} -> {reason}")
+                sys.stdout.flush()
         else:
             stats["passed"] += 1
 
     conn.commit()
     if close_after:
         conn.close()
+
+    if verbose:
+        print("=" * 62)
+        print("✨ DEEP JD FILTER FINISHED!")
+        print(f"   📊 Jobs scanned:            {stats['scanned']}")
+        print(f"   🚫 Experience >= 1 year:    {stats['exp_ignored']}")
+        print(f"   🚫 Senior / Lead:           {stats['senior_ignored']}")
+        print(f"   🚫 Non-tech / Operations:   {stats['non_tech_ignored']}")
+        print(f"   🚫 US location:             {stats['us_ignored']}")
+        print(f"   🚫 Canada location:         {stats['canada_ignored']}")
+        print(f"   🚫 UK location:             {stats.get('uk_ignored', 0)}")
+        print(f"   🚫 Paris location:          {stats.get('paris_ignored', 0)}")
+        print(f"   🚫 Clearance / Citizenship: {stats['clearance_ignored']}")
+        print(f"   ----------------------------------------")
+        print(f"   🎯 Total Ignored (NA):      {stats['total_ignored']}")
+        print(f"   ✅ Clean Candidates for AI: {stats['passed']}")
+        print("=" * 62 + "\n")
+        sys.stdout.flush()
 
     return stats
 

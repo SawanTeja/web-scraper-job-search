@@ -98,6 +98,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # Track pending batch render
         self._batch_queue = []
         self._batch_source_id = None
+        self.crawler_process = None
         # Track whether priority tab needs refresh
         self._prio_dirty = True
         # Search state
@@ -136,6 +137,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.scrape_ats_btn.add_css_class("suggested-action")
         self.scrape_ats_btn.connect("clicked", self.on_scrape_ats_clicked)
         header_box.append(self.scrape_ats_btn)
+
+        self.crawl_companies_btn = Gtk.Button(label="🌐 Crawl Companies")
+        self.crawl_companies_btn.add_css_class("suggested-action")
+        self.crawl_companies_btn.set_tooltip_text("Crawl MyWorkday and all ATS platforms to discover and validate real companies")
+        self.crawl_companies_btn.connect("clicked", self.on_crawl_companies_header_clicked)
+        header_box.append(self.crawl_companies_btn)
 
         self.view_companies_btn = Gtk.Button(label="📋 Saved Companies")
         self.view_companies_btn.connect("clicked", self.on_view_companies_clicked)
@@ -378,6 +385,10 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         self.priority_page_num = self.notebook.append_page(priority_vbox, Gtk.Label(label="Priority Sorting"))
 
+        # Dedicated ATS Company Discovery Crawler tab
+        crawler_vbox = self.create_company_crawler_tab()
+        self.crawler_page_num = self.notebook.append_page(crawler_vbox, Gtk.Label(label="🌐 Company Crawler"))
+
         # Connect tab change signal
         self.notebook.connect("switch-page", self.on_tab_switched)
 
@@ -391,6 +402,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
         if hasattr(self, 'rank_process') and self.rank_process:
             self.rank_process.terminate()
             self.rank_process = None
+        if hasattr(self, 'crawler_process') and self.crawler_process:
+            try:
+                self.crawler_process.terminate()
+            except Exception:
+                pass
+            self.crawler_process = None
         
         # Clean up stop.flag if it was left around
         import os
@@ -477,6 +494,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 background-color: #cf222e;
                 color: #ffffff;
                 border-color: #cf222e;
+            }
+            .terminal-log-view {
+                font-family: monospace;
+                font-size: 11px;
+                background-color: #1a1a1a;
+                color: #e0e0e0;
+                padding: 10px;
+                border-radius: 6px;
             }
         """
         css_provider.load_from_data(css)
@@ -1272,6 +1297,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self._build_priority_queue(render_queue)
             self._enqueue_rows(render_queue)
             self._prio_dirty = False
+        elif hasattr(self, 'crawler_page_num') and page_num == self.crawler_page_num:
+            comp_cnt = get_company_count()
+            self.crawler_stats_label.set_text(f"Ready to crawl. Current database pool: {comp_cnt} companies.")
 
     def get_active_tier_mode(self) -> str:
         """Return 'tier1' if Tier 1 Only is selected, else 'all'."""
@@ -1391,6 +1419,233 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.companies_win = CompaniesWindow(self)
         self.companies_win.present()
 
+    # --- ATS COMPANY DISCOVERY CRAWLER SECTION ---
+    def on_crawl_companies_header_clicked(self, button):
+        if hasattr(self, "crawler_page_num"):
+            self.notebook.set_current_page(self.crawler_page_num)
+
+    def create_company_crawler_tab(self):
+        crawler_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        crawler_vbox.set_margin_top(12)
+        crawler_vbox.set_margin_bottom(12)
+        crawler_vbox.set_margin_start(12)
+        crawler_vbox.set_margin_end(12)
+
+        # 1. Header Banner
+        banner_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        banner_box.add_css_class("stats-banner")
+
+        title_lbl = Gtk.Label(label="🌐 ATS Company Discovery Crawler")
+        title_lbl.set_halign(Gtk.Align.START)
+        title_lbl.add_css_class("title-2")
+        banner_box.append(title_lbl)
+
+        sub_lbl = Gtk.Label(
+            label="Discovers and validates active corporate career portals across MyWorkday, Greenhouse, Lever, Ashby, SmartRecruiters, Workable, BambooHR, and more.\n"
+                  "Found companies are verified and added directly to your Saved Companies dataset (0 jobs created)."
+        )
+        sub_lbl.set_halign(Gtk.Align.START)
+        sub_lbl.set_wrap(True)
+        sub_lbl.add_css_class("dim-label")
+        banner_box.append(sub_lbl)
+        crawler_vbox.append(banner_box)
+
+        # 2. Control Bar
+        controls_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+
+        plat_lbl = Gtk.Label(label="Platform:")
+        controls_box.append(plat_lbl)
+        self.crawler_platform_options = [
+            "ALL", "workday", "greenhouse", "lever", "ashby", "smartrecruiters",
+            "workable", "bamboohr", "breezy", "jobvite", "recruitee", "oraclecloud", "keka"
+        ]
+        plat_model = Gtk.StringList.new([p.upper() for p in self.crawler_platform_options])
+        self.crawler_platform_drop = Gtk.DropDown(model=plat_model)
+        self.crawler_platform_drop.set_selected(0)
+        controls_box.append(self.crawler_platform_drop)
+
+        mode_lbl = Gtk.Label(label="Engine:")
+        controls_box.append(mode_lbl)
+        self.crawler_mode_options = [
+            ("⚡ Fast Feeds & Directories", "feeds"),
+            ("🚀 Multi-Engine (Feeds + Google Dorks)", "all"),
+            ("🌐 Google Dorks Only (Playwright)", "google"),
+        ]
+        mode_model = Gtk.StringList.new([m[0] for m in self.crawler_mode_options])
+        self.crawler_mode_drop = Gtk.DropDown(model=mode_model)
+        self.crawler_mode_drop.set_selected(0)
+        controls_box.append(self.crawler_mode_drop)
+
+        limit_lbl = Gtk.Label(label="Limit:")
+        controls_box.append(limit_lbl)
+        self.crawler_limit_options = ["50", "100", "250", "500", "ALL"]
+        limit_model = Gtk.StringList.new(self.crawler_limit_options)
+        self.crawler_limit_drop = Gtk.DropDown(model=limit_model)
+        self.crawler_limit_drop.set_selected(1)
+        controls_box.append(self.crawler_limit_drop)
+
+        # Action Buttons
+        self.crawler_start_btn = Gtk.Button(label="🚀 Start Crawler")
+        self.crawler_start_btn.add_css_class("suggested-action")
+        self.crawler_start_btn.connect("clicked", self.on_start_crawler_clicked)
+        controls_box.append(self.crawler_start_btn)
+
+        self.crawler_stop_btn = Gtk.Button(label="🛑 Stop")
+        self.crawler_stop_btn.add_css_class("destructive-action")
+        self.crawler_stop_btn.set_sensitive(False)
+        self.crawler_stop_btn.connect("clicked", self.on_stop_crawler_clicked)
+        controls_box.append(self.crawler_stop_btn)
+
+        self.crawler_view_companies_btn = Gtk.Button(label="📋 View Companies Pool")
+        self.crawler_view_companies_btn.connect("clicked", self.on_view_companies_clicked)
+        controls_box.append(self.crawler_view_companies_btn)
+
+        crawler_vbox.append(controls_box)
+
+        # 3. Live Stats Strip
+        self.crawler_stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.crawler_stats_label = Gtk.Label(label="Ready to crawl. Select platform and click 'Start Crawler'.")
+        self.crawler_stats_label.set_hexpand(True)
+        self.crawler_stats_label.set_halign(Gtk.Align.START)
+        self.crawler_stats_box.append(self.crawler_stats_label)
+
+        self.crawler_clear_log_btn = Gtk.Button(label="🧹 Clear Log")
+        self.crawler_clear_log_btn.connect("clicked", self.on_clear_crawler_log_clicked)
+        self.crawler_stats_box.append(self.crawler_clear_log_btn)
+        crawler_vbox.append(self.crawler_stats_box)
+
+        # 4. Scrolled Terminal / Live Log Console
+        log_scroll = Gtk.ScrolledWindow()
+        log_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        log_scroll.set_vexpand(True)
+        log_scroll.set_hexpand(True)
+
+        self.crawler_log_buffer = Gtk.TextBuffer()
+        self.crawler_log_view = Gtk.TextView(buffer=self.crawler_log_buffer)
+        self.crawler_log_view.set_editable(False)
+        self.crawler_log_view.set_cursor_visible(False)
+        self.crawler_log_view.set_monospace(True)
+        self.crawler_log_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.crawler_log_view.add_css_class("terminal-log-view")
+        log_scroll.set_child(self.crawler_log_view)
+
+        crawler_vbox.append(log_scroll)
+        return crawler_vbox
+
+    def on_start_crawler_clicked(self, button):
+        plat_idx = self.crawler_platform_drop.get_selected()
+        plat = self.crawler_platform_options[plat_idx]
+
+        mode_idx = self.crawler_mode_drop.get_selected()
+        mode = self.crawler_mode_options[mode_idx][1]
+
+        lim_idx = self.crawler_limit_drop.get_selected()
+        lim_str = self.crawler_limit_options[lim_idx]
+        limit = None if lim_str == "ALL" else int(lim_str)
+
+        self.crawler_start_btn.set_sensitive(False)
+        self.crawler_stop_btn.set_sensitive(True)
+        if hasattr(self, "crawl_companies_btn"):
+            self.crawl_companies_btn.set_sensitive(False)
+
+        msg = f"🚀 Starting ATS Company Crawler (Target: {plat.upper()}, Engine: {mode.upper()})... (Streaming to terminal)"
+        self.crawler_stats_label.set_text(msg)
+        self.status_label.set_text(msg)
+
+        thread = threading.Thread(
+            target=self.run_company_crawler_thread,
+            args=(plat, mode, limit),
+            daemon=True
+        )
+        thread.start()
+
+    def on_stop_crawler_clicked(self, button):
+        if hasattr(self, "crawler_process") and self.crawler_process:
+            try:
+                self.crawler_process.terminate()
+            except Exception:
+                pass
+            self.crawler_process = None
+        self.crawler_stop_btn.set_sensitive(False)
+        self.crawler_start_btn.set_sensitive(True)
+        if hasattr(self, "crawl_companies_btn"):
+            self.crawl_companies_btn.set_sensitive(True)
+        self.crawler_stats_label.set_text("🛑 Company Crawler stopped by user.")
+        self.status_label.set_text("🛑 Company Crawler stopped.")
+
+    def run_company_crawler_thread(self, platform="ALL", mode="feeds", limit=None):
+        try:
+            venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
+            if not os.path.exists(venv_python):
+                venv_python = sys.executable
+
+            script_path = resolve_script_path("company_crawler.py")
+            cmd = [venv_python, "-u", script_path, "--platform", platform, "--mode", mode]
+            if limit:
+                cmd.extend(["--limit", str(limit)])
+
+            self.crawler_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=os.getcwd(),
+                env=dict(os.environ)
+            )
+
+            for line in iter(self.crawler_process.stdout.readline, ''):
+                if not line:
+                    break
+                # Stream directly to terminal
+                sys.stdout.write(line)
+                sys.stdout.flush()
+
+                # Stream to GUI textbuffer
+                def append_log(txt=line):
+                    end_iter = self.crawler_log_buffer.get_end_iter()
+                    self.crawler_log_buffer.insert(end_iter, txt)
+                    mark = self.crawler_log_buffer.create_mark(None, end_iter, False)
+                    self.crawler_log_view.scroll_to_mark(mark, 0.0, False, 0.0, 0.0)
+                GLib.idle_add(append_log)
+
+            self.crawler_process.wait()
+            success = (self.crawler_process.returncode == 0)
+            self.crawler_process = None
+            GLib.idle_add(self.on_crawler_finished, success)
+        except Exception as e:
+            print(f"Error running company crawler: {e}")
+            sys.stdout.flush()
+            def append_err(err=str(e)):
+                end_iter = self.crawler_log_buffer.get_end_iter()
+                self.crawler_log_buffer.insert(end_iter, f"\n⚠️ Error: {err}\n")
+            GLib.idle_add(append_err)
+            GLib.idle_add(self.on_crawler_finished, False)
+
+    def on_crawler_finished(self, success):
+        self.crawler_start_btn.set_sensitive(True)
+        self.crawler_stop_btn.set_sensitive(False)
+        if hasattr(self, "crawl_companies_btn"):
+            self.crawl_companies_btn.set_sensitive(True)
+
+        comp_cnt = get_company_count()
+        if success:
+            msg = f"✅ Company crawling finished! Total in dataset: {comp_cnt} companies."
+        else:
+            msg = f"⚠️ Company crawling stopped or completed. Total in dataset: {comp_cnt} companies."
+
+        self.crawler_stats_label.set_text(msg)
+        self.status_label.set_text(msg)
+
+        if hasattr(self, "companies_win") and self.companies_win:
+            try:
+                self.companies_win.load_data()
+            except Exception:
+                pass
+
+    def on_clear_crawler_log_clicked(self, button):
+        self.crawler_log_buffer.set_text("")
+
     # --- DETERMINISTIC PRE-FILTER LOGIC (ZERO TOKENS) ---
     def on_fast_filter_clicked(self, button):
         self.status_label.set_text("⚡ Running Smart Tier Deterministic Filter (0 AI tokens)...")
@@ -1398,13 +1653,19 @@ class JobAppWindow(Gtk.ApplicationWindow):
         if hasattr(self, 'prio_filter_btn'):
             self.prio_filter_btn.set_sensitive(False)
 
+        print("\n" + "=" * 62)
+        print("⚡ [GUI] PRE-FILTER BUTTON CLICKED: Starting Smart Tier Filter...")
+        print("   Evaluating jobs against Senior, Non-Tech, US, Canada, UK, Paris (0 AI tokens)...")
+        print("=" * 62)
+        sys.stdout.flush()
+
         def worker():
             try:
                 try:
                     from src.ranking.job_filter import apply_deterministic_filter_to_db
                 except ImportError:
                     from job_filter import apply_deterministic_filter_to_db
-                stats = apply_deterministic_filter_to_db(only_unknown=False, move_to_na=True)
+                stats = apply_deterministic_filter_to_db(only_unknown=False, move_to_na=True, verbose=True)
                 def update_gui():
                     self.fast_filter_btn.set_sensitive(True)
                     if hasattr(self, 'prio_filter_btn'):
@@ -1417,9 +1678,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     self.status_label.set_text(msg)
                     if hasattr(self, 'sort_status_label'):
                         self.sort_status_label.set_text(msg)
+                    print(f"✅ [GUI] Pre-filter completed: {msg}\n")
+                    sys.stdout.flush()
                 GLib.idle_add(update_gui)
             except Exception as e:
-                print(f"Error in deterministic filter worker: {e}")
+                print(f"❌ [GUI] Error in deterministic filter worker: {e}\n")
+                sys.stdout.flush()
                 def on_err():
                     self.fast_filter_btn.set_sensitive(True)
                     if hasattr(self, 'prio_filter_btn'):
@@ -1435,13 +1699,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
         if hasattr(self, 'prio_deep_filter_btn'):
             self.prio_deep_filter_btn.set_sensitive(False)
 
+        print("\n" + "=" * 62)
+        print("🎯 [GUI] DEEP JD FILTER BUTTON CLICKED: Starting Deep JD Filter...")
+        print("=" * 62)
+        sys.stdout.flush()
+
         def worker():
             try:
                 try:
                     from src.ranking.job_filter import apply_deep_jd_filter_to_db
                 except ImportError:
                     from job_filter import apply_deep_jd_filter_to_db
-                stats = apply_deep_jd_filter_to_db(move_to_na=True)
+                stats = apply_deep_jd_filter_to_db(move_to_na=True, verbose=True)
                 def update_gui():
                     if hasattr(self, 'prio_deep_filter_btn'):
                         self.prio_deep_filter_btn.set_sensitive(True)
@@ -1451,9 +1720,12 @@ class JobAppWindow(Gtk.ApplicationWindow):
                     self.status_label.set_text(msg)
                     if hasattr(self, 'sort_status_label'):
                         self.sort_status_label.set_text(msg)
+                    print(f"✅ [GUI] Deep JD filter completed: {msg}\n")
+                    sys.stdout.flush()
                 GLib.idle_add(update_gui)
             except Exception as e:
-                print(f"Error in deep filter worker: {e}")
+                print(f"❌ [GUI] Error in deep filter worker: {e}\n")
+                sys.stdout.flush()
                 def on_err():
                     if hasattr(self, 'prio_deep_filter_btn'):
                         self.prio_deep_filter_btn.set_sensitive(True)
@@ -1820,6 +2092,12 @@ class CompaniesWindow(Gtk.Window):
         self.add_btn.connect("clicked", self.on_add_company_clicked)
         header_box.append(self.add_btn)
 
+        self.crawler_btn = Gtk.Button(label="🌐 Crawl ATS Companies")
+        self.crawler_btn.add_css_class("suggested-action")
+        self.crawler_btn.set_tooltip_text("Crawl MyWorkday and all major ATS platforms to find valid company career portals")
+        self.crawler_btn.connect("clicked", self.on_open_crawler_clicked)
+        header_box.append(self.crawler_btn)
+
         self.extract_btn = Gtk.Button(label="📥 Extract from Jobs")
         self.extract_btn.set_tooltip_text("Scan existing jobs in DB to discover and extract company ATS career websites")
         self.extract_btn.connect("clicked", self.on_extract_clicked)
@@ -1917,6 +2195,12 @@ class CompaniesWindow(Gtk.Window):
 
         dialog.connect("response", on_response)
         dialog.present()
+
+    def on_open_crawler_clicked(self, button):
+        self.close()
+        if self.parent_window and hasattr(self.parent_window, "crawler_page_num"):
+            self.parent_window.notebook.set_current_page(self.parent_window.crawler_page_num)
+            self.parent_window.present()
 
     def on_add_company_clicked(self, button):
         add_win = AddCompanyWindow(self)
