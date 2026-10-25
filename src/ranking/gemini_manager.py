@@ -89,13 +89,29 @@ class GeminiManager:
     def is_available(self) -> bool:
         return self.available and not self.all_exhausted and bool(self.clients)
 
-    def get_client(self):
+    def get_client_for_worker(self, preferred_key_idx: int = None):
+        """Returns (client, key_num) respecting preferred worker key index and quota state."""
+        if not self.clients:
+            return None, 1
+
+        # 1. If preferred key index specified and not exhausted, use it
+        if preferred_key_idx is not None and len(self.clients) > 0:
+            target_idx = preferred_key_idx % len(self.clients)
+            if (target_idx + 1) not in self.daily_exhausted_keys:
+                return self.clients[target_idx], target_idx + 1
+
+        # 2. Otherwise pick an available non-exhausted key
         if len(self.daily_exhausted_keys) < len(self.clients):
-            attempts = 0
-            while (self.current_key_idx + 1) in self.daily_exhausted_keys and attempts < len(self.clients):
-                self.current_key_idx = (self.current_key_idx + 1) % len(self.clients)
-                attempts += 1
-        return self.clients[self.current_key_idx]
+            for idx in range(len(self.clients)):
+                if (idx + 1) not in self.daily_exhausted_keys:
+                    return self.clients[idx], idx + 1
+
+        idx = self.current_key_idx % len(self.clients)
+        return self.clients[idx], idx + 1
+
+    def get_client(self):
+        client, _ = self.get_client_for_worker()
+        return client
 
     def rotate_key(self, reason: str = ""):
         self.current_key_idx = (self.current_key_idx + 1) % len(self.clients)
@@ -109,8 +125,7 @@ class GeminiManager:
             msg += f" ({reason})"
         print(msg)
 
-    def mark_current_key_exhausted(self):
-        key_num = self.current_key_idx + 1
+    def mark_key_exhausted(self, key_num: int):
         self.daily_exhausted_keys.add(key_num)
         print(f"   ⚠️ Gemini Key #{key_num}/{len(self.clients)} exhausted on {self.active_model}.")
 
@@ -128,7 +143,10 @@ class GeminiManager:
         else:
             self.rotate_key("daily-limit-rotate")
 
-    async def extract_job_details(self, job_title: str, jd_text: str) -> dict | None:
+    def mark_current_key_exhausted(self):
+        self.mark_key_exhausted(self.current_key_idx + 1)
+
+    async def extract_job_details(self, job_title: str, jd_text: str, preferred_key_idx: int = None) -> dict | None:
         if not self.is_available():
             return None
 
@@ -165,8 +183,7 @@ Guidelines:
             if self.all_exhausted:
                 return None
 
-            client = self.get_client()
-            key_num = self.current_key_idx + 1
+            client, key_num = self.get_client_for_worker(preferred_key_idx)
             target_model = self.active_model
 
             try:
@@ -193,7 +210,7 @@ Guidelines:
             except Exception as e:
                 err_str = str(e).lower()
                 if any(k in err_str for k in ["429", "resource_exhausted", "quota", "rate limit", "limit exceeded"]):
-                    self.mark_current_key_exhausted()
+                    self.mark_key_exhausted(key_num)
                     await asyncio.sleep(0.5)
                     continue
                 else:

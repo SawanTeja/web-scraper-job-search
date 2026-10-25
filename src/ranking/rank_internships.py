@@ -286,7 +286,7 @@ def validate_job_json(data):
 
     return True
 
-async def extract_job_details_with_llm(job_title, jd_text, retries=3):
+async def extract_job_details_with_llm(job_title, jd_text, retries=3, preferred_key_idx: int = None):
     """
     Extracts structured data from the job description.
     Priority 1: Uses Google Gemini first (gemini-3.5-flash-lite / gemini-3.1-flash-lite, 0 Groq tokens used).
@@ -294,7 +294,7 @@ async def extract_job_details_with_llm(job_title, jd_text, retries=3):
     """
     # 1. Primary: Try Gemini extraction first (0 Groq tokens used)
     if gemini_manager and gemini_manager.is_available():
-        data = await gemini_manager.extract_job_details(job_title, jd_text)
+        data = await gemini_manager.extract_job_details(job_title, jd_text, preferred_key_idx=preferred_key_idx)
         if data:
             required_fields = [
                 "job_name", "company", "location", "salary", "job_type",
@@ -550,127 +550,158 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
 
+        db_lock = asyncio.Lock()
+        queue = asyncio.Queue()
         for index, (prio, url, data) in enumerate(candidate_items):
-            if os.path.exists("stop.flag"):
-                print("🛑 Pause requested. Exiting gracefully...")
-                try:
-                    os.remove("stop.flag")
-                except Exception:
-                    pass
-                break
+            queue.put_nowait((index, prio, url, data))
 
-            if index > 0 and index % 50 == 0:
-                await context.close()
-                context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                )
+        num_gemini_keys = len(gemini_manager.clients) if (gemini_manager and gemini_manager.is_available()) else 1
+        concurrency = min(max(num_gemini_keys, 2), 3)
 
-            title = data.get("title", "Unknown")
-            location = (data.get("details") or {}).get("location", "") if isinstance(data.get("details"), dict) else ""
-            tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
-            print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} Extracting: {title}")
+        print(f"⚡ Spawning {concurrency} parallel workers for concurrent Gemini extraction...\n")
 
-            # Deterministic pre-check on title/location
-            should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
-            if should_ignore:
-                print(f"   ⏭️ Skipped ([Deterministic] {ignore_reason})\n")
-                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deterministic] {ignore_reason}")
-                conn.commit()
-                continue
-
-            page = await context.new_page()
-            await Stealth().apply_stealth_async(page)
-            page.set_default_timeout(30000)
+        async def worker(worker_id: int):
+            worker_tag = f"Worker {worker_id + 1}"
+            gemini_key_tag = f"Gemini Key #{worker_id + 1}"
+            worker_page = await context.new_page()
+            await Stealth().apply_stealth_async(worker_page)
+            worker_page.set_default_timeout(30000)
 
             try:
-                async def fetch_and_extract():
+                while not queue.empty():
+                    if os.path.exists("stop.flag"):
+                        print(f"🛑 [{worker_tag}] Pause requested. Exiting gracefully...")
+                        break
+
                     try:
-                        await page.goto(url, wait_until="networkidle", timeout=20000)
-                    except Exception:
+                        index, prio, url, data = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                    title = data.get("title", "Unknown")
+                    location = (data.get("details") or {}).get("location", "") if isinstance(data.get("details"), dict) else ""
+                    tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
+                    print(f"[{index + 1}/{len(candidate_items)}] [{worker_tag} | {gemini_key_tag}] {tier_badge} Extracting: {title}")
+
+                    # Deterministic pre-check on title/location
+                    should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
+                    if should_ignore:
+                        print(f"   🛑 [{worker_tag}] Skipped ([Deterministic] {ignore_reason})\n")
+                        async with db_lock:
+                            update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deterministic] {ignore_reason}")
+                            conn.commit()
+                        queue.task_done()
+                        continue
+
+                    try:
                         try:
-                            await page.goto(url, wait_until="domcontentloaded", timeout=10000)
+                            await worker_page.goto(url, wait_until="networkidle", timeout=20000)
                         except Exception:
-                            await asyncio.sleep(2)
+                            try:
+                                await worker_page.goto(url, wait_until="domcontentloaded", timeout=10000)
+                            except Exception:
+                                await asyncio.sleep(2)
 
-                    await page.wait_for_timeout(3000)
-                    raw_text = await page.inner_text("body", timeout=10000)
-                    jd_text = clean_text(raw_text)[:2800]
+                        await worker_page.wait_for_timeout(2000)
+                        raw_text = await worker_page.inner_text("body", timeout=10000)
+                        jd_text = clean_text(raw_text)[:2800]
 
-                    if len(jd_text) < 100:
-                        fallback_text = await page.evaluate("""() => {
-                            return Array.from(document.querySelectorAll('p, li, div, span'))
-                                .map(el => el.innerText)
-                                .join(' ');
-                        }""")
-                        jd_text = clean_text(fallback_text)[:2800]
+                        if len(jd_text) < 100:
+                            fallback_text = await worker_page.evaluate("""() => {
+                                return Array.from(document.querySelectorAll('p, li, div, span'))
+                                    .map(el => el.innerText)
+                                    .join(' ');
+                            }""")
+                            jd_text = clean_text(fallback_text)[:2800]
 
-                    # Check child iframes (e.g. iCIMS, Oracle Taleo, Workday embeds)
-                    if len(jd_text) < 100:
-                        for frame in page.frames:
-                            if frame != page.main_frame:
-                                try:
-                                    frame_text = await frame.inner_text("body", timeout=3000)
-                                    frame_clean = clean_text(frame_text)
-                                    if len(frame_clean) > len(jd_text):
-                                        jd_text = frame_clean[:2800]
-                                except Exception:
-                                    pass
+                        if len(jd_text) < 100:
+                            for frame in worker_page.frames:
+                                if frame != worker_page.main_frame:
+                                    try:
+                                        frame_text = await frame.inner_text("body", timeout=3000)
+                                        frame_clean = clean_text(frame_text)
+                                        if len(frame_clean) > len(jd_text):
+                                            jd_text = frame_clean[:2800]
+                                    except Exception:
+                                        pass
 
-                    if len(jd_text) < 100:
-                        print(f"   ⚠️ Could not extract text from page (<100 chars). Skipped.\n")
-                        return "ERROR", "Failed to extract meaningful text.", None
+                        if len(jd_text) < 100:
+                            print(f"   ⚠️ [{worker_tag}] Could not extract text from page (<100 chars). Skipped.\n")
+                            async with db_lock:
+                                update_job(url, conn, rank="ERROR", reason="Failed to extract meaningful text.", status="NA")
+                                conn.commit()
+                            queue.task_done()
+                            continue
 
-                    # 1. Pre-Extraction Guard: Check raw JD text before spending extraction LLM tokens
-                    should_drop_raw, raw_reason = evaluate_deep_jd_filter(title, jd_text=jd_text)
-                    if should_drop_raw:
-                        print(f"   🛑 Filtered by Pre-Extraction Guard: {raw_reason} (0 AI tokens used!)")
-                        return "IGNORE", f"[Deep JD Filter] {raw_reason}", None
+                        # 1. Pre-Extraction Guard
+                        should_drop_raw, raw_reason = evaluate_deep_jd_filter(title, jd_text=jd_text)
+                        if should_drop_raw:
+                            print(f"   🛑 [{worker_tag}] Filtered by Pre-Extraction Guard: {raw_reason} (0 AI tokens used!)\n")
+                            async with db_lock:
+                                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {raw_reason}")
+                                conn.commit()
+                            queue.task_done()
+                            continue
 
-                    active_model_name = groq_manager.active_model.split('/')[-1]
-                    print(f"   🧠 Extracting structured details with Groq ({active_model_name})...")
-                    details = await extract_job_details_with_llm(title, jd_text)
+                        details = await extract_job_details_with_llm(title, jd_text, preferred_key_idx=worker_id)
+                        if not details:
+                            print(f"   ⚠️ [{worker_tag}] Extraction failed to parse valid JSON.\n")
+                            async with db_lock:
+                                update_job(url, conn, rank="ERROR", reason="Failed to parse structured JD JSON.", status="NA")
+                                conn.commit()
+                            queue.task_done()
+                            continue
 
-                    # 2. Post-Extraction Guard: Filter out immediately
-                    if details:
+                        # 2. Post-Extraction Guard
                         should_drop_det, det_reason = evaluate_deep_jd_filter(title, jd_text=jd_text, details=details)
                         if should_drop_det:
-                            print(f"   🛑 Filtered out by Deep Filter: {det_reason} (Saved AI ranking tokens!)")
-                            return "IGNORE", f"[Deep JD Filter] {det_reason}", details
+                            print(f"   🛑 [{worker_tag}] Filtered out by Deep Filter: {det_reason} (Saved AI ranking tokens!)\n")
+                            async with db_lock:
+                                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {det_reason}", details=details)
+                                conn.commit()
+                            queue.task_done()
+                            continue
 
                         if auto_rank:
-                            print(f"   ✅ Structured JD Extracted.")
-                            active_model_name = groq_manager.active_model.split('/')[-1]
-                            print(f"   🧠 Ranking candidate fit with Groq ({active_model_name})...")
+                            print(f"   ✅ [{worker_tag}] Structured JD Extracted.")
+                            active_model_name = groq_manager.active_model.split("/")[-1]
+                            print(f"   🧠 [{worker_tag}] Ranking candidate fit with Groq ({active_model_name})...")
                             rank, reason = await evaluate_job_with_llm(details, "", title)
-                            print(f"   📊 AI Result: {rank} - {reason}")
+                            print(f"   📊 [{worker_tag}] AI Result: {rank} - {reason}\n")
                             ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
                             if isinstance(details, dict):
                                 details["ai_evaluated"] = True
-                            return rank, ai_reason, details
+                            async with db_lock:
+                                update_job(url, conn, rank=rank, reason=ai_reason, status="New" if rank != "IGNORE" else "NA", details=details)
+                                conn.commit()
                         else:
-                            print(f"   ✅ Structured JD Extracted and saved to DB.")
-                            return "UNKNOWN", "[JD Extracted] Ready for Deep Filter / AI Ranking", details
-                    else:
-                        print(f"   ⚠️ Extraction failed to parse valid JSON.")
-                        return "ERROR", "Failed to parse structured JD JSON.", None
+                            print(f"   ✅ [{worker_tag}] Structured JD Extracted and saved to DB.\n")
+                            async with db_lock:
+                                update_job(url, conn, rank="UNKNOWN", reason="[JD Extracted] Ready for Deep Filter / AI Ranking", status="New", details=details)
+                                conn.commit()
 
-                rank, reason, details = await asyncio.wait_for(fetch_and_extract(), timeout=90)
-                new_status = "NA" if rank in ("IGNORE", "ERROR") else "New"
-                update_job(url, conn, rank=rank, reason=reason, status=new_status,
-                           **({"details": details} if details else {}))
-                conn.commit()
-                print()
+                    except asyncio.TimeoutError:
+                        print(f"   ⚠️ [{worker_tag}] Timeout error: Took too long to process.\n")
+                        async with db_lock:
+                            update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.", status="NA")
+                            conn.commit()
+                    except Exception as e:
+                        print(f"   ⚠️ [{worker_tag}] Error: {e}\n")
+                        async with db_lock:
+                            update_job(url, conn, rank="ERROR", reason=f"Exception: {str(e)}")
+                            conn.commit()
 
-            except asyncio.TimeoutError:
-                print(f"   ⚠️ Timeout error: Took too long to process.\n")
-                update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.", status="NA")
-                conn.commit()
-            except Exception as e:
-                print(f"   ⚠️ Error: {e}\n")
-                update_job(url, conn, rank="ERROR", reason=f"Exception: {str(e)}")
-                conn.commit()
+                    queue.task_done()
+
             finally:
-                await page.close()
+                if worker_page:
+                    try:
+                        await worker_page.close()
+                    except Exception:
+                        pass
+
+        worker_tasks = [asyncio.create_task(worker(w_id)) for w_id in range(concurrency)]
+        await asyncio.gather(*worker_tasks)
 
         await context.close()
         await browser.close()
@@ -749,40 +780,57 @@ async def rank_clean_jobs(conn=None):
     candidate_items.sort(key=lambda x: x[0])
     processed = 0
 
+    db_lock = asyncio.Lock()
+    queue = asyncio.Queue()
     for index, (prio, url, data) in enumerate(candidate_items):
-        if os.path.exists("stop.flag"):
-            print("🛑 Pause requested. Exiting gracefully...")
+        queue.put_nowait((index, prio, url, data))
+
+    concurrency = min(max(len(groq_manager.keys), 1), 3)
+
+    async def rank_worker(worker_id: int):
+        nonlocal processed
+        worker_tag = f"Worker {worker_id + 1}"
+        while not queue.empty():
+            if os.path.exists("stop.flag"):
+                print(f"🛑 [{worker_tag}] Pause requested. Exiting...")
+                break
             try:
-                os.remove("stop.flag")
-            except Exception:
-                pass
-            break
+                index, prio, url, data = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
-        title = data.get("title", "Unknown")
-        details = data.get("details")
-        tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
-        print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} AI Ranking: {title}")
+            title = data.get("title", "Unknown")
+            details = data.get("details")
+            tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
+            print(f"[{index + 1}/{len(candidate_items)}] [{worker_tag}] {tier_badge} AI Ranking: {title}")
 
-        # Guard check before spending ranking tokens
-        should_drop, drop_reason = evaluate_deep_jd_filter(title, details=details)
-        if should_drop:
-            print(f"   🛑 Filtered by Deep Guard: {drop_reason} (Saved AI ranking tokens!)\n")
-            update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {drop_reason}", details=details)
-            conn.commit()
-            continue
+            # Guard check before spending ranking tokens
+            should_drop, drop_reason = evaluate_deep_jd_filter(title, details=details)
+            if should_drop:
+                print(f"   🛑 [{worker_tag}] Filtered by Deep Guard: {drop_reason} (Saved AI ranking tokens!)\n")
+                async with db_lock:
+                    update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {drop_reason}", details=details)
+                    conn.commit()
+                queue.task_done()
+                continue
 
-        active_model_name = groq_manager.active_model.split('/')[-1]
-        print(f"   🧠 Ranking candidate fit with Groq ({active_model_name})...")
-        rank, reason = await evaluate_job_with_llm(details, "", title)
+            active_model_name = groq_manager.active_model.split("/")[-1]
+            print(f"   🧠 [{worker_tag}] Ranking candidate fit with Groq ({active_model_name})...")
+            rank, reason = await evaluate_job_with_llm(details, "", title)
 
-        print(f"   📊 AI Result: {rank} - {reason}\n")
-        new_status = "NA" if rank == "IGNORE" else "New"
-        ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
-        if details and isinstance(details, dict):
-            details["ai_evaluated"] = True
-        update_job(url, conn, rank=rank, reason=ai_reason, status=new_status, details=details)
-        conn.commit()
-        processed += 1
+            print(f"   📊 [{worker_tag}] AI Result: {rank} - {reason}\n")
+            new_status = "NA" if rank == "IGNORE" else "New"
+            ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
+            if details and isinstance(details, dict):
+                details["ai_evaluated"] = True
+            async with db_lock:
+                update_job(url, conn, rank=rank, reason=ai_reason, status=new_status, details=details)
+                conn.commit()
+                processed += 1
+            queue.task_done()
+
+    rank_tasks = [asyncio.create_task(rank_worker(w_id)) for w_id in range(concurrency)]
+    await asyncio.gather(*rank_tasks)
 
     print(f"✅ AI Ranking completed for {processed} clean jobs!")
     if close_conn:
@@ -901,164 +949,186 @@ async def process_stream_pipeline(conn=None):
                 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
 
+        db_lock = asyncio.Lock()
+        queue = asyncio.Queue()
         for index, (prio, url, data) in enumerate(candidate_items):
-            if os.path.exists("stop.flag"):
-                print("🛑 Pause requested. Exiting gracefully...")
-                try:
-                    os.remove("stop.flag")
-                except Exception:
-                    pass
-                break
+            queue.put_nowait((index, prio, url, data))
 
-            title = data.get("title", "Unknown")
-            details = data.get("details")
-            location = (details or {}).get("location", "") if isinstance(details, dict) else ""
-            tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
+        num_gemini_keys = len(gemini_manager.clients) if (gemini_manager and gemini_manager.is_available()) else 1
+        concurrency = min(max(num_gemini_keys, 2), 3)
 
-            # Fast deterministic pre-check on title/location
-            should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
-            if should_ignore:
-                print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} {title}")
-                print(f"   🛑 Filtered out by Title/Location: {ignore_reason} (0 tokens used!)\n")
-                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deterministic] {ignore_reason}")
-                conn.commit()
-                processed_filtered += 1
-                continue
+        print(f"⚡ Spawning {concurrency} parallel workers for concurrent Gemini extraction & Groq ranking...\n")
 
-            # ─────────────────────────────────────────────────────────────
-            # STEP 1: FIND / EXTRACT JD
-            # ─────────────────────────────────────────────────────────────
-            jd_text = ""
-            if has_structured_jd(details):
-                if isinstance(details, str):
+        async def worker(worker_id: int):
+            nonlocal processed_ranked, processed_filtered
+            worker_tag = f"Worker {worker_id + 1}"
+            gemini_key_tag = f"Gemini Key #{worker_id + 1}"
+            worker_page = None
+
+            try:
+                while not queue.empty():
+                    if os.path.exists("stop.flag"):
+                        print(f"🛑 [{worker_tag}] Pause requested. Exiting...")
+                        break
+
                     try:
-                        details = json.loads(details)
+                        index, prio, url, data = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                    title = data.get("title", "Unknown")
+                    details = data.get("details")
+                    location = (details or {}).get("location", "") if isinstance(details, dict) else ""
+                    tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
+
+                    # Fast deterministic pre-check on title/location
+                    should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
+                    if should_ignore:
+                        print(f"[{index + 1}/{len(candidate_items)}] [{worker_tag}] {tier_badge} {title}")
+                        print(f"   🛑 Filtered out by Title/Location: {ignore_reason} (0 tokens used!)\n")
+                        async with db_lock:
+                            update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deterministic] {ignore_reason}")
+                            conn.commit()
+                            processed_filtered += 1
+                        queue.task_done()
+                        continue
+
+                    # ─────────────────────────────────────────────────────────────
+                    # STEP 1: FIND / EXTRACT JD
+                    # ─────────────────────────────────────────────────────────────
+                    jd_text = ""
+                    if has_structured_jd(details):
+                        if isinstance(details, str):
+                            try:
+                                details = json.loads(details)
+                            except Exception:
+                                pass
+                        print(f"[{index + 1}/{len(candidate_items)}] [{worker_tag}] {tier_badge} [Cached JD] Evaluating: {title}")
+                    else:
+                        if not worker_page and context:
+                            worker_page = await context.new_page()
+                            await Stealth().apply_stealth_async(worker_page)
+                            worker_page.set_default_timeout(30000)
+
+                        print(f"[{index + 1}/{len(candidate_items)}] [{worker_tag} | {gemini_key_tag}] {tier_badge} Extracting & Evaluating: {title}")
+                        try:
+                            try:
+                                await worker_page.goto(url, wait_until="networkidle", timeout=20000)
+                            except Exception:
+                                try:
+                                    await worker_page.goto(url, wait_until="domcontentloaded", timeout=10000)
+                                except Exception:
+                                    await asyncio.sleep(2)
+
+                            await worker_page.wait_for_timeout(2000)
+                            raw_text = await worker_page.inner_text("body", timeout=10000)
+                            jd_text = clean_text(raw_text)[:2800]
+
+                            if len(jd_text) < 100:
+                                fallback_text = await worker_page.evaluate("""() => {
+                                    return Array.from(document.querySelectorAll('p, li, div, span'))
+                                        .map(el => el.innerText)
+                                        .join(' ');
+                                }""")
+                                jd_text = clean_text(fallback_text)[:2800]
+
+                            if len(jd_text) < 100:
+                                for frame in worker_page.frames:
+                                    if frame != worker_page.main_frame:
+                                        try:
+                                            frame_text = await frame.inner_text("body", timeout=3000)
+                                            frame_clean = clean_text(frame_text)
+                                            if len(frame_clean) > len(jd_text):
+                                                jd_text = frame_clean[:2800]
+                                        except Exception:
+                                            pass
+
+                            if len(jd_text) < 100:
+                                print(f"   ⚠️ [{worker_tag}] Could not extract text from page (<100 chars). Skipped.\n")
+                                async with db_lock:
+                                    update_job(url, conn, rank="ERROR", status="NA", reason="Failed to extract meaningful text.")
+                                    conn.commit()
+                                queue.task_done()
+                                continue
+
+                            # Pre-Extraction Guard: Check raw JD text before spending extraction LLM tokens
+                            should_drop_raw, raw_reason = evaluate_deep_jd_filter(title, jd_text=jd_text)
+                            if should_drop_raw:
+                                print(f"   🛑 [{worker_tag}] Filtered by Pre-Extraction Guard: {raw_reason} (0 AI tokens used!)\n")
+                                async with db_lock:
+                                    update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {raw_reason}")
+                                    conn.commit()
+                                    processed_filtered += 1
+                                queue.task_done()
+                                continue
+
+                            details = await extract_job_details_with_llm(title, jd_text, preferred_key_idx=worker_id)
+                            if not details:
+                                print(f"   ⚠️ [{worker_tag}] Extraction failed to parse valid JSON.\n")
+                                async with db_lock:
+                                    update_job(url, conn, rank="ERROR", status="NA", reason="Failed to parse structured JD JSON.")
+                                    conn.commit()
+                                queue.task_done()
+                                continue
+                            print(f"   ✅ [{worker_tag}] Structured JD Extracted.")
+                        except asyncio.TimeoutError:
+                            print(f"   ⚠️ [{worker_tag}] Timeout error: Took too long to load page.\n")
+                            async with db_lock:
+                                update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.", status="NA")
+                                conn.commit()
+                            queue.task_done()
+                            continue
+                        except Exception as e:
+                            print(f"   ⚠️ [{worker_tag}] Page Fetch Error: {e}\n")
+                            async with db_lock:
+                                update_job(url, conn, rank="ERROR", reason=f"Exception: {str(e)}")
+                                conn.commit()
+                            queue.task_done()
+                            continue
+
+                    # ─────────────────────────────────────────────────────────────
+                    # STEP 2: FILTER OUT IMMEDIATELY
+                    # ─────────────────────────────────────────────────────────────
+                    should_drop_det, det_reason = evaluate_deep_jd_filter(title, jd_text=jd_text, details=details)
+                    if should_drop_det:
+                        print(f"   🛑 [{worker_tag}] Filtered by Deep Filter: {det_reason} (Saved AI ranking tokens!)\n")
+                        async with db_lock:
+                            update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {det_reason}",
+                                       **({"details": details} if details else {}))
+                            conn.commit()
+                            processed_filtered += 1
+                        queue.task_done()
+                        continue
+
+                    # ─────────────────────────────────────────────────────────────
+                    # STEP 3: IF NOT FILTERED OUT ➔ APPLY AI RANKING IMMEDIATELY
+                    # ─────────────────────────────────────────────────────────────
+                    active_model_name = groq_manager.active_model.split("/")[-1]
+                    print(f"   🧠 [{worker_tag}] Ranking candidate fit with Groq ({active_model_name})...")
+                    rank, reason = await evaluate_job_with_llm(details, "", title)
+                    print(f"   📊 [{worker_tag}] AI Result: {rank} - {reason}\n")
+
+                    new_status = "NA" if rank == "IGNORE" else "New"
+                    ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
+                    if isinstance(details, dict):
+                        details["ai_evaluated"] = True
+
+                    async with db_lock:
+                        update_job(url, conn, rank=rank, reason=ai_reason, status=new_status,
+                                   **({"details": details} if details else {}))
+                        conn.commit()
+                        processed_ranked += 1
+                    queue.task_done()
+
+            finally:
+                if worker_page:
+                    try:
+                        await worker_page.close()
                     except Exception:
                         pass
-                print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} [Cached JD] Evaluating: {title}")
-            else:
-                if not context and playwright_instance:
-                    browser = await playwright_instance.chromium.launch(headless=True)
-                    context = await browser.new_context(
-                        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                    )
-                elif not playwright_instance:
-                    playwright_instance = await async_playwright().start()
-                    browser = await playwright_instance.chromium.launch(headless=True)
-                    context = await browser.new_context(
-                        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                    )
 
-                browser_extract_count += 1
-                if browser_extract_count > 1 and browser_extract_count % 50 == 0:
-                    await context.close()
-                    context = await browser.new_context(
-                        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                    )
-
-                print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} Extracting & Evaluating: {title}")
-                page = await context.new_page()
-                await Stealth().apply_stealth_async(page)
-                page.set_default_timeout(30000)
-
-                try:
-                    try:
-                        await page.goto(url, wait_until="networkidle", timeout=20000)
-                    except Exception:
-                        try:
-                            await page.goto(url, wait_until="domcontentloaded", timeout=10000)
-                        except Exception:
-                            await asyncio.sleep(2)
-
-                    await page.wait_for_timeout(3000)
-                    raw_text = await page.inner_text("body", timeout=10000)
-                    jd_text = clean_text(raw_text)[:2800]
-
-                    if len(jd_text) < 100:
-                        fallback_text = await page.evaluate("""() => {
-                            return Array.from(document.querySelectorAll('p, li, div, span'))
-                                .map(el => el.innerText)
-                                .join(' ');
-                        }""")
-                        jd_text = clean_text(fallback_text)[:2800]
-
-                    if len(jd_text) < 100:
-                        for frame in page.frames:
-                            if frame != page.main_frame:
-                                try:
-                                    frame_text = await frame.inner_text("body", timeout=3000)
-                                    frame_clean = clean_text(frame_text)
-                                    if len(frame_clean) > len(jd_text):
-                                        jd_text = frame_clean[:2800]
-                                except Exception:
-                                    pass
-
-                    if len(jd_text) < 100:
-                        print(f"   ⚠️ Could not extract text from page (<100 chars). Skipped.\n")
-                        update_job(url, conn, rank="ERROR", status="NA", reason="Failed to extract meaningful text.")
-                        conn.commit()
-                        continue
-
-                    # Pre-Extraction Guard: Check raw JD text before spending extraction LLM tokens
-                    should_drop_raw, raw_reason = evaluate_deep_jd_filter(title, jd_text=jd_text)
-                    if should_drop_raw:
-                        print(f"   🛑 Filtered by Pre-Extraction Guard: {raw_reason} (0 AI tokens used!)\n")
-                        update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {raw_reason}")
-                        conn.commit()
-                        processed_filtered += 1
-                        continue
-
-                    active_model_name = groq_manager.active_model.split('/')[-1]
-                    print(f"   🧠 Extracting structured details with Groq ({active_model_name})...")
-                    details = await extract_job_details_with_llm(title, jd_text)
-                    if not details:
-                        print(f"   ⚠️ Extraction failed to parse valid JSON.\n")
-                        update_job(url, conn, rank="ERROR", status="NA", reason="Failed to parse structured JD JSON.")
-                        conn.commit()
-                        continue
-                    print(f"   ✅ Structured JD Extracted.")
-                except asyncio.TimeoutError:
-                    print(f"   ⚠️ Timeout error: Took too long to process.\n")
-                    update_job(url, conn, rank="ERROR", reason="Timeout while processing job page.", status="NA")
-                    conn.commit()
-                    continue
-                except Exception as e:
-                    print(f"   ⚠️ Extraction Error: {e}\n")
-                    update_job(url, conn, rank="ERROR", reason=f"Exception: {str(e)}")
-                    conn.commit()
-                    continue
-                finally:
-                    await page.close()
-
-            # ─────────────────────────────────────────────────────────────
-            # STEP 2: FILTER OUT IMMEDIATELY
-            # ─────────────────────────────────────────────────────────────
-            should_drop_det, det_reason = evaluate_deep_jd_filter(title, jd_text=jd_text, details=details)
-            if should_drop_det:
-                print(f"   🛑 Filtered by Deep Filter: {det_reason} (Saved AI ranking tokens!)\n")
-                update_job(url, conn, rank="IGNORE", status="NA", reason=f"[Deep JD Filter] {det_reason}",
-                           **({"details": details} if details else {}))
-                conn.commit()
-                processed_filtered += 1
-                continue
-
-            # ─────────────────────────────────────────────────────────────
-            # STEP 3: IF NOT FILTERED OUT ➔ APPLY AI RANKING IMMEDIATELY
-            # ─────────────────────────────────────────────────────────────
-            active_model_name = groq_manager.active_model.split('/')[-1]
-            print(f"   🧠 Ranking candidate fit with Groq ({active_model_name})...")
-            rank, reason = await evaluate_job_with_llm(details, "", title)
-            print(f"   📊 AI Result: {rank} - {reason}\n")
-
-            new_status = "NA" if rank == "IGNORE" else "New"
-            ai_reason = f"[AI Verified] {reason}" if not (reason.startswith("[AI") or reason.startswith("AI:")) else reason
-            if isinstance(details, dict):
-                details["ai_evaluated"] = True
-
-            update_job(url, conn, rank=rank, reason=ai_reason, status=new_status,
-                       **({"details": details} if details else {}))
-            conn.commit()
-            processed_ranked += 1
+        worker_tasks = [asyncio.create_task(worker(w_id)) for w_id in range(concurrency)]
+        await asyncio.gather(*worker_tasks)
 
     finally:
         if context:

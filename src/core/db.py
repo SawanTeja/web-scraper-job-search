@@ -19,7 +19,7 @@ DB_FILE = os.environ.get("JOBS_DB_PATH", os.path.join(ROOT_DIR, "jobs_db.sqlite"
 def get_conn(db_path=None):
     """Open (and return) a SQLite connection with WAL mode for concurrency."""
     target_db = db_path or DB_FILE
-    conn = sqlite3.connect(target_db, check_same_thread=False)
+    conn = sqlite3.connect(target_db, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")   # allows concurrent reads while writing
     conn.execute("PRAGMA synchronous=NORMAL") # safe but faster than FULL
