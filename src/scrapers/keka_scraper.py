@@ -388,8 +388,17 @@ def run_keka_discovery_and_scrape(
                 tier_res = categorize_job_tier(title=title, location=loc)
 
                 tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
-                if ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only")) and tier_res.get("tier") != 1:
-                    continue
+                is_tier1_mode = ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only"))
+                if is_tier1_mode:
+                    if tier_res.get("tier") != 1:
+                        continue
+                    status = tier_res["status"]
+                    rank = tier_res["rank"]
+                    reason = tier_res["reason"]
+                else:
+                    status = "New"
+                    rank = "UNKNOWN"
+                    reason = ""
 
                 details = {"location": loc} if loc else None
 
@@ -397,9 +406,9 @@ def run_keka_discovery_and_scrape(
                     url=url,
                     title=f"{comp_name} - {title}" if comp_name not in title else title,
                     conn=conn,
-                    status=tier_res["status"],
-                    rank=tier_res["rank"],
-                    reason=tier_res["reason"],
+                    status=status,
+                    rank=rank,
+                    reason=reason,
                     added_at=now_iso,
                     company=comp_name,
                     ats_platform=plat,

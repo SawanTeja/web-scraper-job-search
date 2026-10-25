@@ -345,26 +345,12 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
                                         except Exception:
                                             pass
 
-                                    # Deterministic Smart Tiering (Tier 1 HIGH, Tier 2 SWE, Tier 3 IGNORE)
-                                    try:
-                                        from src.ranking.job_filter import categorize_job_tier
-                                    except ImportError:
-                                        try:
-                                            from ranking.job_filter import categorize_job_tier
-                                        except ImportError:
-                                            from job_filter import categorize_job_tier
-                                    tier_res = categorize_job_tier(title=title)
-
-                                    tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
-                                    if ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only")) and tier_res.get("tier") != 1:
-                                        continue
-
-                                    # Write directly to SQLite
+                                    # Save every unique job found (no tier filtering during Google scrape)
                                     inserted = insert_or_ignore_job(
                                         final_url, title, conn,
-                                        status=tier_res["status"],
-                                        rank=tier_res["rank"],
-                                        reason=tier_res["reason"],
+                                        status="New",
+                                        rank="UNKNOWN",
+                                        reason="",
                                         company=comp_name,
                                         ats_platform=plat
                                     )

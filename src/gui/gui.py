@@ -1297,12 +1297,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text(msg)
 
     def on_scrape_clicked(self, button):
-        active_mode = self.get_active_tier_mode_label()
         dialog = Gtk.MessageDialog(
             transient_for=self,
             message_type=Gtk.MessageType.QUESTION,
             text="Select Scraping Speed",
-            secondary_text=f"Current Scope: {active_mode}\nChoose scraper speed."
+            secondary_text="Choose scraper speed. Google scraper collects all unique jobs and companies for your ATS pool."
         )
         dialog.add_button("⚡ Fast", 1)
         dialog.add_button("🚶 Medium (Default)", 2)
@@ -1322,8 +1321,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         elif response_id == 3:
             script_name = "intern_scraper_overnight.py"
 
-        tier_label = self.get_active_tier_mode_label()
-        self.status_label.set_text(f"Scraping started ({script_name} | {tier_label})... (Check terminal output for progress)")
+        self.status_label.set_text(f"Google Scraper started ({script_name})... (Check terminal output for progress)")
         self.scrape_btn.set_sensitive(False)
         thread = threading.Thread(target=self.run_scraper, args=(script_name,))
         thread.daemon = True
@@ -1335,15 +1333,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
-            env = dict(os.environ)
-            tier_mode = self.get_active_tier_mode()
-            env["SCRAPER_TIER_MODE"] = tier_mode
-
             cmd = [venv_python, resolve_script_path(script_name)]
-            if tier_mode == "tier1":
-                cmd.append("--tier1-only")
 
-            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
+            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=dict(os.environ))
             process.wait()
             GLib.idle_add(self.on_scrape_finished, process.returncode == 0)
         except Exception as e:

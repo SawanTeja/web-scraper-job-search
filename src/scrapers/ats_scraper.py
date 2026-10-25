@@ -512,12 +512,17 @@ def run_ats_scraper(filter_tech: bool = True, max_workers: int = 15) -> int:
                 tier_res = categorize_job_tier(title=title, location=clean_loc)
                 
                 tier_mode = os.environ.get("SCRAPER_TIER_MODE", "all").lower()
-                if ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only")) and tier_res.get("tier") != 1:
-                    continue
-
-                initial_rank = tier_res["rank"]
-                initial_status = tier_res["status"]
-                initial_reason = tier_res["reason"]
+                is_tier1_mode = ("--tier1-only" in sys.argv or tier_mode in ("tier1", "tier1_only"))
+                if is_tier1_mode:
+                    if tier_res.get("tier") != 1:
+                        continue
+                    initial_rank = tier_res["rank"]
+                    initial_status = tier_res["status"]
+                    initial_reason = tier_res["reason"]
+                else:
+                    initial_rank = "UNKNOWN"
+                    initial_status = "New"
+                    initial_reason = ""
                 details_blob = {"location": clean_loc} if clean_loc else None
 
                 inserted = insert_or_ignore_job(
