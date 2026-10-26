@@ -3,6 +3,7 @@ import re
 import json
 import os
 import random
+import time
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
@@ -464,7 +465,7 @@ def reset_failed_extraction_jobs(conn=None) -> int:
     cursor = conn.execute("""
         UPDATE jobs
         SET status = 'New', rank = 'UNKNOWN', reason = ''
-        WHERE rank = 'ERROR' AND status = 'NA'
+        WHERE rank = 'ERROR'
     """)
     updated = cursor.rowcount
     conn.commit()
