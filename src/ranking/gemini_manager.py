@@ -1,10 +1,9 @@
 """
 Gemini API Manager for Structured Job Description Extraction.
 
-Provides multi-key rotation and multi-model fallback across Google Gemini models:
+Provides multi-key rotation and multi-model fallback across ultra-fast Google Gemini models:
 - Primary: gemini-3.5-flash-lite (500 RPD, 250k TPM)
 - Secondary: gemini-3.1-flash-lite (500 RPD, 250k TPM)
-- Tertiary: gemini-3.5-flash (20 RPD)
 
 When Gemini keys are exhausted or unavailable, the caller automatically falls back
 to Groq for JD extraction.
@@ -54,7 +53,6 @@ class GeminiManager:
     GEMINI_MODELS = [
         "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
-        "gemini-3.5-flash",
     ]
 
     def __init__(self):

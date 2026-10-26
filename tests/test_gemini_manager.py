@@ -44,6 +44,12 @@ class TestGeminiManager(unittest.TestCase):
         self.assertEqual(gm.active_model, "gemini-3.1-flash-lite")
         self.assertEqual(len(gm.daily_exhausted_keys), 0)
 
+        # Mark both keys exhausted on secondary model -> all Gemini models exhausted (falls back to Groq)
+        gm.mark_current_key_exhausted()
+        gm.mark_current_key_exhausted()
+        self.assertTrue(gm.all_exhausted)
+        self.assertFalse(gm.is_available())
+
     @patch("src.ranking.gemini_manager.genai.Client")
     @patch.dict(os.environ, {
         "GEMINI_API_KEY_1": "mock_key_1",
