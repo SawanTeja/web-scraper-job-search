@@ -455,6 +455,104 @@ def has_structured_jd(details) -> bool:
     return any(k in details for k in schema_fields)
 
 
+def reset_failed_extraction_jobs(conn=None) -> int:
+    """Reset jobs that previously encountered Playwright extraction errors or timeouts back to New/UNKNOWN."""
+    close_after = False
+    if conn is None:
+        conn = get_conn()
+        close_after = True
+    cursor = conn.execute("""
+        UPDATE jobs
+        SET status = 'New', rank = 'UNKNOWN', reason = ''
+        WHERE rank = 'ERROR' AND status = 'NA'
+    """)
+    updated = cursor.rowcount
+    conn.commit()
+    if close_after:
+        conn.close()
+    return updated
+
+
+async def fetch_job_text_adaptive(page, url: str, max_chars: int = 2800) -> str:
+    """
+    Fast adaptive job page text extractor.
+    - Loads with 'domcontentloaded' (fast initial load, ~0.5s - 1.0s).
+    - Checks immediately for static pages (finishes in <0.5s).
+    - If < 250 chars (Single Page Applications like Workday/Taleo/React SPAs),
+      adaptively waits for ATS selectors or polls until text >= 250 chars (up to 3.5s).
+    - Checks child frames if main body is still empty.
+    - Truncates to max_chars to preserve prompt tokens.
+    """
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=10000)
+    except Exception:
+        try:
+            await page.goto(url, wait_until="commit", timeout=6000)
+        except Exception:
+            pass
+
+    # Quick initial snapshot
+    await page.wait_for_timeout(400)
+    try:
+        raw_text = await page.inner_text("body", timeout=5000)
+    except Exception:
+        raw_text = ""
+    jd_text = clean_text(raw_text)
+
+    # If < 250 chars (typical for SPAs / Workday still loading skeleton), wait adaptively
+    if len(jd_text) < 250:
+        ats_selectors = (
+            '[data-automation-id="jobPostingDescription"], '
+            '[data-automation-id="jobPostingHeader"], '
+            '[class*="job-description"], [class*="jobDescription"], '
+            '[class*="posting"], [id*="job"], main, article'
+        )
+        try:
+            await page.wait_for_selector(ats_selectors, timeout=3000)
+        except Exception:
+            pass
+
+        # Poll until text is substantial (>= 250 chars) or timeout expires
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            try:
+                raw_text = await page.inner_text("body", timeout=3000)
+                jd_text = clean_text(raw_text)
+                if len(jd_text) >= 250:
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.3)
+
+    # Fallback to querySelectorAll if still short
+    if len(jd_text) < 100:
+        try:
+            fallback_text = await page.evaluate("""() => {
+                return Array.from(document.querySelectorAll('p, li, div, span'))
+                    .map(el => el.innerText)
+                    .join(' ');
+            }""")
+            fallback_clean = clean_text(fallback_text)
+            if len(fallback_clean) > len(jd_text):
+                jd_text = fallback_clean
+        except Exception:
+            pass
+
+    # Frame fallback for iCIMS or embed frames
+    if len(jd_text) < 100:
+        for frame in page.frames:
+            if frame != page.main_frame:
+                try:
+                    frame_text = await frame.inner_text("body", timeout=2500)
+                    frame_clean = clean_text(frame_text)
+                    if len(frame_clean) > len(jd_text):
+                        jd_text = frame_clean
+                except Exception:
+                    pass
+
+    return jd_text[:max_chars]
+
+
 async def extract_structured_jds(conn=None, auto_rank: bool = True):
     """
     Stage 1 Pipeline:
@@ -550,9 +648,9 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
 
-        # Route optimization: Abort heavy images, videos, media, and fonts
+        # Route optimization: Abort heavy images, videos, and media (keep fonts for SPAs)
         async def block_heavy_resources(route):
-            if route.request.resource_type in ("image", "media", "font", "imageset"):
+            if route.request.resource_type in ("image", "media", "imageset"):
                 await route.abort()
             else:
                 await route.continue_()
@@ -583,38 +681,7 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
                 continue
 
             try:
-                # Speedup: domcontentloaded with 8s timeout instead of networkidle with 20s
-                try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=8000)
-                except Exception:
-                    try:
-                        await page.goto(url, wait_until="commit", timeout=5000)
-                    except Exception:
-                        await asyncio.sleep(0.5)
-
-                # Speedup: 500ms artificial sleep instead of 2000ms
-                await page.wait_for_timeout(500)
-                raw_text = await page.inner_text("body", timeout=8000)
-                jd_text = clean_text(raw_text)[:2800]
-
-                if len(jd_text) < 100:
-                    fallback_text = await page.evaluate("""() => {
-                        return Array.from(document.querySelectorAll('p, li, div, span'))
-                            .map(el => el.innerText)
-                            .join(' ');
-                    }""")
-                    jd_text = clean_text(fallback_text)[:2800]
-
-                if len(jd_text) < 100:
-                    for frame in page.frames:
-                        if frame != page.main_frame:
-                            try:
-                                frame_text = await frame.inner_text("body", timeout=3000)
-                                frame_clean = clean_text(frame_text)
-                                if len(frame_clean) > len(jd_text):
-                                    jd_text = frame_clean[:2800]
-                            except Exception:
-                                pass
+                jd_text = await fetch_job_text_adaptive(page, url, max_chars=2800)
 
                 if len(jd_text) < 100:
                     print(f"   ⚠️ Could not extract text from page (<100 chars). Skipped.\n")
@@ -892,9 +959,9 @@ async def process_stream_pipeline(conn=None):
                 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
 
-            # Route optimization: Abort heavy images, videos, media, and fonts
+            # Route optimization: Abort heavy images, videos, and media (keep fonts for SPAs)
             async def block_heavy_resources(route):
-                if route.request.resource_type in ("image", "media", "font", "imageset"):
+                if route.request.resource_type in ("image", "media", "imageset"):
                     await route.abort()
                 else:
                     await route.continue_()
@@ -941,38 +1008,7 @@ async def process_stream_pipeline(conn=None):
                 print(f"[{index + 1}/{len(candidate_items)}] [{gemini_key_tag}] {tier_badge} Extracting & Evaluating: {title}")
 
                 try:
-                    # Speedup: domcontentloaded with 8s timeout instead of networkidle with 20s
-                    try:
-                        await page.goto(url, wait_until="domcontentloaded", timeout=8000)
-                    except Exception:
-                        try:
-                            await page.goto(url, wait_until="commit", timeout=5000)
-                        except Exception:
-                            await asyncio.sleep(0.5)
-
-                    # Speedup: 500ms artificial sleep instead of 2000ms
-                    await page.wait_for_timeout(500)
-                    raw_text = await page.inner_text("body", timeout=8000)
-                    jd_text = clean_text(raw_text)[:2800]
-
-                    if len(jd_text) < 100:
-                        fallback_text = await page.evaluate("""() => {
-                            return Array.from(document.querySelectorAll('p, li, div, span'))
-                                .map(el => el.innerText)
-                                .join(' ');
-                        }""")
-                        jd_text = clean_text(fallback_text)[:2800]
-
-                    if len(jd_text) < 100:
-                        for frame in page.frames:
-                            if frame != page.main_frame:
-                                try:
-                                    frame_text = await frame.inner_text("body", timeout=3000)
-                                    frame_clean = clean_text(frame_text)
-                                    if len(frame_clean) > len(jd_text):
-                                        jd_text = frame_clean[:2800]
-                                except Exception:
-                                    pass
+                    jd_text = await fetch_job_text_adaptive(page, url, max_chars=2800)
 
                     if len(jd_text) < 100:
                         print(f"   ⚠️ Could not extract text from page (<100 chars). Skipped.\n")
@@ -1086,7 +1122,12 @@ if __name__ == "__main__":
     parser.add_argument("--rank", "--rank-only", dest="rank", action="store_true", help="Stage 3: AI Rank clean jobs from DB (No browser required)")
     parser.add_argument("--full", action="store_true", help="Full Pipeline: Extract JDs -> Deep Filter -> AI Rank")
     parser.add_argument("--tier1-only", action="store_true", help="Only process Tier 1 (Early Career / Intern / High Priority) jobs to save tokens")
+    parser.add_argument("--reset-errors", action="store_true", help="Reset jobs with extraction errors/timeouts back to New/UNKNOWN for re-evaluation")
     args = parser.parse_args()
+
+    if args.reset_errors:
+        num = reset_failed_extraction_jobs()
+        print(f"🔄 Reset {num} error/timeout jobs back to New/UNKNOWN.")
 
     if args.tier1_only:
         os.environ["SCRAPER_TIER_MODE"] = "tier1"
@@ -1095,5 +1136,5 @@ if __name__ == "__main__":
         rank_jobs(mode="extract")
     elif args.rank:
         rank_jobs(mode="rank")
-    else:
+    elif not args.reset_errors:
         rank_jobs(mode="full")

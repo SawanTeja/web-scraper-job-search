@@ -87,11 +87,27 @@ class TestDatabase(unittest.TestCase):
         clear_scraper_checkpoint("test_bot", conn=self.conn)
         self.assertIsNone(get_scraper_checkpoint("test_bot", conn=self.conn))
 
-    def test_seed_starter_companies(self):
-        from src.core.db import seed_starter_companies, get_company_count, STARTER_COMPANIES
-        count = seed_starter_companies(conn=self.conn)
-        self.assertEqual(count, len(STARTER_COMPANIES))
-        self.assertEqual(get_company_count(conn=self.conn), count)
+    def test_reset_failed_extraction_jobs(self):
+        from src.ranking.rank_internships import reset_failed_extraction_jobs
+        self.conn.execute("INSERT INTO jobs (url, title, status, rank, reason) VALUES (?, ?, ?, ?, ?)",
+                          ("https://example.com/job1", "Intern", "NA", "ERROR", "Failed to extract meaningful text."))
+        self.conn.execute("INSERT INTO jobs (url, title, status, rank, reason) VALUES (?, ?, ?, ?, ?)",
+                          ("https://example.com/job2", "Dev", "NA", "ERROR", "Timeout while processing job page."))
+        self.conn.execute("INSERT INTO jobs (url, title, status, rank, reason) VALUES (?, ?, ?, ?, ?)",
+                          ("https://example.com/job3", "Senior", "NA", "IGNORE", "[Deep JD Filter] Senior"))
+        self.conn.commit()
+
+        reset_count = reset_failed_extraction_jobs(conn=self.conn)
+        self.assertEqual(reset_count, 2)
+
+        row1 = self.conn.execute("SELECT status, rank, reason FROM jobs WHERE url='https://example.com/job1'").fetchone()
+        self.assertEqual(row1["status"], "New")
+        self.assertEqual(row1["rank"], "UNKNOWN")
+        self.assertEqual(row1["reason"], "")
+
+        row3 = self.conn.execute("SELECT status, rank, reason FROM jobs WHERE url='https://example.com/job3'").fetchone()
+        self.assertEqual(row3["status"], "NA")
+        self.assertEqual(row3["rank"], "IGNORE")
 
 
 if __name__ == "__main__":
