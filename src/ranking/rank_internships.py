@@ -176,6 +176,10 @@ class GroqManager:
                     else:
                         await asyncio.sleep(1) # Small pause before retrying on next key
             except Exception as e:
+                err_str = str(e).lower()
+                if "413" in err_str or "request too large" in err_str:
+                    print(f"   ⚠️ Fatal Request Size Error: Prompt exceeds model input token limits ({e}). Skipping retries.")
+                    return None
                 print(f"   ⚠️ API Error on Key #{key_num}/{self.total_keys}: {e}. Retrying {attempt+1}/{max_attempts}...")
                 self.rotate(reason="api-error")
                 await asyncio.sleep(2)
@@ -369,11 +373,15 @@ async def evaluate_job_with_llm(job_details_json, jd_text, job_title):
     """Evaluates the extracted job details or raw text against the candidate profile using Llama-3.3-70B-Versatile."""
     
     if job_details_json:
-        job_info_str = json.dumps(job_details_json, indent=2)
+        job_info_str = json.dumps(job_details_json, indent=2, ensure_ascii=False)
         info_type = "JSON Details"
     else:
         job_info_str = jd_text
         info_type = "Raw Description"
+
+    # Safety cap: Keep job info under 4000 chars to prevent exceeding model ITPM token limits
+    if len(job_info_str) > 4000:
+        job_info_str = job_info_str[:4000]
 
     prompt = f"""
 You are an expert technical recruiter matching candidates to jobs.
