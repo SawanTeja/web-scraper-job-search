@@ -359,6 +359,7 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
     data = extract_json_from_text(result)
 
     if data and validate_job_json(data):
+        print(f"   ✨ Extracted structured JD via Groq ({groq_manager.active_model.split('/')[-1]})")
         return data
     else:
         print(f"   ⚠️ JSON invalid or missing fields during extraction.")
@@ -669,9 +670,11 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
 
             title = data.get("title", "Unknown")
             location = (data.get("details") or {}).get("location", "") if isinstance(data.get("details"), dict) else ""
-            tier_badge = "⭐ [Tier 1 Intern/Junior]" if prio == 0 else "💻 [Tier 2 Tech/SWE]"
-            gemini_key_tag = f"Gemini Key #{gemini_manager.get_current_key_num()}" if (gemini_manager and gemini_manager.is_available()) else "Gemini Key #1"
-            print(f"[{index + 1}/{len(candidate_items)}] [{gemini_key_tag}] {tier_badge} Extracting: {title}")
+            if gemini_manager and gemini_manager.is_available():
+                extractor_tag = f"Gemini Key #{gemini_manager.get_current_key_num()}"
+            else:
+                extractor_tag = f"Groq Extractor #{groq_manager.current_idx + 1}/{groq_manager.total_keys}"
+            print(f"[{index + 1}/{len(candidate_items)}] [{extractor_tag}] {tier_badge} Extracting: {title}")
 
             # Deterministic pre-check on title/location
             should_ignore, ignore_reason = evaluate_deterministic_ignore(title=title, location=location)
@@ -1005,8 +1008,11 @@ async def process_stream_pipeline(conn=None):
                         pass
                 print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} [Cached JD] Evaluating: {title}")
             else:
-                gemini_key_tag = f"Gemini Key #{gemini_manager.get_current_key_num()}" if (gemini_manager and gemini_manager.is_available()) else "Gemini Key #1"
-                print(f"[{index + 1}/{len(candidate_items)}] [{gemini_key_tag}] {tier_badge} Extracting & Evaluating: {title}")
+                if gemini_manager and gemini_manager.is_available():
+                    extractor_tag = f"Gemini Key #{gemini_manager.get_current_key_num()}"
+                else:
+                    extractor_tag = f"Groq Extractor #{groq_manager.current_idx + 1}/{groq_manager.total_keys}"
+                print(f"[{index + 1}/{len(candidate_items)}] [{extractor_tag}] {tier_badge} Extracting & Evaluating: {title}")
 
                 try:
                     jd_text = await fetch_job_text_adaptive(page, url, max_chars=2800)
