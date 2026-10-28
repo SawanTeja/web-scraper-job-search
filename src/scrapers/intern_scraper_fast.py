@@ -23,13 +23,15 @@ for _p in [_SRC_DIR, _ROOT_DIR]:
 try:
     from src.core.db import (
         get_conn, init_db, insert_or_ignore_job, get_all_urls, save_company,
-        save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint
+        save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint,
+        reset_scraper_checkpoint, get_excluded_ats_sites, set_excluded_ats_sites
     )
     from src.scrapers.ats_parser import parse_ats_info
 except ImportError:
     from db import (
         get_conn, init_db, insert_or_ignore_job, get_all_urls, save_company,
-        save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint
+        save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint,
+        reset_scraper_checkpoint, get_excluded_ats_sites, set_excluded_ats_sites
     )
     from ats_parser import parse_ats_info
 
@@ -149,7 +151,7 @@ async def human_scroll_and_move(page):
 # ---------------------------------------------------
 
 
-async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
+async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None, excluded_sites_override=None):
     search_count = 0
     new_jobs_added = 0
     pages_limit = max_pages or MAX_PAGES
@@ -161,6 +163,32 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
     # Load known URLs into an in-memory set for fast duplicate checking.
     unique_jobs = get_all_urls(conn)
     print(f"📦 {len(unique_jobs)} existing jobs loaded (will skip duplicates).\n")
+
+    # Load excluded ATS sites from override, DB, or environment
+    excluded_sites = set()
+    if excluded_sites_override is not None:
+        excluded_sites.update(s.strip().lower() for s in excluded_sites_override if s.strip())
+    else:
+        try:
+            db_ex = get_excluded_ats_sites(conn=conn)
+            excluded_sites.update(s.strip().lower() for s in db_ex if s.strip())
+        except Exception:
+            pass
+        env_ex = os.environ.get("SCRAPER_EXCLUDED_SITES", "")
+        if env_ex:
+            excluded_sites.update(s.strip().lower() for s in env_ex.split(",") if s.strip())
+
+    base_sites = list(sites_override or SITES)
+    sites_list = [s for s in base_sites if s.lower() not in excluded_sites]
+
+    if excluded_sites:
+        print(f"🚫 Excluded ATS Sites ({len(excluded_sites)}): {', '.join(sorted(excluded_sites))}")
+    print(f"🎯 Active ATS Sites ({len(sites_list)}): {', '.join(sites_list)}\n")
+
+    if not sites_list:
+        print("⚠️ All ATS sites are excluded! No searches to perform. Please include at least one ATS site.")
+        conn.close()
+        return 0
 
     # Check for saved progress checkpoint
     checkpoint = get_scraper_checkpoint("google_fast", conn=conn) if resume else None
@@ -175,7 +203,27 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
         print("   (Previously completed sites/queries will be skipped automatically!)")
         print("=" * 65 + "\n")
 
-    sites_list = list(sites_override or SITES)
+        # If checkpoint site is excluded or not in sites_list, advance cleanly to next active site
+        if resume_site not in sites_list:
+            print(f"⚠️ Checkpoint site '{resume_site}' is excluded or not in active list.")
+            if resume_site in SITES:
+                orig_idx = SITES.index(resume_site)
+                subsequent = [s for s in SITES[orig_idx + 1:] if s in sites_list]
+                if subsequent:
+                    resume_site = subsequent[0]
+                    resume_query = None
+                    resume_start = 0
+                    print(f"⏩ Advancing checkpoint to next active site: {resume_site}")
+                else:
+                    print("🔄 All subsequent sites are completed or excluded. Starting from first active site.")
+                    resume_site = sites_list[0]
+                    resume_query = None
+                    resume_start = 0
+            else:
+                resume_site = sites_list[0]
+                resume_query = None
+                resume_start = 0
+
     skip_until_site = resume_site is not None
 
     async with async_playwright() as p:
@@ -206,6 +254,11 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
             print(f"\n=====================================")
             print(f"🏢 TARGETING: {site}")
             print(f"=====================================")
+
+            # If resume_query is not in SEARCH_QUERIES, start from first query for this site
+            if skip_until_site and skip_until_query and resume_query not in SEARCH_QUERIES:
+                print(f"⚠️ Checkpoint query '{resume_query}' not recognized. Starting from first query for {site}.")
+                skip_until_query = False
 
             for query_term in SEARCH_QUERIES:
                 if skip_until_site and skip_until_query:
@@ -380,6 +433,9 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
                 print(f"   🛑 Finished query block. Resting for {query_pause:.0f}s...")
                 await asyncio.sleep(query_pause)
 
+            # Ensure skip_until_site is reset for all subsequent sites
+            skip_until_site = False
+
             # SITE-TO-SITE GAP
             site_pause = random.uniform(20, 30)
             print(f"☕ Finished {site}. Taking a long {site_pause:.0f}s break...")
@@ -393,7 +449,56 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None):
 
 
 if __name__ == "__main__":
-    count = asyncio.run(scrape_google_jobs())
+    import argparse
+    parser = argparse.ArgumentParser(description="Fast Google ATS Job Scraper with checkpoint resume & ATS exclusions")
+    parser.add_argument("--pages", type=int, default=None, help="Max pages per query (default: 10)")
+    parser.add_argument("--reset-checkpoint", action="store_true", help="Reset scraper checkpoint back to start before running")
+    parser.add_argument("--set-checkpoint", nargs="+", metavar=("SITE", "QUERY"), help="Set custom checkpoint: SITE [QUERY] [PAGE]")
+    parser.add_argument("--show-checkpoint", action="store_true", help="Display current saved checkpoint and excluded ATS sites")
+    parser.add_argument("--exclude-ats", type=str, default="", help="Comma-separated list of ATS sites to exclude (e.g. 'myworkdayjobs.com,oraclecloud.com')")
+    parser.add_argument("--no-resume", action="store_true", help="Do not resume from saved checkpoint (start from beginning)")
+    args = parser.parse_args()
+
+    conn = get_conn()
+    init_db(conn)
+
+    if args.reset_checkpoint:
+        clear_scraper_checkpoint("google_fast", conn=conn)
+        print("✅ Scraper checkpoint reset back to start!")
+
+    if args.set_checkpoint:
+        cp_site = args.set_checkpoint[0]
+        cp_query = args.set_checkpoint[1] if len(args.set_checkpoint) > 1 else SEARCH_QUERIES[0]
+        try:
+            page_num = int(args.set_checkpoint[2]) if len(args.set_checkpoint) > 2 else 1
+            cp_start = max(0, (page_num - 1) * 10)
+        except ValueError:
+            cp_start = 0
+        save_scraper_checkpoint("google_fast", cp_site, cp_query, cp_start, conn=conn)
+        print(f"✅ Custom checkpoint set: Site='{cp_site}' | Query='{cp_query}' | Page={int(cp_start / 10) + 1} (offset {cp_start})")
+
+    if args.show_checkpoint:
+        cp = get_scraper_checkpoint("google_fast", conn=conn)
+        ex = get_excluded_ats_sites(conn=conn)
+        print("=" * 60)
+        print("📍 CURRENT SCRAPER CHECKPOINT (google_fast):")
+        if cp:
+            print(f"   • Target Site: {cp.get('site')}")
+            print(f"   • Query Term:  {cp.get('query_term')}")
+            print(f"   • Page Offset: {cp.get('page_start', 0)} (Page {int(cp.get('page_start', 0) / 10) + 1})")
+            print(f"   • Updated At:  {cp.get('updated_at')}")
+        else:
+            print("   ✅ No active checkpoint (scraper starts from the beginning).")
+        print(f"🚫 EXCLUDED ATS SITES ({len(ex)}): {', '.join(ex) if ex else 'None'}")
+        print("=" * 60)
+        conn.close()
+        sys.exit(0)
+
+    conn.close()
+
+    ex_override = [s.strip() for s in args.exclude_ats.split(",") if s.strip()] if args.exclude_ats else None
+    resume_flag = not args.no_resume
+    count = asyncio.run(scrape_google_jobs(max_pages=args.pages, resume=resume_flag, excluded_sites_override=ex_override))
     print("\n" + "=" * 50)
     print(f"🎯 Scrape complete! {count} new jobs added to jobs_db.sqlite")
     print("=" * 50)

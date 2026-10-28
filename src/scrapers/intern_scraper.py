@@ -200,7 +200,21 @@ async def scrape_google_jobs():
         print(f"📁 Data will auto-save to {DB_FILE} in real-time.")
         print(f"📦 {len(jobs_db)} existing jobs loaded (will skip duplicates).\n")
 
-        for site in SITES:
+        try:
+            from src.core.db import get_excluded_ats_sites
+            excluded = set(s.lower() for s in get_excluded_ats_sites())
+        except Exception:
+            excluded = set()
+        env_ex = os.environ.get("SCRAPER_EXCLUDED_SITES", "")
+        if env_ex:
+            excluded.update(s.strip().lower() for s in env_ex.split(",") if s.strip())
+
+        sites_list = [s for s in SITES if s.lower() not in excluded]
+        if excluded:
+            print(f"🚫 Excluded ATS Sites ({len(excluded)}): {', '.join(sorted(excluded))}")
+        print(f"🎯 Active ATS Sites ({len(sites_list)}): {', '.join(sites_list)}\n")
+
+        for site in sites_list:
             print(f"\n=====================================")
             print(f"🏢 TARGETING: {site}")
             print(f"=====================================")

@@ -26,7 +26,9 @@ try:
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
         clear_all_companies, clear_everything,
-        extract_companies_from_existing_jobs, seed_starter_companies
+        extract_companies_from_existing_jobs, seed_starter_companies,
+        save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint,
+        reset_scraper_checkpoint, get_excluded_ats_sites, set_excluded_ats_sites
     )
     from src.scrapers.ats_parser import parse_ats_info
 except ImportError:
@@ -35,7 +37,9 @@ except ImportError:
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
         clear_all_companies, clear_everything,
-        extract_companies_from_existing_jobs, seed_starter_companies
+        extract_companies_from_existing_jobs, seed_starter_companies,
+        save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint,
+        reset_scraper_checkpoint, get_excluded_ats_sites, set_excluded_ats_sites
     )
     from ats_parser import parse_ats_info
 
@@ -54,6 +58,35 @@ RANK_COLORS = {
     "ERROR": "#591313",  # red
     "UNKNOWN": "#3b3b3b" # grey
 }
+
+# Known ATS platforms and their categories
+ALL_ATS_PLATFORMS = [
+    ("boards.greenhouse.io", "Greenhouse", "Startup"),
+    ("lever.co", "Lever", "Startup"),
+    ("jobs.ashbyhq.com", "Ashby", "Startup"),
+    ("apply.workable.com", "Workable", "Startup"),
+    ("smartrecruiters.com", "SmartRecruiters", "Startup"),
+    ("breezy.hr", "Breezy HR", "Startup"),
+    ("recruitee.com", "Recruitee", "Startup"),
+    ("myworkdayjobs.com", "Workday", "Enterprise"),
+    ("icims.com", "iCIMS", "Enterprise"),
+    ("jobvite.com", "Jobvite", "Enterprise"),
+    ("bamboohr.com", "BambooHR", "Enterprise"),
+    ("successfactors.com", "SAP SuccessFactors", "Enterprise"),
+    ("taleo.net", "Oracle Taleo", "Enterprise"),
+    ("oraclecloud.com", "Oracle Cloud", "Enterprise"),
+    ("keka.com/careers", "Keka Careers", "Enterprise"),
+]
+
+DEFAULT_SEARCH_QUERIES = [
+    "Software",
+    "C++ OR Java",
+    "Javascript OR React OR Node.js",
+    '"software engineer" intern',
+    '"software developer" intern',
+    '"backend" intern',
+    '"full stack" intern'
+]
 
 # How many rows to render per idle tick (keeps UI responsive)
 BATCH_SIZE = 20
@@ -131,6 +164,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.scrape_btn.add_css_class("suggested-action")
         self.scrape_btn.connect("clicked", self.on_scrape_clicked)
         header_box.append(self.scrape_btn)
+
+        self.checkpoint_btn = Gtk.Button(label="📍 Checkpoint")
+        self.checkpoint_btn.set_tooltip_text("View or reset query checkpoint, set custom checkpoint, and exclude ATS sites")
+        self.checkpoint_btn.connect("clicked", self.on_checkpoint_clicked)
+        header_box.append(self.checkpoint_btn)
 
         self.scrape_ats_btn = Gtk.Button(label="🏢 Scrape Companies")
         self.scrape_ats_btn.add_css_class("suggested-action")
@@ -1306,18 +1344,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text(msg)
 
     def on_scrape_clicked(self, button):
-        dialog = Gtk.MessageDialog(
-            transient_for=self,
-            message_type=Gtk.MessageType.QUESTION,
-            text="Select Scraping Speed",
-            secondary_text="Choose scraper speed. Google scraper collects all unique jobs and companies for your ATS pool."
-        )
-        dialog.add_button("⚡ Fast", 1)
-        dialog.add_button("🚶 Medium (Default)", 2)
-        dialog.add_button("🌙 Overnight", 3)
-        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dialog.connect("response", self.on_scrape_dialog_response)
-        dialog.present()
+        win = ScraperConfigWindow(self)
+        win.present()
+
+    def on_checkpoint_clicked(self, button):
+        win = ScraperConfigWindow(self)
+        win.present()
+
+    def start_scraper(self, script_name="intern_scraper_fast.py"):
+        self.status_label.set_text(f"Google Scraper started ({script_name})... (Check terminal output for progress)")
+        self.scrape_btn.set_sensitive(False)
+        if hasattr(self, "checkpoint_btn"):
+            self.checkpoint_btn.set_sensitive(False)
+        thread = threading.Thread(target=self.run_scraper, args=(script_name,))
+        thread.daemon = True
+        thread.start()
 
     def on_scrape_dialog_response(self, dialog, response_id):
         dialog.close()
@@ -1330,21 +1371,24 @@ class JobAppWindow(Gtk.ApplicationWindow):
         elif response_id == 3:
             script_name = "intern_scraper_overnight.py"
 
-        self.status_label.set_text(f"Google Scraper started ({script_name})... (Check terminal output for progress)")
-        self.scrape_btn.set_sensitive(False)
-        thread = threading.Thread(target=self.run_scraper, args=(script_name,))
-        thread.daemon = True
-        thread.start()
+        self.start_scraper(script_name)
 
-    def run_scraper(self, script_name="intern_scraper.py"):
+    def run_scraper(self, script_name="intern_scraper_fast.py"):
         try:
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3"
 
             cmd = [venv_python, resolve_script_path(script_name)]
+            env = dict(os.environ)
+            try:
+                db_ex = get_excluded_ats_sites()
+                if db_ex:
+                    env["SCRAPER_EXCLUDED_SITES"] = ",".join(db_ex)
+            except Exception:
+                pass
 
-            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=dict(os.environ))
+            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
             process.wait()
             GLib.idle_add(self.on_scrape_finished, process.returncode == 0)
         except Exception as e:
@@ -1353,6 +1397,8 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def on_scrape_finished(self, success):
         self.scrape_btn.set_sensitive(True)
+        if hasattr(self, "checkpoint_btn"):
+            self.checkpoint_btn.set_sensitive(True)
         if success:
             self.status_label.set_text("✅ Scraping finished! Click 'Refresh Everything' to view new jobs.")
         else:
@@ -1585,6 +1631,334 @@ class JobAppWindow(Gtk.ApplicationWindow):
     def on_sort_clicked(self, button=None):
         # Backwards compatibility
         self.on_full_pipeline_clicked()
+
+
+class ScraperConfigWindow(Gtk.Window):
+    def __init__(self, parent_win):
+        super().__init__(title="Scraper Controls & Checkpoints")
+        self.set_default_size(650, 700)
+        self.set_transient_for(parent_win)
+        self.set_modal(True)
+        self.parent_win = parent_win
+
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.set_child(scroller)
+
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        vbox.set_margin_top(16)
+        vbox.set_margin_bottom(16)
+        vbox.set_margin_start(18)
+        vbox.set_margin_end(18)
+        scroller.set_child(vbox)
+
+        # Header Title
+        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        title_lbl = Gtk.Label()
+        title_lbl.set_markup("<b><span size='large'>📍 Scraper Controls &amp; Checkpoints</span></b>")
+        title_lbl.set_halign(Gtk.Align.START)
+        title_box.append(title_lbl)
+
+        sub_lbl = Gtk.Label(label="Manage search query resume checkpoints and exclude specific ATS platforms before scraping.")
+        sub_lbl.set_halign(Gtk.Align.START)
+        sub_lbl.add_css_class("dim-label")
+        title_box.append(sub_lbl)
+        vbox.append(title_box)
+
+        # ── 1. LAUNCH SCRAPING ACTION BAR ──────────────────
+        launch_frame = Gtk.Frame(label="⚡ Run Google Scraper")
+        launch_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        launch_box.set_margin_top(10)
+        launch_box.set_margin_bottom(10)
+        launch_box.set_margin_start(12)
+        launch_box.set_margin_end(12)
+        launch_frame.set_child(launch_box)
+
+        launch_hint = Gtk.Label(label="Select scraper speed to start collecting jobs (applies checkpoint & ATS exclusions):")
+        launch_hint.set_halign(Gtk.Align.START)
+        launch_hint.add_css_class("dim-label")
+        launch_box.append(launch_hint)
+
+        speed_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        
+        btn_fast = Gtk.Button(label="⚡ Fast (Daily Dragnet)")
+        btn_fast.add_css_class("suggested-action")
+        btn_fast.set_tooltip_text("Fastest search with smart delay & human detours. Resumes from saved checkpoint.")
+        btn_fast.connect("clicked", lambda b: self.on_launch_scraper("intern_scraper_fast.py"))
+        speed_box.append(btn_fast)
+
+        btn_med = Gtk.Button(label="🚶 Medium (Default)")
+        btn_med.set_tooltip_text("Standard scraper with deeper queries.")
+        btn_med.connect("clicked", lambda b: self.on_launch_scraper("intern_scraper.py"))
+        speed_box.append(btn_med)
+
+        btn_night = Gtk.Button(label="🌙 Overnight")
+        btn_night.set_tooltip_text("Longer human-like pacing for overnight runs.")
+        btn_night.connect("clicked", lambda b: self.on_launch_scraper("intern_scraper_overnight.py"))
+        speed_box.append(btn_night)
+
+        launch_box.append(speed_box)
+        vbox.append(launch_frame)
+
+        # ── 2. CURRENT CHECKPOINT & RESET ──────────────────
+        cp_frame = Gtk.Frame(label="📍 Current Query Checkpoint")
+        cp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        cp_box.set_margin_top(10)
+        cp_box.set_margin_bottom(10)
+        cp_box.set_margin_start(12)
+        cp_box.set_margin_end(12)
+        cp_frame.set_child(cp_box)
+
+        self.cp_status_lbl = Gtk.Label()
+        self.cp_status_lbl.set_halign(Gtk.Align.START)
+        self.cp_status_lbl.set_wrap(True)
+        cp_box.append(self.cp_status_lbl)
+
+        cp_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        
+        # Reset checkpoint button
+        self.reset_cp_btn = Gtk.Button(label="🔄 Reset Checkpoint to Start")
+        self.reset_cp_btn.add_css_class("destructive-action")
+        self.reset_cp_btn.set_tooltip_text("Clears saved checkpoint so the scraper will start fresh from the first site and query (Page 1).")
+        self.reset_cp_btn.connect("clicked", self.on_reset_checkpoint)
+        cp_btn_box.append(self.reset_cp_btn)
+
+        cp_box.append(cp_btn_box)
+        vbox.append(cp_frame)
+
+        # ── 3. SET CUSTOM CHECKPOINT ───────────────────────
+        custom_frame = Gtk.Frame(label="🎯 Set Custom Checkpoint")
+        custom_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        custom_box.set_margin_top(10)
+        custom_box.set_margin_bottom(10)
+        custom_box.set_margin_start(12)
+        custom_box.set_margin_end(12)
+        custom_frame.set_child(custom_box)
+
+        custom_desc = Gtk.Label(label="Optionally jump directly to a specific ATS site, search query, or page before starting:")
+        custom_desc.set_halign(Gtk.Align.START)
+        custom_desc.add_css_class("dim-label")
+        custom_box.append(custom_desc)
+
+        grid = Gtk.Grid()
+        grid.set_column_spacing(12)
+        grid.set_row_spacing(8)
+        custom_box.append(grid)
+
+        # ATS Site row
+        lbl_site = Gtk.Label(label="ATS Site:")
+        lbl_site.set_halign(Gtk.Align.START)
+        grid.attach(lbl_site, 0, 0, 1, 1)
+
+        site_labels = [f"{p[0]} ({p[1]})" for p in ALL_ATS_PLATFORMS]
+        self.site_model = Gtk.StringList.new(site_labels)
+        self.site_drop = Gtk.DropDown(model=self.site_model)
+        self.site_drop.set_hexpand(True)
+        grid.attach(self.site_drop, 1, 0, 1, 1)
+
+        # Query row
+        lbl_query = Gtk.Label(label="Query Term:")
+        lbl_query.set_halign(Gtk.Align.START)
+        grid.attach(lbl_query, 0, 1, 1, 1)
+
+        self.query_model = Gtk.StringList.new(DEFAULT_SEARCH_QUERIES)
+        self.query_drop = Gtk.DropDown(model=self.query_model)
+        self.query_drop.set_hexpand(True)
+        grid.attach(self.query_drop, 1, 1, 1, 1)
+
+        # Page row
+        lbl_page = Gtk.Label(label="Start Page:")
+        lbl_page.set_halign(Gtk.Align.START)
+        grid.attach(lbl_page, 0, 2, 1, 1)
+
+        adj = Gtk.Adjustment(value=1, lower=1, upper=50, step_increment=1, page_increment=5)
+        self.page_spin = Gtk.SpinButton(adjustment=adj, climb_rate=1, digits=0)
+        self.page_spin.set_halign(Gtk.Align.START)
+        grid.attach(self.page_spin, 1, 2, 1, 1)
+
+        save_cp_btn = Gtk.Button(label="💾 Set Custom Checkpoint")
+        save_cp_btn.add_css_class("suggested-action")
+        save_cp_btn.connect("clicked", self.on_save_custom_checkpoint)
+        custom_box.append(save_cp_btn)
+        vbox.append(custom_frame)
+
+        # ── 4. EXCLUDE ATS SITES FROM SEARCH ───────────────
+        ats_frame = Gtk.Frame(label="🚫 Exclude ATS Sites from Search Queries")
+        ats_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        ats_box.set_margin_top(10)
+        ats_box.set_margin_bottom(10)
+        ats_box.set_margin_start(12)
+        ats_box.set_margin_end(12)
+        ats_frame.set_child(ats_box)
+
+        ats_desc = Gtk.Label(label="Uncheck any ATS domains you do NOT want Google to search (e.g. Workday, Oracle, etc.):")
+        ats_desc.set_halign(Gtk.Align.START)
+        ats_desc.set_wrap(True)
+        ats_desc.add_css_class("dim-label")
+        ats_box.append(ats_desc)
+
+        # Quick preset buttons
+        preset_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        btn_inc_all = Gtk.Button(label="✅ Include All")
+        btn_inc_all.connect("clicked", self.on_include_all_ats)
+        preset_box.append(btn_inc_all)
+
+        btn_ex_workday = Gtk.Button(label="🚫 Exclude Workday")
+        btn_ex_workday.connect("clicked", self.on_exclude_workday)
+        preset_box.append(btn_ex_workday)
+
+        btn_ex_enterprise = Gtk.Button(label="🏢 Exclude Enterprise (Workday, Oracle, SAP, Taleo)")
+        btn_ex_enterprise.connect("clicked", self.on_exclude_enterprise)
+        preset_box.append(btn_ex_enterprise)
+
+        ats_box.append(preset_box)
+
+        # Scrolled checklist of ATS sites
+        ats_scroller = Gtk.ScrolledWindow()
+        ats_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        ats_scroller.set_min_content_height(190)
+        ats_scroller.set_max_content_height(250)
+        
+        self.ats_checks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.ats_checks_box.set_margin_start(6)
+        self.ats_checks_box.set_margin_end(6)
+        self.ats_checks_box.set_margin_top(6)
+        self.ats_checks_box.set_margin_bottom(6)
+        ats_scroller.set_child(self.ats_checks_box)
+        ats_box.append(ats_scroller)
+
+        self.ats_check_map = {}
+        self.load_ats_checkboxes()
+
+        self.ats_status_lbl = Gtk.Label()
+        self.ats_status_lbl.set_halign(Gtk.Align.START)
+        ats_box.append(self.ats_status_lbl)
+        self.update_ats_status()
+
+        vbox.append(ats_frame)
+
+        # ── 5. FOOTER STATUS & CLOSE ───────────────────────
+        footer_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.feedback_lbl = Gtk.Label(label="")
+        self.feedback_lbl.set_hexpand(True)
+        self.feedback_lbl.set_halign(Gtk.Align.START)
+        footer_box.append(self.feedback_lbl)
+
+        close_btn = Gtk.Button(label="Close")
+        close_btn.connect("clicked", lambda b: self.close())
+        footer_box.append(close_btn)
+        vbox.append(footer_box)
+
+        self.refresh_checkpoint_display()
+
+    def refresh_checkpoint_display(self):
+        cp = get_scraper_checkpoint("google_fast")
+        if cp and cp.get("site"):
+            site = GLib.markup_escape_text(str(cp.get("site") or ""))
+            query = GLib.markup_escape_text(str(cp.get("query_term") or ""))
+            start = cp.get("page_start", 0)
+            page = int(start / 10) + 1
+            updated = GLib.markup_escape_text(str(cp.get("updated_at") or "")[:19])
+            markup = (
+                f"🔄 <b>Active Resume Checkpoint:</b>\n"
+                f"• Target Site: <b>{site}</b>\n"
+                f"• Search Query: <b>{query}</b>\n"
+                f"• Start Page: <b>Page {page}</b> (offset {start})\n"
+                f"• Last Updated: <i>{updated}</i>\n"
+                f"<i>(When started, scraper will skip earlier sites/queries and resume right here!)</i>"
+            )
+            self.cp_status_lbl.set_markup(markup)
+            self.reset_cp_btn.set_sensitive(True)
+        else:
+            self.cp_status_lbl.set_markup(
+                "✅ <i>No saved checkpoint. Scraper starts fresh from the beginning (Page 1 of first active ATS site).</i>"
+            )
+            self.reset_cp_btn.set_sensitive(False)
+
+    def on_reset_checkpoint(self, button):
+        clear_scraper_checkpoint("google_fast")
+        clear_scraper_checkpoint("google_medium")
+        clear_scraper_checkpoint("google_overnight")
+        self.refresh_checkpoint_display()
+        self.feedback_lbl.set_markup("<span foreground='#5cb85c'>✅ Checkpoint reset back to start!</span>")
+        if hasattr(self.parent_win, "status_label"):
+            self.parent_win.status_label.set_text("✅ Scraper checkpoint reset back to start.")
+
+    def on_save_custom_checkpoint(self, button):
+        sel_idx = self.site_drop.get_selected()
+        site = ALL_ATS_PLATFORMS[sel_idx][0]
+        q_idx = self.query_drop.get_selected()
+        query = DEFAULT_SEARCH_QUERIES[q_idx]
+        page = int(self.page_spin.get_value())
+        start_offset = max(0, (page - 1) * 10)
+
+        save_scraper_checkpoint("google_fast", site, query, start_offset)
+        self.refresh_checkpoint_display()
+        esc_site = GLib.markup_escape_text(site)
+        esc_query = GLib.markup_escape_text(query)
+        self.feedback_lbl.set_markup(
+            f"<span foreground='#5cb85c'>✅ Custom checkpoint saved: <b>{esc_site}</b> (Query: '{esc_query}', Page {page})</span>"
+        )
+        if hasattr(self.parent_win, "status_label"):
+            self.parent_win.status_label.set_text(f"🎯 Custom scraper checkpoint saved: {site} | Page {page}")
+
+    def load_ats_checkboxes(self):
+        try:
+            excluded = set(get_excluded_ats_sites())
+        except Exception:
+            excluded = set()
+
+        for domain, name, cat in ALL_ATS_PLATFORMS:
+            is_active = domain.lower() not in excluded
+            chk = Gtk.CheckButton(label=f"{domain}  ({name} — {cat})")
+            chk.set_active(is_active)
+            chk.connect("toggled", self.on_ats_toggled)
+            self.ats_check_map[domain] = chk
+            self.ats_checks_box.append(chk)
+
+    def on_ats_toggled(self, check_btn):
+        excluded = [dom for dom, chk in self.ats_check_map.items() if not chk.get_active()]
+        set_excluded_ats_sites(excluded)
+        self.update_ats_status()
+        self.feedback_lbl.set_markup("<span foreground='#5cb85c'>💾 ATS exclusion preferences updated.</span>")
+
+    def on_include_all_ats(self, button):
+        for chk in self.ats_check_map.values():
+            chk.set_active(True)
+        set_excluded_ats_sites([])
+        self.update_ats_status()
+        self.feedback_lbl.set_markup("<span foreground='#5cb85c'>✅ All ATS sites included.</span>")
+
+    def on_exclude_workday(self, button):
+        if "myworkdayjobs.com" in self.ats_check_map:
+            self.ats_check_map["myworkdayjobs.com"].set_active(False)
+            self.on_ats_toggled(None)
+
+    def on_exclude_enterprise(self, button):
+        for domain, name, cat in ALL_ATS_PLATFORMS:
+            if cat == "Enterprise" and domain in self.ats_check_map:
+                self.ats_check_map[domain].set_active(False)
+        self.on_ats_toggled(None)
+
+    def update_ats_status(self):
+        excluded = [dom for dom, chk in self.ats_check_map.items() if not chk.get_active()]
+        active_count = len(self.ats_check_map) - len(excluded)
+        if excluded:
+            ex_str = ", ".join(sorted(excluded))
+            self.ats_status_lbl.set_markup(
+                f"<b>Status:</b> <span foreground='#5bc0de'>{active_count} ATS sites active</span> | "
+                f"<span foreground='#e0a96d'><b>{len(excluded)} excluded</b>: {ex_str}</span>"
+            )
+        else:
+            self.ats_status_lbl.set_markup(
+                f"<b>Status:</b> <span foreground='#5cb85c'>All {len(self.ats_check_map)} ATS sites active (none excluded).</span>"
+            )
+
+    def on_launch_scraper(self, script_name):
+        excluded = [dom for dom, chk in self.ats_check_map.items() if not chk.get_active()]
+        set_excluded_ats_sites(excluded)
+        self.close()
+        self.parent_win.start_scraper(script_name)
 
 
 class ClearDbWindow(Gtk.Window):

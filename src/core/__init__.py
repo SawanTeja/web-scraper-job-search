@@ -16,7 +16,8 @@ from src.core.db import (
     clear_everything, update_job, get_company_count, get_all_companies,
     delete_company, get_company_stats, save_company, job_exists, get_all_urls,
     extract_companies_from_existing_jobs, DB_FILE,
-    save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint
+    save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint,
+    reset_scraper_checkpoint, get_excluded_ats_sites, set_excluded_ats_sites
 )
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "clear_everything", "update_job", "get_company_count", "get_all_companies",
     "delete_company", "get_company_stats", "save_company", "job_exists", "get_all_urls",
     "extract_companies_from_existing_jobs", "DB_FILE",
-    "save_scraper_checkpoint", "get_scraper_checkpoint", "clear_scraper_checkpoint"
+    "save_scraper_checkpoint", "get_scraper_checkpoint", "clear_scraper_checkpoint",
+    "reset_scraper_checkpoint", "get_excluded_ats_sites", "set_excluded_ats_sites"
 ]

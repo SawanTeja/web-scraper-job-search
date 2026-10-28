@@ -100,6 +100,14 @@ def init_db(conn=None):
         )
     """)
 
+    # Excluded ATS sites: sites the user wishes to skip in search queries
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS excluded_ats_sites (
+            site            TEXT PRIMARY KEY,
+            created_at      TEXT
+        )
+    """)
+
     conn.commit()
     if close_after:
         conn.close()
@@ -536,12 +544,65 @@ def get_scraper_checkpoint(scraper_name, conn=None):
     return None
 
 
-def clear_scraper_checkpoint(scraper_name, conn=None):
-    """Clear progress checkpoint for a scraper after a full completed run."""
+def clear_scraper_checkpoint(scraper_name=None, conn=None):
+    """Clear progress checkpoint for a scraper (or all scrapers if scraper_name is None)."""
     close_after = conn is None
     if conn is None:
         conn = get_conn()
-    conn.execute("DELETE FROM scraper_checkpoints WHERE scraper_name=?", (scraper_name,))
+    if scraper_name:
+        conn.execute("DELETE FROM scraper_checkpoints WHERE scraper_name=?", (scraper_name,))
+    else:
+        conn.execute("DELETE FROM scraper_checkpoints")
+    conn.commit()
+    if close_after:
+        conn.close()
+
+
+def reset_scraper_checkpoint(scraper_name="google_fast", conn=None):
+    """Reset scraper checkpoint back to initial start state."""
+    clear_scraper_checkpoint(scraper_name, conn=conn)
+
+
+# ──────────────────────────────────────────────
+#  Excluded ATS Sites Persistence
+# ──────────────────────────────────────────────
+def get_excluded_ats_sites(conn=None):
+    """Retrieve list of ATS domains currently excluded from scraping."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS excluded_ats_sites (
+            site            TEXT PRIMARY KEY,
+            created_at      TEXT
+        )
+    """)
+    rows = conn.execute("SELECT site FROM excluded_ats_sites ORDER BY site ASC").fetchall()
+    if close_after:
+        conn.close()
+    return [r["site"] for r in rows]
+
+
+def set_excluded_ats_sites(sites, conn=None):
+    """Set the list of excluded ATS sites, replacing any previous selection."""
+    close_after = conn is None
+    if conn is None:
+        conn = get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS excluded_ats_sites (
+            site            TEXT PRIMARY KEY,
+            created_at      TEXT
+        )
+    """)
+    conn.execute("DELETE FROM excluded_ats_sites")
+    now = datetime.now(timezone.utc).isoformat()
+    for s in sites:
+        s_clean = s.strip().lower()
+        if s_clean:
+            conn.execute(
+                "INSERT OR REPLACE INTO excluded_ats_sites (site, created_at) VALUES (?, ?)",
+                (s_clean, now)
+            )
     conn.commit()
     if close_after:
         conn.close()
