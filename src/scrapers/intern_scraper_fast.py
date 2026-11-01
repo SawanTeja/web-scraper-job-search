@@ -62,8 +62,9 @@ SEARCH_QUERIES = [
     'Javascript OR React OR Node.js'
 ]
 
-# TIME_FILTER: "qdr:d" limits search results to the past 24 hours (1 day)
-TIME_FILTER = os.environ.get("SCRAPER_TIME_FILTER", "qdr:d")
+# TIME_FILTER: "" for all-time (maximum results), "qdr:d" for 24h, "qdr:w" for week, "qdr:m" for month
+_raw_tf = os.environ.get("SCRAPER_TIME_FILTER", "").strip().lower()
+TIME_FILTER = "" if _raw_tf in ("all", "none", "off", "") else _raw_tf
 MAX_PAGES = int(os.environ.get("SCRAPER_MAX_PAGES", 10))
 
 USER_AGENT = (
@@ -151,7 +152,7 @@ async def human_scroll_and_move(page):
 # ---------------------------------------------------
 
 
-async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None, excluded_sites_override=None):
+async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None, excluded_sites_override=None, time_filter_override=None):
     search_count = 0
     new_jobs_added = 0
     pages_limit = max_pages or MAX_PAGES
@@ -240,8 +241,24 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None, e
         page = context.pages[0] if context.pages else await context.new_page()
         await Stealth().apply_stealth_async(page)
 
+        active_time_filter = time_filter_override if time_filter_override is not None else TIME_FILTER
         print("🚀 Starting the ATS Scraper...")
-        print(f"📁 Data will auto-save to jobs_db.sqlite in real-time. Time filter: {TIME_FILTER or 'all'}\n")
+        print(f"📁 Data will auto-save to jobs_db.sqlite in real-time. Time filter: {active_time_filter or 'All Time'}\n")
+
+        # Open Google homepage once so cookies, session, and Google client tokens are initialized
+        try:
+            print("🌐 Initializing Google session...")
+            await page.goto("https://www.google.com", timeout=30000)
+            await asyncio.sleep(1.5)
+            # Dismiss any consent dialogs if present
+            for selector in ['button:has-text("Accept all")', 'button:has-text("I agree")', '#L2AGLb']:
+                btn = page.locator(selector).first
+                if await btn.count() > 0 and await btn.is_visible():
+                    await btn.click()
+                    await asyncio.sleep(1.0)
+                    break
+        except Exception as e:
+            print(f"      ℹ️ Note on Google init: {e}")
 
         for site in sites_list:
             if skip_until_site:
@@ -286,39 +303,60 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None, e
                         except Exception:
                             pass
 
-                    query = f'site:{site} {query_term}'
-                    encoded_query = urllib.parse.quote_plus(query)
-                    tbs_param = f"&tbs={TIME_FILTER}" if TIME_FILTER else ""
-                    # &filter=0 ensures Google does NOT artificially omit similar results, revealing 10+ pages!
-                    search_url = (
-                        f"https://www.google.com/search"
-                        f"?q={encoded_query}{tbs_param}&start={start}&filter=0&hl=en"
-                    )
+                    raw_query = f"site:{site} {query_term}"
+                    used_direct_search = False
 
-                    try:
-                        await page.goto(search_url)
-                    except Exception as e:
-                        if "Target page, context or browser has been closed" in str(e) or isinstance(e, TargetClosedError):
-                            print("      ⚠️ Browser closed by user. Exiting cleanly.")
-                            conn.close()
-                            return new_jobs_added
-                        print(f"      ⚠️ Navigation error: {e}")
+                    # For page 1: Type into Google's search box and press Enter like a human!
+                    # This allows Google to run its own client-side search with authentic tokens
+                    if start == 0:
+                        try:
+                            if "google.com" not in page.url or "sorry/index" in page.url:
+                                await page.goto("https://www.google.com", timeout=30000)
+                                await asyncio.sleep(1.0)
 
-                    # Wait for search results to actually render in the DOM
-                    try:
-                        await page.wait_for_selector('div.yuRUbf, div.g', timeout=15000)
-                    except Exception:
-                        print("      ⚠️ Results didn't render in time, will try to extract anyway...")
+                            search_input = page.locator('textarea[name="q"], input[name="q"]').first
+                            if await search_input.count() > 0 and await search_input.is_visible():
+                                print(f"      ⌨️ Entering search into Google: '{raw_query}'...")
+                                await search_input.click()
+                                await search_input.fill(raw_query)
+                                await asyncio.sleep(random.uniform(0.3, 0.6))
+                                await search_input.press("Enter")
+                                used_direct_search = True
+                        except Exception as e:
+                            print(f"      ℹ️ Search box input error: {e}")
 
-                    # HUMAN SCROLLING AFTER LOAD
-                    await human_scroll_and_move(page)
+                    if not used_direct_search and start > 0:
+                        # For subsequent pages: try clicking the 'Next' page button on Google
+                        try:
+                            next_btn = page.locator('a#pnnext, a[aria-label="Next page"]').first
+                            if await next_btn.count() > 0 and await next_btn.is_visible():
+                                print(f"      👉 Clicking 'Next' page button on Google...")
+                                await next_btn.click()
+                                used_direct_search = True
+                        except Exception:
+                            pass
 
-                    # PAGE-TO-PAGE GAP
-                    sleep_time = random.uniform(3, 8)
-                    print(f"      ⏳ Page {int(start / 10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")
-                    await asyncio.sleep(sleep_time)
+                    # Direct URL fallback if search box / next button was not used
+                    if not used_direct_search:
+                        quoted_term = urllib.parse.quote_plus(raw_query)
+                        url_params = [f"q={quoted_term}"]
+                        if active_time_filter:
+                            url_params.append(f"tbs={active_time_filter}")
+                        if start > 0:
+                            url_params.append(f"start={start}")
+                        url_params.append("hl=en")
+                        search_url = f"https://www.google.com/search?{'&'.join(url_params)}"
 
-                    # Check for CAPTCHA
+                        try:
+                            await page.goto(search_url)
+                        except Exception as e:
+                            if "Target page, context or browser has been closed" in str(e) or isinstance(e, TargetClosedError):
+                                print("      ⚠️ Browser closed by user. Exiting cleanly.")
+                                conn.close()
+                                return new_jobs_added
+                            print(f"      ⚠️ Navigation error: {e}")
+
+                    # Check for CAPTCHA immediately
                     try:
                         is_captcha = "sorry/index" in page.url or await page.locator('form[action*="/sorry/index"]').count() > 0
                     except Exception:
@@ -338,24 +376,92 @@ async def scrape_google_jobs(max_pages=None, resume=True, sites_override=None, e
                             conn.close()
                             return new_jobs_added
 
+                    # Wait for search results to render in DOM
+                    try:
+                        await page.wait_for_selector('div#search, div#rso, div.g, h3', timeout=12000)
+                    except Exception:
+                        pass
+
+                    # Human scrolling and delay
+                    await human_scroll_and_move(page)
+                    sleep_time = random.uniform(3, 7)
+                    print(f"      ⏳ Page {int(start / 10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")
+                    await asyncio.sleep(sleep_time)
+
+                    # Extract results from DOM
                     try:
                         results = await page.eval_on_selector_all(
-                            "div.yuRUbf, div.g",
-                            """elements => {
+                            "body",
+                            """_ => {
                                 let list = [];
-                                for (let e of elements) {
-                                    let a = e.querySelector('a:has(h3)') || e.querySelector('a');
-                                    let h3 = e.querySelector('h3');
-                                    if (a && a.href && (h3 || e.classList.contains('yuRUbf'))) {
-                                        list.push({
-                                            url: a.href,
-                                            title: h3 ? h3.innerText.trim() : 'Unknown Title'
-                                        });
+                                let seen = new Set();
+                                // 1. Links containing an h3
+                                let linksWithH3 = document.querySelectorAll('#search a:has(h3), #rso a:has(h3), div.g a:has(h3)');
+                                for (let a of linksWithH3) {
+                                    let href = a.href;
+                                    if (!href || seen.has(href)) continue;
+                                    if (href.includes('google.com') && !href.includes('/url') && !href.includes('/goto')) continue;
+                                    let h3 = a.querySelector('h3');
+                                    let title = h3 ? h3.innerText.trim() : a.innerText.trim();
+                                    seen.add(href);
+                                    list.push({ url: href, title: title || 'Job Posting' });
+                                }
+                                // 2. Fallback: inspect any h3 inside search containers
+                                let allH3 = document.querySelectorAll('#search h3, #rso h3, div.g h3');
+                                for (let h3 of allH3) {
+                                    let a = h3.closest('a') || (h3.parentElement && h3.parentElement.querySelector('a'));
+                                    if (a && a.href && !seen.has(a.href)) {
+                                        let href = a.href;
+                                        if (href.includes('google.com') && !href.includes('/url') && !href.includes('/goto')) continue;
+                                        seen.add(href);
+                                        list.push({ url: href, title: h3.innerText.trim() || 'Job Posting' });
                                     }
                                 }
                                 return list;
                             }"""
                         )
+
+                        # Fallback: if 0 results found, type into search box and press Enter
+                        if not results:
+                            try:
+                                search_input = page.locator('textarea[name="q"], input[name="q"]').first
+                                if await search_input.count() > 0:
+                                    print(f"      🔄 0 results on screen. Typing '{raw_query}' into search box and pressing Enter...")
+                                    await search_input.click()
+                                    await search_input.fill(raw_query)
+                                    await asyncio.sleep(0.4)
+                                    await search_input.press("Enter")
+                                    await asyncio.sleep(3.5)
+                                    results = await page.eval_on_selector_all(
+                                        "body",
+                                        """_ => {
+                                            let list = [];
+                                            let seen = new Set();
+                                            let linksWithH3 = document.querySelectorAll('#search a:has(h3), #rso a:has(h3), div.g a:has(h3)');
+                                            for (let a of linksWithH3) {
+                                                let href = a.href;
+                                                if (!href || seen.has(href)) continue;
+                                                if (href.includes('google.com') && !href.includes('/url') && !href.includes('/goto')) continue;
+                                                let h3 = a.querySelector('h3');
+                                                let title = h3 ? h3.innerText.trim() : a.innerText.trim();
+                                                seen.add(href);
+                                                list.push({ url: href, title: title || 'Job Posting' });
+                                            }
+                                            let allH3 = document.querySelectorAll('#search h3, #rso h3, div.g h3');
+                                            for (let h3 of allH3) {
+                                                let a = h3.closest('a') || (h3.parentElement && h3.parentElement.querySelector('a'));
+                                                if (a && a.href && !seen.has(a.href)) {
+                                                    let href = a.href;
+                                                    if (href.includes('google.com') && !href.includes('/url') && !href.includes('/goto')) continue;
+                                                    seen.add(href);
+                                                    list.push({ url: href, title: h3.innerText.trim() || 'Job Posting' });
+                                                }
+                                            }
+                                            return list;
+                                        }"""
+                                    )
+                            except Exception:
+                                pass
 
                         if not results:
                             print("      🚫 No more results for this query. Moving to next.")
@@ -456,7 +562,7 @@ if __name__ == "__main__":
     parser.add_argument("--set-checkpoint", nargs="+", metavar=("SITE", "QUERY"), help="Set custom checkpoint: SITE [QUERY] [PAGE]")
     parser.add_argument("--show-checkpoint", action="store_true", help="Display current saved checkpoint and excluded ATS sites")
     parser.add_argument("--exclude-ats", type=str, default="", help="Comma-separated list of ATS sites to exclude (e.g. 'myworkdayjobs.com,oraclecloud.com')")
-    parser.add_argument("--no-resume", action="store_true", help="Do not resume from saved checkpoint (start from beginning)")
+    parser.add_argument("--time-filter", type=str, default=None, choices=["all", "day", "week", "month", "qdr:d", "qdr:w", "qdr:m"], help="Google time filter (default: all)")
     args = parser.parse_args()
 
     conn = get_conn()
@@ -498,7 +604,9 @@ if __name__ == "__main__":
 
     ex_override = [s.strip() for s in args.exclude_ats.split(",") if s.strip()] if args.exclude_ats else None
     resume_flag = not args.no_resume
-    count = asyncio.run(scrape_google_jobs(max_pages=args.pages, resume=resume_flag, excluded_sites_override=ex_override))
+    tf_map = {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "all": ""}
+    tf_override = tf_map.get(args.time_filter, args.time_filter) if args.time_filter else None
+    count = asyncio.run(scrape_google_jobs(max_pages=args.pages, resume=resume_flag, excluded_sites_override=ex_override, time_filter_override=tf_override))
     print("\n" + "=" * 50)
     print(f"🎯 Scrape complete! {count} new jobs added to jobs_db.sqlite")
     print("=" * 50)

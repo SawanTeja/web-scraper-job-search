@@ -6,6 +6,7 @@ import subprocess
 import threading
 import webbrowser
 from datetime import datetime, timezone, timedelta
+import math
 
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib, Pango, Gdk
@@ -524,6 +525,17 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 color: #e0e0e0;
                 padding: 10px;
                 border-radius: 6px;
+            }
+            .pagination-bar {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 6px;
+                padding: 8px 12px;
+            }
+            .page-btn {
+                min-width: 32px;
+                padding: 4px 10px;
+                font-weight: 500;
             }
         """
         css_provider.load_from_data(css)
@@ -1351,12 +1363,13 @@ class JobAppWindow(Gtk.ApplicationWindow):
         win = ScraperConfigWindow(self)
         win.present()
 
-    def start_scraper(self, script_name="intern_scraper_fast.py"):
-        self.status_label.set_text(f"Google Scraper started ({script_name})... (Check terminal output for progress)")
+    def start_scraper(self, script_name="intern_scraper_fast.py", time_filter=""):
+        desc_tf = f" (Time Filter: {time_filter or 'All Time'})"
+        self.status_label.set_text(f"Google Scraper started ({script_name}){desc_tf}... (Check terminal output for progress)")
         self.scrape_btn.set_sensitive(False)
         if hasattr(self, "checkpoint_btn"):
             self.checkpoint_btn.set_sensitive(False)
-        thread = threading.Thread(target=self.run_scraper, args=(script_name,))
+        thread = threading.Thread(target=self.run_scraper, args=(script_name, time_filter))
         thread.daemon = True
         thread.start()
 
@@ -1371,9 +1384,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
         elif response_id == 3:
             script_name = "intern_scraper_overnight.py"
 
-        self.start_scraper(script_name)
+        self.start_scraper(script_name, time_filter="")
 
-    def run_scraper(self, script_name="intern_scraper_fast.py"):
+    def run_scraper(self, script_name="intern_scraper_fast.py", time_filter=""):
         try:
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
@@ -1381,6 +1394,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
             cmd = [venv_python, resolve_script_path(script_name)]
             env = dict(os.environ)
+            env["SCRAPER_TIME_FILTER"] = time_filter
             try:
                 db_ex = get_excluded_ats_sites()
                 if db_ex:
@@ -1679,6 +1693,25 @@ class ScraperConfigWindow(Gtk.Window):
         launch_hint.add_css_class("dim-label")
         launch_box.append(launch_hint)
 
+        # Time filter selection
+        tf_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        tf_lbl = Gtk.Label(label="Google Time Filter:")
+        tf_lbl.set_halign(Gtk.Align.START)
+        tf_box.append(tf_lbl)
+
+        self.time_filter_options = [
+            ("All Time (Recommended - Maximum Results)", ""),
+            ("Past 24 Hours (Only Newest Today)", "qdr:d"),
+            ("Past Week", "qdr:w"),
+            ("Past Month", "qdr:m")
+        ]
+        tf_model = Gtk.StringList.new([opt[0] for opt in self.time_filter_options])
+        self.tf_drop = Gtk.DropDown(model=tf_model)
+        self.tf_drop.set_selected(0)
+        self.tf_drop.set_hexpand(True)
+        tf_box.append(self.tf_drop)
+        launch_box.append(tf_box)
+
         speed_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         
         btn_fast = Gtk.Button(label="⚡ Fast (Daily Dragnet)")
@@ -1957,8 +1990,10 @@ class ScraperConfigWindow(Gtk.Window):
     def on_launch_scraper(self, script_name):
         excluded = [dom for dom, chk in self.ats_check_map.items() if not chk.get_active()]
         set_excluded_ats_sites(excluded)
+        tf_idx = self.tf_drop.get_selected()
+        time_filter_val = self.time_filter_options[tf_idx][1] if 0 <= tf_idx < len(self.time_filter_options) else ""
         self.close()
-        self.parent_win.start_scraper(script_name)
+        self.parent_win.start_scraper(script_name, time_filter=time_filter_val)
 
 
 class ClearDbWindow(Gtk.Window):
@@ -2254,6 +2289,56 @@ class CompaniesWindow(Gtk.Window):
         self.scroll.set_child(self.listbox)
         vbox.append(self.scroll)
 
+        # Pagination Bar
+        self.pagination_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.pagination_box.add_css_class("pagination-bar")
+
+        self.page_info_lbl = Gtk.Label(label="Showing 0–0 of 0 companies")
+        self.page_info_lbl.set_halign(Gtk.Align.START)
+        self.page_info_lbl.set_hexpand(True)
+        self.pagination_box.append(self.page_info_lbl)
+
+        per_page_lbl = Gtk.Label(label="Per page:")
+        per_page_lbl.add_css_class("dim-label")
+        self.pagination_box.append(per_page_lbl)
+
+        self.page_sizes = [100, 150, 200]
+        self.page_size = 100
+        self.current_page = 1
+        self.total_pages = 1
+
+        self.page_size_model = Gtk.StringList.new([f"{s}" for s in self.page_sizes])
+        self.page_size_drop = Gtk.DropDown(model=self.page_size_model)
+        self.page_size_drop.set_selected(0)
+        self.page_size_drop.connect("notify::selected", self.on_page_size_changed)
+        self.pagination_box.append(self.page_size_drop)
+
+        self.first_btn = Gtk.Button(label="⏮ First")
+        self.first_btn.add_css_class("page-btn")
+        self.first_btn.connect("clicked", lambda b: self.goto_page(1))
+        self.pagination_box.append(self.first_btn)
+
+        self.prev_btn = Gtk.Button(label="◀ Prev")
+        self.prev_btn.add_css_class("page-btn")
+        self.prev_btn.connect("clicked", lambda b: self.goto_page(self.current_page - 1))
+        self.pagination_box.append(self.prev_btn)
+
+        self.page_lbl = Gtk.Label(label="Page 1 of 1")
+        self.page_lbl.add_css_class("company-title")
+        self.pagination_box.append(self.page_lbl)
+
+        self.next_btn = Gtk.Button(label="Next ▶")
+        self.next_btn.add_css_class("page-btn")
+        self.next_btn.connect("clicked", lambda b: self.goto_page(self.current_page + 1))
+        self.pagination_box.append(self.next_btn)
+
+        self.last_btn = Gtk.Button(label="⏭ Last")
+        self.last_btn.add_css_class("page-btn")
+        self.last_btn.connect("clicked", lambda b: self.goto_page(self.total_pages))
+        self.pagination_box.append(self.last_btn)
+
+        vbox.append(self.pagination_box)
+
         # Initial Load
         self.load_data()
 
@@ -2379,7 +2464,44 @@ class CompaniesWindow(Gtk.Window):
             filtered.append(c)
 
         self.filtered_companies = filtered
+        self.current_page = 1
+        self.update_pagination_and_render()
+
+    def on_page_size_changed(self, dropdown, pspec):
+        idx = dropdown.get_selected()
+        if 0 <= idx < len(self.page_sizes):
+            self.page_size = self.page_sizes[idx]
+            self.current_page = 1
+            self.update_pagination_and_render()
+
+    def goto_page(self, page_num):
+        target = max(1, min(page_num, self.total_pages))
+        if target != self.current_page:
+            self.current_page = target
+            self.update_pagination_and_render()
+
+    def update_pagination_and_render(self):
+        total_items = len(self.filtered_companies)
+        self.total_pages = max(1, math.ceil(total_items / self.page_size))
+        if self.current_page > self.total_pages:
+            self.current_page = self.total_pages
+        if self.current_page < 1:
+            self.current_page = 1
+
+        self.first_btn.set_sensitive(self.current_page > 1)
+        self.prev_btn.set_sensitive(self.current_page > 1)
+        self.next_btn.set_sensitive(self.current_page < self.total_pages)
+        self.last_btn.set_sensitive(self.current_page < self.total_pages)
+
+        start_idx = (self.current_page - 1) * self.page_size + 1 if total_items > 0 else 0
+        end_idx = min(self.current_page * self.page_size, total_items)
+        self.page_info_lbl.set_text(f"Showing {start_idx:,}–{end_idx:,} of {total_items:,} companies")
+        self.page_lbl.set_text(f"Page {self.current_page} of {self.total_pages}")
+
         self.render_companies()
+        adj = self.scroll.get_vadjustment()
+        if adj:
+            adj.set_value(0)
 
     def render_companies(self):
         # Clear existing rows
@@ -2401,7 +2523,10 @@ class CompaniesWindow(Gtk.Window):
             self.listbox.append(empty_box)
             return
 
-        for c in self.filtered_companies:
+        start_offset = (self.current_page - 1) * self.page_size
+        page_slice = self.filtered_companies[start_offset : start_offset + self.page_size]
+
+        for c in page_slice:
             row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
             row_box.add_css_class("company-row")
 

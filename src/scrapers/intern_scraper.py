@@ -48,7 +48,8 @@ SEARCH_QUERIES = [
     'react intern'
 ]
 
-TIME_FILTER = "qdr:d"
+_raw_tf = os.environ.get("SCRAPER_TIME_FILTER", "").strip().lower()
+TIME_FILTER = "" if _raw_tf in ("all", "none", "off", "") else _raw_tf
 MAX_PAGES = 5
 
 DB_FILE = os.path.join(_ROOT_DIR, "jobs_db.json")
@@ -235,7 +236,13 @@ async def scrape_google_jobs():
                     query = f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
                     
-                    search_url = f"https://www.google.com/search?q={encoded_query}&tbs={TIME_FILTER}&start={start}&filter=0&hl=en"
+                    url_params = [f"q={encoded_query}"]
+                    if TIME_FILTER:
+                        url_params.append(f"tbs={TIME_FILTER}")
+                    if start > 0:
+                        url_params.append(f"start={start}")
+                    url_params.append("hl=en")
+                    search_url = f"https://www.google.com/search?{'&'.join(url_params)}"
                     
                     await page.goto(search_url)
 
