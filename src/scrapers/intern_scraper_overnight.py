@@ -48,8 +48,7 @@ SEARCH_QUERIES = [
     'react intern'
 ]
 
-_raw_tf = os.environ.get("SCRAPER_TIME_FILTER", "").strip().lower()
-TIME_FILTER = "" if _raw_tf in ("all", "none", "off", "") else _raw_tf
+TIME_FILTER = "qdr:d"
 MAX_PAGES = 5
 
 DB_FILE = os.path.join(_ROOT_DIR, "jobs_db.json")
@@ -201,21 +200,7 @@ async def scrape_google_jobs():
         print(f"📁 Data will auto-save to {DB_FILE} in real-time.")
         print(f"📦 {len(jobs_db)} existing jobs loaded (will skip duplicates).\n")
 
-        try:
-            from src.core.db import get_excluded_ats_sites
-            excluded = set(s.lower() for s in get_excluded_ats_sites())
-        except Exception:
-            excluded = set()
-        env_ex = os.environ.get("SCRAPER_EXCLUDED_SITES", "")
-        if env_ex:
-            excluded.update(s.strip().lower() for s in env_ex.split(",") if s.strip())
-
-        sites_list = [s for s in SITES if s.lower() not in excluded]
-        if excluded:
-            print(f"🚫 Excluded ATS Sites ({len(excluded)}): {', '.join(sorted(excluded))}")
-        print(f"🎯 Active ATS Sites ({len(sites_list)}): {', '.join(sites_list)}\n")
-
-        for site in sites_list:
+        for site in SITES:
             print(f"\n=====================================")
             print(f"🏢 TARGETING: {site}")
             print(f"=====================================")
@@ -236,13 +221,7 @@ async def scrape_google_jobs():
                     query = f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
                     
-                    url_params = [f"q={encoded_query}"]
-                    if TIME_FILTER:
-                        url_params.append(f"tbs={TIME_FILTER}")
-                    if start > 0:
-                        url_params.append(f"start={start}")
-                    url_params.append("hl=en")
-                    search_url = f"https://www.google.com/search?{'&'.join(url_params)}"
+                    search_url = f"https://www.google.com/search?q={encoded_query}&tbs={TIME_FILTER}&start={start}&filter=0&hl=en"
                     
                     await page.goto(search_url)
 
