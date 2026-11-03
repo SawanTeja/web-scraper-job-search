@@ -234,6 +234,25 @@ def resolve_redirect_url(url: str, timeout: float = 3.0) -> str:
     return url
 
 
+def build_google_dork(site: str, query_term: str) -> str:
+    """
+    Constructs a clean, non-redundant Google dork query:
+    1. Sanitizes site to domain only (e.g. 'https://boards.greenhouse.io/' -> 'boards.greenhouse.io', 'keka.com/careers' -> 'keka.com').
+    2. Keeps the query clean and concise without repeating the 'site:' parameter.
+    3. If query_term contains ' OR ' and is not already wrapped in parentheses,
+       groups it with parentheses: site:<domain> (<term1> OR <term2>).
+    """
+    clean_site = site.lower().strip()
+    if clean_site.startswith("http://") or clean_site.startswith("https://"):
+        clean_site = clean_site.split("://", 1)[1]
+    clean_site = clean_site.split("/")[0].strip()
+
+    clean_term = query_term.strip()
+    if " OR " in clean_term and not (clean_term.startswith("(") and clean_term.endswith(")")):
+        return f"site:{clean_site} ({clean_term})"
+    return f"site:{clean_site} {clean_term}"
+
+
 def clean_company_name_from_title(title: str) -> str:
     """Attempts to extract a clean company name from typical job search titles."""
     if not title:

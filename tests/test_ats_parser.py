@@ -10,9 +10,9 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 try:
-    from src.scrapers.ats_parser import parse_ats_info, clean_company_name_from_title
+    from src.scrapers.ats_parser import parse_ats_info, clean_company_name_from_title, build_google_dork
 except ImportError:
-    from scrapers.ats_parser import parse_ats_info, clean_company_name_from_title
+    from scrapers.ats_parser import parse_ats_info, clean_company_name_from_title, build_google_dork
 
 
 class TestATSParser(unittest.TestCase):
@@ -43,6 +43,27 @@ class TestATSParser(unittest.TestCase):
     def test_title_clean(self):
         cleaned = clean_company_name_from_title("Software Engineer Intern at Stripe - Remote")
         self.assertIn("Stripe", cleaned)
+
+    def test_build_google_dork(self):
+        # 1. Clean query keyword
+        dork1 = build_google_dork("boards.greenhouse.io", "Software")
+        self.assertEqual(dork1, 'site:boards.greenhouse.io Software')
+
+        # 2. Already quoted keyword preserved cleanly
+        dork2 = build_google_dork("boards.greenhouse.io", '"Software"')
+        self.assertEqual(dork2, 'site:boards.greenhouse.io "Software"')
+
+        # 3. Boolean OR grouped in parentheses without repeating site:
+        dork3 = build_google_dork("boards.greenhouse.io", "C++ OR Java")
+        self.assertEqual(dork3, 'site:boards.greenhouse.io (C++ OR Java)')
+
+        # 4. Multi-term OR with existing quotes
+        dork4 = build_google_dork("lever.co", '"Javascript" OR "React" OR "Node.js"')
+        self.assertEqual(dork4, 'site:lever.co ("Javascript" OR "React" OR "Node.js")')
+
+        # 5. Site with path or scheme is sanitized
+        dork5 = build_google_dork("https://keka.com/careers", "Software")
+        self.assertEqual(dork5, 'site:keka.com Software')
 
 
 if __name__ == "__main__":

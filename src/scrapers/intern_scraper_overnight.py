@@ -32,7 +32,7 @@ SITES = [
     "bamboohr.com",
     "breezy.hr",
     "recruitee.com",
-    "keka.com/careers",
+    "keka.com",
 ]
 
 # The "Broad Tech" Dragnet
@@ -41,14 +41,15 @@ SEARCH_QUERIES = [
     '"software developer" intern',
     '"backend" intern',
     '"full stack" intern',
-    'c++ intern',
-    'systems intern',
-    'networking intern',
-    'node.js intern',
-    'react intern'
+    '"c++" intern',
+    '"systems" intern',
+    '"networking" intern',
+    '"node.js" intern',
+    '"react" intern'
 ]
 
-TIME_FILTER = "qdr:d"
+_raw_tf = os.environ.get("SCRAPER_TIME_FILTER", "").strip().lower()
+TIME_FILTER = "" if _raw_tf in ("all", "none", "off", "") else _raw_tf
 MAX_PAGES = 5
 
 DB_FILE = os.path.join(_ROOT_DIR, "jobs_db.json")
@@ -218,7 +219,8 @@ async def scrape_google_jobs():
                         await human_scroll_and_move(page)
                         await asyncio.sleep(random.uniform(30, 60))
 
-                    query = f'site:{site} ({query_term})' if " OR " in query_term else f'site:{site} {query_term}'
+                    from src.scrapers.ats_parser import build_google_dork
+                    query = build_google_dork(site, query_term)
                     encoded_query = urllib.parse.quote_plus(query)
                     
                     search_url = f"https://www.google.com/search?q={encoded_query}&tbs={TIME_FILTER}&start={start}&filter=0&hl=en"

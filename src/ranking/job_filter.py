@@ -156,8 +156,11 @@ NON_TECH_PATTERNS = [
     # Legal, Compliance, Regulatory
     r"\b(?:legal|attorney|counsel|lawyer|paralegal|compliance officer|regulatory affairs|tax advisor)\b",
 
-    # Healthcare, Medical, Nursing
-    r"\b(?:clinical|nurse|nursing|physician|doctor|medical assistant|dental|healthcare assistant|pharmacist|veterinar(?:y|ian))\b",
+    # Healthcare, Medical, Nursing, Psychiatry
+    r"\b(?:clinical|nurse|nursing|physician|doctor|medical assistant|dental|healthcare assistant|pharmacist|veterinar(?:y|ian)|psychiatrist|psychologist|therapist|clinician)\b",
+
+    # Education, Teaching, Instructional
+    r"\b(?:teacher|teaching|instructor|educator|professor|faculty|tutor|special education|curriculum)\b",
 
     # Customer Service, Helpdesk, Technical Support
     r"\b(?:customer service|customer support|client support|call center|help\s*desk|support specialist|service desk)\b",
