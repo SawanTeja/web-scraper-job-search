@@ -27,6 +27,11 @@ prompts.json
 indeed_db.json
 groq_daily_usage.json
 *.csv
+*.bak
+*.csv.bak
+companies_sorted.csv.bak
+csv_import_checkpoint.json
+*checkpoint*.json
 
 # Logs & temporary runtime files
 *.log
@@ -36,3 +41,4 @@ browser_cache/
 
 # Local Study Guides & Documentation
 Guide/
+
