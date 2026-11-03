@@ -96,6 +96,35 @@ TECH_INDUSTRIES = [
 ]
 
 
+def extract_employee_count(row: dict) -> float:
+    """
+    Extract best employee estimate from row using current employee estimate,
+    total employee estimate, or size range fallback.
+    """
+    for col in ["current employee estimate", "total employee estimate"]:
+        val = row.get(col)
+        if val:
+            try:
+                cleaned = re.sub(r"[^\d.]", "", str(val))
+                if cleaned:
+                    cnt = float(cleaned)
+                    if cnt > 0:
+                        return cnt
+            except Exception:
+                pass
+
+    size_str = (row.get("size range") or "").strip()
+    if size_str:
+        m = re.search(r"(\d+)", size_str)
+        if m:
+            try:
+                return float(m.group(1))
+            except Exception:
+                pass
+
+    return 0.0
+
+
 # ──────────────────────────────────────────────────────────────
 #  Checkpoint Management
 # ──────────────────────────────────────────────────────────────
@@ -409,7 +438,7 @@ def run_importer(
     csv_file: str = DEFAULT_CSV,
     limit: int = None,
     workers: int = 25,
-    min_employees: int = 0,
+    min_employees: int = 25,
     tech_only: bool = False,
     probe_domains: bool = True,
     reset: bool = False
@@ -448,7 +477,9 @@ def run_importer(
     print(f"⚡ Worker Threads:      {workers}")
     print(f"🔍 Domain Probing:      {'Enabled' if probe_domains else 'Disabled (Slugs only)'}")
     if min_employees > 0:
-        print(f"👥 Min Employees:       >= {min_employees:,}")
+        print(f"👥 Min Employees:       >= {min_employees:,} (filters out tiny/non-ATS businesses)")
+    else:
+        print(f"👥 Min Employees:       Disabled (all employee sizes considered)")
     if tech_only:
         print(f"💻 Filter:              Tech/Engineering/Finance industries only")
     if resume_row > 0:
@@ -511,6 +542,7 @@ def run_importer(
             current_row = -1
             chunk = []
             processed_in_run = 0
+            consecutive_below_min = 0
 
             for row in reader:
                 current_row += 1
@@ -527,12 +559,18 @@ def run_importer(
 
                 # Apply filters
                 if min_employees > 0:
-                    try:
-                        emp_str = (row.get("current employee estimate") or "0").replace(",", "").strip()
-                        if float(emp_str) < min_employees:
-                            continue
-                    except Exception:
+                    emp_count = extract_employee_count(row)
+                    if emp_count < min_employees:
+                        consecutive_below_min += 1
+                        # Since companies_sorted.csv is sorted descending by employee count,
+                        # once consecutive rows drop below min_employees, all remaining rows
+                        # in the 7.1M CSV are guaranteed to be below threshold.
+                        if consecutive_below_min >= 2000:
+                            print(f"\n🏁 Reached end of candidate pool: employee count is below {min_employees:,} threshold.")
+                            break
                         continue
+                    else:
+                        consecutive_below_min = 0
 
                 if tech_only:
                     ind = (row.get("industry") or "").lower()
@@ -665,7 +703,7 @@ def main():
         "--workers", type=int, default=25, help="Number of concurrent worker threads (default: 25)"
     )
     parser.add_argument(
-        "--min-employees", type=int, default=0, help="Filter for minimum current employee estimate (default: 0)"
+        "--min-employees", type=int, default=25, help="Filter for minimum employee estimate (default: 25, pass 0 to disable)"
     )
     parser.add_argument(
         "--tech-only", action="store_true", help="Filter for software, IT, internet, and fintech industries"

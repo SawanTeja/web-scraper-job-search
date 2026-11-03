@@ -218,7 +218,7 @@ async def scrape_google_jobs():
                         await human_scroll_and_move(page)
                         await asyncio.sleep(random.uniform(10, 20))
 
-                    query = f'site:{site} {query_term}'
+                    query = f'site:{site} ({query_term})' if " OR " in query_term else f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
                     
                     search_url = f"https://www.google.com/search?q={encoded_query}&tbs={TIME_FILTER}&start={start}&filter=0&hl=en"
@@ -240,7 +240,12 @@ async def scrape_google_jobs():
                     await asyncio.sleep(sleep_time)
                     
                     # Check for CAPTCHA
-                    if "sorry/index" in page.url or await page.locator('form[action*="/sorry/index"]').count() > 0:
+                    try:
+                        is_captcha = "sorry/index" in page.url or await page.locator('form[action*="/sorry/index"]').count() > 0
+                    except Exception:
+                        is_captcha = False
+
+                    if is_captcha:
                         print("      ⚠️ CAPTCHA detected! Please solve it in the Chromium window.")
                         try:
                             import platform
@@ -255,7 +260,35 @@ async def scrape_google_jobs():
                                 ], check=False)
                         except Exception:
                             pass
-                        await page.wait_for_selector('div#search', timeout=0) 
+
+                        # Poll until user solves CAPTCHA or closes browser window
+                        while True:
+                            try:
+                                if page.is_closed():
+                                    print("      ⚠️ Browser closed by user. Exiting cleanly.")
+                                    return new_jobs_added
+
+                                current_url = page.url
+                                has_sorry = "sorry/index" in current_url or await page.locator('form[action*="/sorry/index"]').count() > 0
+
+                                if not has_sorry:
+                                    print("      ✅ CAPTCHA solved! Resuming scraping...")
+                                    try:
+                                        await page.wait_for_load_state("domcontentloaded", timeout=8000)
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(2)
+                                    if "q=" not in page.url and "/search" not in page.url:
+                                        print("      🔄 Returning to search results...")
+                                        await page.goto(search_url)
+                                        await asyncio.sleep(2)
+                                    break
+                            except Exception as e:
+                                if "Target page, context or browser has been closed" in str(e):
+                                    print("      ⚠️ Browser closed by user. Exiting cleanly.")
+                                    return new_jobs_added
+
+                            await asyncio.sleep(1) 
                     
                     try:
                         results = await page.eval_on_selector_all(

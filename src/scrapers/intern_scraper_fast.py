@@ -203,7 +203,8 @@ async def scrape_google_jobs(max_pages=None, sites_override=None):
                                 conn.close()
                                 return new_jobs_added
 
-                    query = f'site:{site} {query_term}'
+                    # Group OR terms in parentheses so site: applies to the entire query and doesn't leak random web results
+                    query = f'site:{site} ({query_term})' if " OR " in query_term else f'site:{site} {query_term}'
                     encoded_query = urllib.parse.quote_plus(query)
                     search_url = (
                         f"https://www.google.com/search"
@@ -245,13 +246,37 @@ async def scrape_google_jobs(max_pages=None, sites_override=None):
                             "🚨 CAPTCHA Alert!",
                             "Google CAPTCHA detected. Please solve it in the Chromium window."
                         )
-                        try:
-                            await page.wait_for_selector('div#search', timeout=0)
-                            print("      ✅ CAPTCHA solved! Resuming scraping...")
-                        except Exception as e:
-                            print(f"      ⚠️ CAPTCHA wait ended: {e}")
-                            conn.close()
-                            return new_jobs_added
+                        # Poll until user solves CAPTCHA or closes browser window
+                        while True:
+                            try:
+                                if page.is_closed():
+                                    print("      ⚠️ Browser closed by user. Exiting cleanly.")
+                                    conn.close()
+                                    return new_jobs_added
+
+                                current_url = page.url
+                                has_sorry = "sorry/index" in current_url or await page.locator('form[action*="/sorry/index"]').count() > 0
+
+                                if not has_sorry:
+                                    print("      ✅ CAPTCHA solved! Resuming scraping...")
+                                    try:
+                                        await page.wait_for_load_state("domcontentloaded", timeout=8000)
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(2)
+                                    # If Google redirected to home instead of results, re-navigate to search URL
+                                    if "q=" not in page.url and "/search" not in page.url:
+                                        print("      🔄 Returning to search results...")
+                                        await page.goto(search_url)
+                                        await asyncio.sleep(2)
+                                    break
+                            except Exception as e:
+                                if "Target page, context or browser has been closed" in str(e) or isinstance(e, TargetClosedError):
+                                    print("      ⚠️ Browser closed by user. Exiting cleanly.")
+                                    conn.close()
+                                    return new_jobs_added
+
+                            await asyncio.sleep(1)
 
                     try:
                         results = await page.eval_on_selector_all(
