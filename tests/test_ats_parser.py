@@ -30,6 +30,17 @@ class TestATSParser(unittest.TestCase):
             ("https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210799717", "oraclecloud", "jpmc||cx_1001"),
             ("https://auracloud.keka.com/careers/jobdetails/144210", "keka", "auracloud"),
             ("https://pramana.keka.com/careers", "keka", "pramana"),
+            ("https://personio.jobs.personio.de/job/12345", "personio", "personio"),
+            ("https://spotify.teamtailor.com/jobs/54321", "teamtailor", "spotify"),
+            ("https://ats.rippling.com/superhuman/jobs", "rippling", "superhuman"),
+            ("https://acme.pinpointhq.com/en/jobs/999", "pinpoint", "acme"),
+            ("https://cloudtech.applytojob.com/apply/abc123xyz", "jazzhr", "cloudtech"),
+            ("https://www.comeet.com/jobs/fiverr/456", "comeet", "fiverr"),
+            ("https://emp.jobylon.com/companies/klarna/", "jobylon", "klarna"),
+            ("https://boeing.taleo.net/careersection/2/jobsearch.ftl", "taleo", "boeing|2"),
+            ("https://toyota.csod.com/ux/ats/careersite/1/home", "csod", "toyota|1"),
+            ("https://tcs.zohorecruit.com/jobs/Careers", "zohorecruit", "tcs"),
+            ("https://freshworks.freshteam.com/jobs/dev-123", "freshteam", "freshworks"),
         ]
         for url, plat, ident in cases:
             res = parse_ats_info(url)

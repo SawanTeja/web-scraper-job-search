@@ -1807,7 +1807,8 @@ class AddCompanyWindow(Gtk.Window):
 class CompaniesWindow(Gtk.Window):
     def __init__(self, parent):
         super().__init__(title="Saved Companies (ATS Scraping Pool)")
-        self.set_default_size(950, 680)
+        self.set_default_size(1050, 680)
+        self.set_size_request(850, 500)
         self.set_transient_for(parent)
         self.parent_window = parent
 
@@ -1815,6 +1816,7 @@ class CompaniesWindow(Gtk.Window):
 
         self.all_companies = []
         self.filtered_companies = []
+        self._updating_platform_model = False
 
         # Root box
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -1824,12 +1826,12 @@ class CompaniesWindow(Gtk.Window):
         vbox.set_margin_end(12)
         self.set_child(vbox)
 
-        # Header controls
+        # Row 1: Search & Platform filter bar
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         vbox.append(header_box)
 
         self.search_entry = Gtk.SearchEntry()
-        self.search_entry.set_placeholder_text("🔍 Search company name, ATS platform, or handle...")
+        self.search_entry.set_placeholder_text("🔍 Search company name, ATS platform, or identifier...")
         self.search_entry.set_hexpand(True)
         self.search_entry.connect("search-changed", self.on_search_changed)
         header_box.append(self.search_entry)
@@ -1837,11 +1839,8 @@ class CompaniesWindow(Gtk.Window):
         platform_lbl = Gtk.Label(label="Platform:")
         header_box.append(platform_lbl)
 
-        self.platform_options = [
-            "ALL", "greenhouse", "lever", "ashby", "smartrecruiters",
-            "workday", "breezy", "workable", "bamboohr", "jobvite", "recruitee", "keka"
-        ]
-        self.platform_model = Gtk.StringList.new([p.upper() for p in self.platform_options])
+        self.platform_options = ["ALL"]
+        self.platform_model = Gtk.StringList.new(["ALL"])
         self.platform_drop = Gtk.DropDown(model=self.platform_model)
         self.platform_drop.set_selected(0)
         self.platform_drop.connect("notify::selected", self.on_platform_changed)
@@ -1852,35 +1851,37 @@ class CompaniesWindow(Gtk.Window):
         self.add_btn.connect("clicked", self.on_add_company_clicked)
         header_box.append(self.add_btn)
 
+        self.refresh_btn = Gtk.Button(label="🔄 Refresh")
+        self.refresh_btn.connect("clicked", self.on_refresh_clicked)
+        header_box.append(self.refresh_btn)
+
+        # Row 2: Stats Banner & Quick Actions
+        self.stats_banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.stats_banner.add_css_class("stats-banner")
+
+        self.stats_label = Gtk.Label(label="Loading stats...")
+        self.stats_label.set_hexpand(True)
+        self.stats_label.set_halign(Gtk.Align.START)
+        self.stats_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.stats_banner.append(self.stats_label)
+
         self.extract_btn = Gtk.Button(label="📥 Extract from Jobs")
         self.extract_btn.set_tooltip_text("Scan existing jobs in DB to discover and extract company ATS career websites")
         self.extract_btn.connect("clicked", self.on_extract_clicked)
-        header_box.append(self.extract_btn)
+        self.stats_banner.append(self.extract_btn)
 
         self.seed_btn = Gtk.Button(label="🌱 Seed Top 45+")
         self.seed_btn.add_css_class("suggested-action")
         self.seed_btn.set_tooltip_text("Instantly load 45+ top tech company ATS career boards into your pool")
         self.seed_btn.connect("clicked", self.on_seed_clicked)
-        header_box.append(self.seed_btn)
-
-        self.refresh_btn = Gtk.Button(label="🔄 Refresh")
-        self.refresh_btn.connect("clicked", self.on_refresh_clicked)
-        header_box.append(self.refresh_btn)
+        self.stats_banner.append(self.seed_btn)
 
         self.clear_all_companies_btn = Gtk.Button(label="🗑 Clear All")
         self.clear_all_companies_btn.add_css_class("destructive-action")
         self.clear_all_companies_btn.set_tooltip_text("Remove all saved companies from ATS scraping pool")
         self.clear_all_companies_btn.connect("clicked", self.on_clear_all_companies_clicked)
-        header_box.append(self.clear_all_companies_btn)
+        self.stats_banner.append(self.clear_all_companies_btn)
 
-
-        # Stats Banner
-        self.stats_banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        self.stats_banner.add_css_class("stats-banner")
-        self.stats_label = Gtk.Label(label="Loading stats...")
-        self.stats_label.set_hexpand(True)
-        self.stats_label.set_halign(Gtk.Align.START)
-        self.stats_banner.append(self.stats_label)
         vbox.append(self.stats_banner)
 
         # Scrolled List
@@ -1957,18 +1958,40 @@ class CompaniesWindow(Gtk.Window):
 
         total_c = stats.get("total_companies", 0)
         total_j = stats.get("total_jobs", 0)
-        plat_strs = [f"{p.upper()}: {cnt}" for p, cnt in stats.get("platforms", {}).items()]
-        breakdown = "  •  ".join(plat_strs)
 
+        # Clean compact header without long list of platform names
         self.stats_label.set_markup(
-            f"<b>{total_c}</b> Companies in Pool  •  <b>{total_j}</b> Jobs Scraped   |   {breakdown}"
+            f"🏢 <b>{total_c:,}</b> Companies in Pool   •   💼 <b>{total_j:,}</b> Jobs Scraped"
         )
+        plat_strs = [f"• {p.upper()}: {cnt:,}" for p, cnt in stats.get("platforms", {}).items()]
+        self.stats_label.set_tooltip_text(f"ATS Platforms ({len(plat_strs)} total):\n" + "\n".join(plat_strs))
+
+        # Dynamically build platform dropdown with live counts
+        db_platforms = sorted(stats.get("platforms", {}).keys())
+        prev_idx = self.platform_drop.get_selected()
+        current_selected = self.platform_options[prev_idx].lower() if prev_idx < len(self.platform_options) else "all"
+
+        self.platform_options = ["ALL"] + db_platforms
+        display_items = [f"ALL ({total_c:,})"] + [f"{p.upper()} ({stats.get('platforms', {}).get(p, 0):,})" for p in db_platforms]
+
+        self._updating_platform_model = True
+        new_model = Gtk.StringList.new(display_items)
+        self.platform_drop.set_model(new_model)
+        try:
+            sel_idx = [p.lower() for p in self.platform_options].index(current_selected)
+        except ValueError:
+            sel_idx = 0
+        self.platform_drop.set_selected(sel_idx)
+        self._updating_platform_model = False
+
         self.apply_filter()
 
     def on_search_changed(self, entry):
         self.apply_filter()
 
     def on_platform_changed(self, dropdown, pspec):
+        if getattr(self, "_updating_platform_model", False):
+            return
         self.apply_filter()
 
     def on_refresh_clicked(self, button):
@@ -2143,6 +2166,8 @@ class CompaniesWindow(Gtk.Window):
             name_lbl = Gtk.Label(label=name_text)
             name_lbl.add_css_class("company-title")
             name_lbl.set_halign(Gtk.Align.START)
+            name_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            name_lbl.set_max_width_chars(32)
             top_box.append(name_lbl)
 
             ats = (c.get("ats_platform") or "ats").lower()
@@ -2153,6 +2178,8 @@ class CompaniesWindow(Gtk.Window):
 
             ident_lbl = Gtk.Label(label=f"@{c.get('identifier', '')}")
             ident_lbl.add_css_class("dim-label")
+            ident_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            ident_lbl.set_max_width_chars(28)
             top_box.append(ident_lbl)
 
             info_box.append(top_box)
@@ -2161,7 +2188,7 @@ class CompaniesWindow(Gtk.Window):
             career_url = c.get("career_url") or ""
             url_lbl = Gtk.Label(label=career_url)
             url_lbl.set_ellipsize(Pango.EllipsizeMode.END)
-            url_lbl.set_max_width_chars(65)
+            url_lbl.set_max_width_chars(50)
             url_lbl.set_halign(Gtk.Align.START)
             url_lbl.add_css_class("dim-label")
             bottom_box.append(url_lbl)
@@ -2179,6 +2206,7 @@ class CompaniesWindow(Gtk.Window):
             job_cnt = c.get("job_count", 0) or 0
             meta_lbl = Gtk.Label(label=f"•  {scraped_str}  •  {job_cnt} active jobs")
             meta_lbl.add_css_class("dim-label")
+            meta_lbl.set_ellipsize(Pango.EllipsizeMode.END)
             bottom_box.append(meta_lbl)
 
             info_box.append(bottom_box)

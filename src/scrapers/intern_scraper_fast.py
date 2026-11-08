@@ -59,8 +59,8 @@ SITES = [
 
 # The "Broad Tech" Dragnet (proven query format from older versions)
 SEARCH_QUERIES = [
-    'Software',
-    'C++ OR Java',
+    '"Software" intern',
+    '"C++ OR Java"',
     'Javascript OR React OR Node.js'
 ]
 

@@ -157,6 +157,87 @@ def verify_company_board(ats_platform: str, identifier: str, career_url: str, ti
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return True, clean_name
         except urllib.error.HTTPError as e:
+            if e.code in (400, 404):
+                return False, ""
+            return True, clean_name
+        except Exception:
+            return True, clean_name
+
+    elif ats_platform == "ashby":
+        try:
+            api_url = f"https://api.ashbyhq.com/posting-api/job-board/{identifier}"
+            req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return True, clean_name
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False, ""
+            return True, clean_name
+        except Exception:
+            return True, clean_name
+
+    elif ats_platform == "workable":
+        try:
+            api_url = f"https://apply.workable.com/api/v3/accounts/{identifier}/jobs"
+            req = urllib.request.Request(api_url, data=b"{}", headers={
+                "User-Agent": USER_AGENT,
+                "Content-Type": "application/json"
+            })
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return True, clean_name
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 404):
+                return False, ""
+            return True, clean_name
+        except Exception:
+            return True, clean_name
+
+    elif ats_platform == "bamboohr":
+        try:
+            api_url = f"https://{identifier}.bamboohr.com/careers/list"
+            req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return True, clean_name
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False, ""
+            return True, clean_name
+        except Exception:
+            return True, clean_name
+
+    elif ats_platform == "breezy":
+        try:
+            api_url = f"https://{identifier}.breezy.hr/json"
+            req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return True, clean_name
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False, ""
+            return True, clean_name
+        except Exception:
+            return True, clean_name
+
+    elif ats_platform == "recruitee":
+        try:
+            api_url = f"https://{identifier}.recruitee.com/api/offers/"
+            req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return True, clean_name
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False, ""
+            return True, clean_name
+        except Exception:
+            return True, clean_name
+
+    elif ats_platform == "personio":
+        try:
+            api_url = f"https://{identifier}.jobs.personio.de/xml"
+            req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return True, clean_name
+        except urllib.error.HTTPError as e:
             if e.code == 404:
                 return False, ""
             return True, clean_name

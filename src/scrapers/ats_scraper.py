@@ -386,6 +386,64 @@ def fetch_keka_jobs(identifier: str) -> list[dict]:
     return results
 
 
+def fetch_personio_jobs(identifier: str) -> list[dict]:
+    """Fetches jobs via Personio XML/HTML career board."""
+    results = []
+    for domain in ["de", "com"]:
+        url = f"https://{identifier}.jobs.personio.{domain}/xml"
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=8) as r:
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(r.read())
+                for pos in root.findall(".//position"):
+                    jid = pos.findtext("id")
+                    title = pos.findtext("name") or "Unknown Title"
+                    office = pos.findtext("office") or ""
+                    job_url = f"https://{identifier}.jobs.personio.{domain}/job/{jid}" if jid else f"https://{identifier}.jobs.personio.{domain}"
+                    results.append({"title": title.strip(), "url": job_url, "location": office})
+                if results:
+                    return results
+        except Exception:
+            pass
+    return results
+
+
+def fetch_rippling_jobs(identifier: str) -> list[dict]:
+    """Fetches jobs via Rippling public board API."""
+    url = f"https://ats.rippling.com/api/v1/board/{identifier}/jobs"
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    results = []
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode("utf-8"))
+            for j in data:
+                jid = j.get("id") or j.get("uuid")
+                title = j.get("name") or j.get("title") or "Unknown Title"
+                loc = j.get("location") or ""
+                job_url = f"https://ats.rippling.com/{identifier}/jobs/{jid}" if jid else f"https://ats.rippling.com/{identifier}/jobs"
+                results.append({"title": title.strip(), "url": job_url, "location": str(loc)})
+    except Exception:
+        pass
+    return results
+
+
+def fetch_jazzhr_jobs(identifier: str) -> list[dict]:
+    """Fetches jobs via JazzHR company board."""
+    url = f"https://{identifier}.applytojob.com"
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    results = []
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+            matches = re.findall(r'href=[\"\x27](https?://[^\s\"\x27]*applytojob\.com/apply/([a-zA-Z0-9]+)/[^\s\"\x27]*)[\"\x27][^>]*>([^<]+)</a>', html)
+            for raw_url, jid, title in matches:
+                results.append({"title": title.strip(), "url": raw_url.split("?")[0]})
+    except Exception:
+        pass
+    return results
+
+
 # Mapping of ATS platform name to fetch function
 PLATFORM_FETCHERS = {
     "greenhouse": fetch_greenhouse_jobs,
@@ -401,6 +459,9 @@ PLATFORM_FETCHERS = {
     "icims": fetch_icims_jobs,
     "oraclecloud": fetch_oraclecloud_jobs,
     "keka": fetch_keka_jobs,
+    "personio": fetch_personio_jobs,
+    "rippling": fetch_rippling_jobs,
+    "jazzhr": fetch_jazzhr_jobs,
 }
 
 
