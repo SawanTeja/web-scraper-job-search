@@ -78,6 +78,7 @@ def init_db(conn=None):
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_ats ON companies(ats_platform)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_last_scraped ON companies(last_scraped_at)")
 
     # Deleted URLs table: remembers deleted/ignored job URLs permanently so scrapers never re-add them
     conn.execute("""
@@ -196,12 +197,34 @@ def save_company(name, ats_platform, identifier, career_url, conn=None):
     return True
 
 
-def get_all_companies(conn=None):
-    """Return all saved companies as a list of dicts."""
+def get_all_companies(conn=None, max_age_hours=None, ats_platform=None, limit=None, order_by="name ASC"):
+    """Return saved companies as a list of dicts with optional age filtering, platform filtering, and custom ordering."""
     close_after = conn is None
     if conn is None:
         conn = get_conn()
-    rows = conn.execute("SELECT * FROM companies ORDER BY name ASC").fetchall()
+
+    where_clauses = []
+    params = []
+
+    if ats_platform:
+        where_clauses.append("ats_platform = ?")
+        params.append(ats_platform.lower().strip())
+
+    if max_age_hours is not None and max_age_hours > 0:
+        where_clauses.append("(last_scraped_at IS NULL OR datetime(last_scraped_at) < datetime('now', ?))")
+        params.append(f"-{int(max_age_hours)} hours")
+
+    query = "SELECT * FROM companies"
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+
+    if order_by:
+        query += f" ORDER BY {order_by}"
+
+    if limit is not None and int(limit) > 0:
+        query += f" LIMIT {int(limit)}"
+
+    rows = conn.execute(query, params).fetchall()
     result = [dict(r) for r in rows]
     if close_after:
         conn.close()

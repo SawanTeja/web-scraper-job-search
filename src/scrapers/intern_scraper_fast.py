@@ -57,15 +57,22 @@ SITES = [
     "keka.com",
 ]
 
-# The "Broad Tech" Dragnet (proven query format from older versions)
+# The "Broad Tech" Dragnet
 SEARCH_QUERIES = [
-    '"Software" intern',
-    '"C++ OR Java"',
-    'Javascript OR React OR Node.js'
+    '"software engineer" intern',
+    '"software developer" intern',
+    '"backend" intern',
+    '"full stack" intern',
+    '"c++" intern',
+    '"systems" intern',
+    '"networking" intern',
+    '"node.js" intern',
+    '"react" intern'
 ]
 
-# TIME_FILTER: "qdr:d" limits search results to the past 24 hours (1 day)
-TIME_FILTER = os.environ.get("SCRAPER_TIME_FILTER", "qdr:d")
+# TIME_FILTER: empty by default so Google returns all active indexed results without a 24h restriction
+_raw_tf = os.environ.get("SCRAPER_TIME_FILTER", "").strip().lower()
+TIME_FILTER = "" if _raw_tf in ("all", "none", "off", "") else _raw_tf
 MAX_PAGES = int(os.environ.get("SCRAPER_MAX_PAGES", 10))
 
 USER_AGENT = (
@@ -353,26 +360,22 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
 
                             await asyncio.sleep(1)
 
-                    # Check if Google relaxed the query (0 more results on target site)
-                    # Proven pattern from ad5dccc: immediately prevents loading general web / YouTube results
+                    # Check if Google explicitly found 0 results for this query
                     try:
                         page_html = await page.content()
-                        is_relaxed = (
+                        is_empty_page = (
                             "did not match any documents" in page_html
                             or f"No results found for site:{clean_site}" in page_html
-                            or "It looks like there aren't many great matches for your search" in page_html
-                            or "Showing results for" in page_html
-                            or "Must include:" in page_html
                         )
-                        if is_relaxed:
-                            print(f"      🚫 Google found 0 more results for site:{clean_site} (Google relaxed to general web). Moving to next query.")
+                        if is_empty_page:
+                            print(f"      🚫 Google found 0 results for site:{clean_site}. Moving to next query.")
                             break
                     except Exception:
                         pass
 
                     # Wait for search results to render in DOM
                     try:
-                        await page.wait_for_selector('div.yuRUbf, div.g', timeout=10000)
+                        await page.wait_for_selector('a:has(h3), div.yuRUbf, div.g', timeout=10000)
                     except Exception:
                         pass
 
@@ -385,21 +388,41 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
                     await asyncio.sleep(sleep_time)
 
                     try:
-                        # Extract organic search result cards (div.yuRUbf, div.g)
-                        results = await page.eval_on_selector_all(
-                            "div.yuRUbf, div.g",
-                            """elements => {
+                        # Robust multi-strategy extraction: handles modern Google a:has(h3) as well as legacy div.yuRUbf / div.g
+                        results = await page.evaluate(
+                            """() => {
                                 let list = [];
-                                for (let e of elements) {
-                                    let a = e.querySelector('a:has(h3)') || e.querySelector('a[href^="http"]');
-                                    let h3 = e.querySelector('h3');
-                                    if (a && h3 && a.href) {
+                                let seenUrls = new Set();
+
+                                // Strategy 1: Heading anchors (universal Google format)
+                                let h3s = document.querySelectorAll('h3');
+                                for (let h3 of h3s) {
+                                    let a = h3.closest('a');
+                                    if (a && a.href && a.href.startsWith('http') && !seenUrls.has(a.href)) {
+                                        seenUrls.add(a.href);
                                         list.push({
                                             url: a.href,
                                             title: h3.innerText ? h3.innerText.trim() : 'Unknown Title'
                                         });
                                     }
                                 }
+
+                                // Strategy 2: Legacy container cards if Strategy 1 found nothing
+                                if (list.length === 0) {
+                                    let cards = document.querySelectorAll('div.yuRUbf, div.g');
+                                    for (let card of cards) {
+                                        let a = card.querySelector('a:has(h3)') || card.querySelector('a[href^="http"]');
+                                        let h3 = card.querySelector('h3');
+                                        if (a && a.href && !seenUrls.has(a.href)) {
+                                            seenUrls.add(a.href);
+                                            list.push({
+                                                url: a.href,
+                                                title: h3 && h3.innerText ? h3.innerText.trim() : 'Unknown Title'
+                                            });
+                                        }
+                                    }
+                                }
+
                                 return list;
                             }"""
                         )

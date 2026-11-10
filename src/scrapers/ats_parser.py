@@ -321,6 +321,18 @@ ATS_PATTERNS = [
             "job_id": m.group(2) if m.lastindex >= 2 else None,
         }
     ),
+    # Paylocity: recruiting.paylocity.com/recruiting/jobs/All/<guid>
+    (
+        "paylocity",
+        re.compile(r"https?://recruiting\.paylocity\.com/recruiting/jobs/All/([a-f0-9\-]+)", re.I),
+        lambda m: {
+            "ats_platform": "paylocity",
+            "identifier": m.group(1).lower(),
+            "company_name": "Paylocity Careers",
+            "career_url": f"https://recruiting.paylocity.com/recruiting/jobs/All/{m.group(1).lower()}",
+            "job_id": None,
+        }
+    ),
 ]
 
 
