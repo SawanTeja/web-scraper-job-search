@@ -441,6 +441,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
             .platform-jobvite { background-color: #9a6700; }
             .platform-recruitee { background-color: #545d68; }
             .platform-keka { background-color: #f05a28; }
+            .platform-eightfold { background-color: #6366f1; }
             .platform-ats { background-color: #444c56; }
             .stats-banner {
                 background-color: rgba(255, 255, 255, 0.05);
@@ -1785,7 +1786,7 @@ class AddCompanyWindow(Gtk.Window):
         res = parse_ats_info(url, resolve_google=False)
         if not res:
             self.status_label.set_markup(
-                "<span color='#cf222e'>❌ Could not detect ATS platform.<br/>Supported: Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Breezy, BambooHR, Workable, Jobvite, Recruitee, Keka</span>"
+                "<span color='#cf222e'>❌ Could not detect ATS platform.<br/>Supported: Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Eightfold AI, Breezy, BambooHR, Workable, Jobvite, Recruitee, Keka</span>"
             )
             return
 

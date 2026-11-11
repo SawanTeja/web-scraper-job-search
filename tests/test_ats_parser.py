@@ -41,6 +41,8 @@ class TestATSParser(unittest.TestCase):
             ("https://toyota.csod.com/ux/ats/careersite/1/home", "csod", "toyota|1"),
             ("https://tcs.zohorecruit.com/jobs/Careers", "zohorecruit", "tcs"),
             ("https://freshworks.freshteam.com/jobs/dev-123", "freshteam", "freshworks"),
+            ("https://micron.eightfold.ai/careers", "eightfold", "micron"),
+            ("https://paypal.eightfold.ai/careers/job/274922336686", "eightfold", "paypal"),
         ]
         for url, plat, ident in cases:
             res = parse_ats_info(url)

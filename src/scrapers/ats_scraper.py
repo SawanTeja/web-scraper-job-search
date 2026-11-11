@@ -728,6 +728,52 @@ def fetch_rippling_jobs(identifier: str, client: "httpx.Client" = None) -> list[
     return results
 
 
+def fetch_eightfold_jobs(identifier: str, client: "httpx.Client" = None) -> list[dict]:
+    """Fetches jobs via Eightfold AI public career search endpoint."""
+    url = f"https://{identifier}.eightfold.ai/careers"
+    results = []
+    try:
+        if client:
+            resp = client.get(url, timeout=5.0)
+            html = resp.text if resp.status_code == 200 else ""
+        else:
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+
+        if not html:
+            return results
+
+        m = re.search(r'window\._EF_GROUP_ID\s*=\s*[\"\x27]([^\s\"\x27]+)[\"\x27]', html)
+        domain = m.group(1) if m else f"{identifier}.com"
+
+        api_url = f"https://{identifier}.eightfold.ai/api/pcsx/search?domain={domain}&query=&start=0&num=50"
+        if client:
+            api_resp = client.get(api_url, timeout=6.0)
+            data = api_resp.json() if api_resp.status_code == 200 else {}
+        else:
+            req2 = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+            with urllib.request.urlopen(req2, timeout=6) as r2:
+                data = json.loads(r2.read().decode("utf-8"))
+
+        positions = data.get("data", {}).get("positions", []) if isinstance(data.get("data"), dict) else []
+        for p in positions:
+            title = (p.get("name") or "Unknown Title").strip()
+            pos_url = p.get("positionUrl") or ""
+            locs = p.get("locations") or []
+            loc_str = ", ".join(locs) if isinstance(locs, list) else str(locs)
+            full_url = f"https://{identifier}.eightfold.ai{pos_url}" if pos_url.startswith("/") else pos_url
+            if full_url:
+                results.append({
+                    "title": title,
+                    "url": full_url,
+                    "location": loc_str
+                })
+    except Exception:
+        pass
+    return results
+
+
 def fetch_jazzhr_jobs(identifier: str, client: "httpx.Client" = None) -> list[dict]:
     """Fetches jobs via JazzHR company board."""
     url = f"https://{identifier}.applytojob.com"
@@ -771,6 +817,7 @@ PLATFORM_FETCHERS = {
     "personio": fetch_personio_jobs,
     "rippling": fetch_rippling_jobs,
     "jazzhr": fetch_jazzhr_jobs,
+    "eightfold": fetch_eightfold_jobs,
 }
 
 

@@ -333,6 +333,54 @@ ATS_PATTERNS = [
             "job_id": None,
         }
     ),
+    # Eightfold AI: <company>.eightfold.ai/careers
+    (
+        "eightfold",
+        re.compile(r"https?://([a-zA-Z0-9\-]+)\.eightfold\.ai/(?:careers(?:/job/(\d+))?)?", re.I),
+        lambda m: {
+            "ats_platform": "eightfold",
+            "identifier": m.group(1).lower(),
+            "company_name": m.group(1).replace("-", " ").replace("_", " ").title(),
+            "career_url": f"https://{m.group(1).lower()}.eightfold.ai/careers",
+            "job_id": m.group(2) if m.lastindex >= 2 else None,
+        }
+    ),
+    # Join.com: join.com/companies/<company>
+    (
+        "join_com",
+        re.compile(r"https?://join\.com/companies/([a-zA-Z0-9\-]+)(?:/jobs/(\d+))?", re.I),
+        lambda m: {
+            "ats_platform": "join_com",
+            "identifier": m.group(1).lower(),
+            "company_name": m.group(1).replace("-", " ").replace("_", " ").title(),
+            "career_url": f"https://join.com/companies/{m.group(1).lower()}",
+            "job_id": m.group(2) if m.lastindex >= 2 else None,
+        }
+    ),
+    # Paycom: paycomonline.net/v4/ats/web.php/jobs?clientkey=<key>
+    (
+        "paycom",
+        re.compile(r"https?://(?:www\.)?paycomonline\.net/v4/ats/web\.php/jobs\?clientkey=([a-zA-Z0-9]+)", re.I),
+        lambda m: {
+            "ats_platform": "paycom",
+            "identifier": m.group(1),
+            "company_name": "Paycom Careers",
+            "career_url": f"https://www.paycomonline.net/v4/ats/web.php/jobs?clientkey={m.group(1)}",
+            "job_id": None,
+        }
+    ),
+    # ADP Workforce Now: workforcenow.adp.com/...cid=<cid>
+    (
+        "adp",
+        re.compile(r"https?://workforcenow\.adp\.com/mascsr/default/mdf/recruitment/recruitment\.html\?cid=([a-f0-9\-]+)", re.I),
+        lambda m: {
+            "ats_platform": "adp",
+            "identifier": m.group(1).lower(),
+            "company_name": "ADP Careers",
+            "career_url": f"https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid={m.group(1).lower()}",
+            "job_id": None,
+        }
+    ),
 ]
 
 

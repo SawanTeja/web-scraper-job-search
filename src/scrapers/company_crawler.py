@@ -111,6 +111,8 @@ def is_valid_identifier(ats_platform: str, identifier: str) -> bool:
         return False
     if re.match(r"^\d+$", primary):
         return False
+    if primary.endswith("-sandbox") or "-sandbox-" in primary or primary.endswith("-uat") or "-uat-" in primary or primary.endswith("-staging"):
+        return False
     return True
 
 
@@ -243,6 +245,24 @@ def verify_company_board(ats_platform: str, identifier: str, career_url: str, ti
             return True, clean_name
         except Exception:
             return True, clean_name
+
+    elif ats_platform == "eightfold":
+        try:
+            req = urllib.request.Request(f"https://{identifier}.eightfold.ai/careers", headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                m_gid = re.findall(r'_EF_GROUP_ID\s*=\s*[\'"]([^\'"]+)[\'"]', html)
+                gid = m_gid[0] if m_gid else ""
+                m_title = re.search(r'<title>([^<]+)</title>', html, re.I)
+                raw_t = m_title.group(1).strip() if m_title else ""
+                if identifier.lower() not in ("eightfold", "volkscience"):
+                    if gid == "volkscience.com" or "careers at eightfold" in raw_t.lower() or raw_t.lower() == "eightfold":
+                        return False, ""
+                c_name = raw_t.replace("Careers", "").replace("Job Opportunities", "").strip(" -|:·")
+                c_name = re.sub(r"^at\s+", "", c_name, flags=re.I).strip()
+                return True, c_name or clean_name
+        except Exception:
+            return False, ""
 
     elif ats_platform == "workday":
         # Check HTTP response from the career URL
