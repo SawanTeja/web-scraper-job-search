@@ -19,6 +19,7 @@ import os
 import json
 import re
 import time
+import signal
 import argparse
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -874,6 +875,30 @@ def run_ats_scraper(filter_tech: bool = False,
         except (ValueError, TypeError):
             max_workers = 60
 
+    if os.path.exists("stop.flag"):
+        try:
+            os.remove("stop.flag")
+        except Exception:
+            pass
+
+    def _sig_handler(signum, frame):
+        print("\n🛑 Signal received! Halting ATS scraper gracefully...")
+        try:
+            with open("stop.flag", "w") as f:
+                f.write("stop")
+        except Exception:
+            pass
+        raise KeyboardInterrupt
+
+    try:
+        signal.signal(signal.SIGINT, _sig_handler)
+    except (ValueError, AttributeError):
+        pass
+    try:
+        signal.signal(signal.SIGTERM, _sig_handler)
+    except (ValueError, AttributeError):
+        pass
+
     conn = get_conn()
     init_db(conn)
 
@@ -957,6 +982,7 @@ def run_ats_scraper(filter_tech: bool = False,
             )
         )
 
+    stopped_early = False
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_company = {
@@ -965,6 +991,15 @@ def run_ats_scraper(filter_tech: bool = False,
             }
 
             for future in as_completed(future_to_company):
+                if os.path.exists("stop.flag"):
+                    print("\n🛑 [STOP] stop.flag detected! Terminating company scraper gracefully...")
+                    stopped_early = True
+                    try:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                    except Exception:
+                        pass
+                    break
+
                 comp = future_to_company[future]
                 comp_name = comp.get("name") or comp.get("identifier")
                 platform = comp.get("ats_platform")
@@ -1038,6 +1073,9 @@ def run_ats_scraper(filter_tech: bool = False,
         # Final commit for remaining buffered records
         flush_batch()
 
+    except KeyboardInterrupt:
+        print("\n🛑 [STOP] Company scraping interrupted by user. Committing collected jobs...")
+        stopped_early = True
     finally:
         flush_batch()
         if http_client:
@@ -1049,7 +1087,10 @@ def run_ats_scraper(filter_tech: bool = False,
     avg_speed = companies_processed / total_time if total_time > 0 else 0.0
 
     print("\n" + "=" * 62)
-    print(f"✨ ATS SCRAPE COMPLETE in {m}m {s:02d}s ({avg_speed:.1f} companies/sec)!")
+    if stopped_early:
+        print(f"🛑 ATS SCRAPE STOPPED by user after {m}m {s:02d}s ({avg_speed:.1f} companies/sec)!")
+    else:
+        print(f"✨ ATS SCRAPE COMPLETE in {m}m {s:02d}s ({avg_speed:.1f} companies/sec)!")
     print(f"   📊 Companies scanned:  {companies_processed:,} / {len(companies):,}")
     print(f"   💾 New jobs added:     +{new_jobs_added:,}")
     print("=" * 62 + "\n")

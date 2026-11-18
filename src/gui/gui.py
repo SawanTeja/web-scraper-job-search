@@ -27,7 +27,12 @@ try:
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
         clear_all_companies, clear_everything,
-        extract_companies_from_existing_jobs, seed_starter_companies
+        extract_companies_from_existing_jobs, seed_starter_companies,
+        get_status_counts, load_active_jobs, get_na_jobs
+    )
+    from src.core.process_manager import (
+        register_child_process, unregister_child_process,
+        cleanup_all_child_processes, create_stop_flag, clear_stop_flag
     )
     from src.scrapers.ats_parser import parse_ats_info
 except ImportError:
@@ -36,7 +41,12 @@ except ImportError:
         clear_all_jobs, update_job, get_company_count, get_all_companies,
         delete_company, get_company_stats, save_company,
         clear_all_companies, clear_everything,
-        extract_companies_from_existing_jobs, seed_starter_companies
+        extract_companies_from_existing_jobs, seed_starter_companies,
+        get_status_counts, load_active_jobs, get_na_jobs
+    )
+    from process_manager import (
+        register_child_process, unregister_child_process,
+        cleanup_all_child_processes, create_stop_flag, clear_stop_flag
     )
     from ats_parser import parse_ats_info
 
@@ -82,6 +92,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Job Scraper & Ranker")
         self.set_default_size(1300, 750)
+
+        # Subprocess tracking
+        self.ats_process = None
+        self.scraper_process = None
+        self.rank_process = None
         
         # Ensure we clean up any child processes when closed
         self.connect("close-request", self.on_close_request)
@@ -92,18 +107,6 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # Setup CSS
         self.setup_css()
 
-        # Load DB — returns dict[url -> data] same as before
-        self.jobs_db = load_db()
-        self.rendered_jobs = set()
-
-        # Track pending batch render
-        self._batch_queue = []
-        self._batch_source_id = None
-        # Track whether priority tab needs refresh
-        self._prio_dirty = True
-        # Search state
-        self.search_query = ""
-        self._search_timeout_id = None
         # Pagination
         self.page_size = 50
         self.page_offsets = {
@@ -114,6 +117,19 @@ class JobAppWindow(Gtk.ApplicationWindow):
             "NA": self.page_size,
             "Priority Sorting": self.page_size,
         }
+
+        # Load active DB jobs (excludes 1.2M NA jobs to prevent RAM bloat and UI freezes)
+        self.jobs_db = load_active_jobs(na_limit=self.page_size)
+        self.rendered_jobs = set()
+
+        # Track pending batch render
+        self._batch_queue = []
+        self._batch_source_id = None
+        # Track whether priority tab needs refresh
+        self._prio_dirty = True
+        # Search state
+        self.search_query = ""
+        self._search_timeout_id = None
 
         # Main layout
         self.vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -137,6 +153,13 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.scrape_ats_btn.add_css_class("suggested-action")
         self.scrape_ats_btn.connect("clicked", self.on_scrape_ats_clicked)
         header_box.append(self.scrape_ats_btn)
+
+        self.stop_ats_btn = Gtk.Button(label="🛑 Stop Companies")
+        self.stop_ats_btn.add_css_class("destructive-action")
+        self.stop_ats_btn.set_sensitive(False)
+        self.stop_ats_btn.set_tooltip_text("Stop running company ATS scraper")
+        self.stop_ats_btn.connect("clicked", self.on_stop_ats_clicked)
+        header_box.append(self.stop_ats_btn)
 
         self.view_companies_btn = Gtk.Button(label="📋 Saved Companies")
         self.view_companies_btn.connect("clicked", self.on_view_companies_clicked)
@@ -388,19 +411,23 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.expire_stale_jobs()
         self.refresh_ui()
 
+    def cleanup_subprocesses(self):
+        """Cleanly stop and terminate all background child processes."""
+        create_stop_flag()
+        cleanup_all_child_processes()
+        for proc_name in ('ats_process', 'scraper_process', 'rank_process'):
+            proc = getattr(self, proc_name, None)
+            if proc and proc.poll() is None:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            setattr(self, proc_name, None)
+
     def on_close_request(self, window):
         """Called when the window is closed to ensure background tasks are killed."""
-        if hasattr(self, 'rank_process') and self.rank_process:
-            self.rank_process.terminate()
-            self.rank_process = None
-        
-        # Clean up stop.flag if it was left around
-        import os
-        if os.path.exists("stop.flag"):
-            try:
-                os.remove("stop.flag")
-            except:
-                pass
+        self.cleanup_subprocesses()
+        clear_stop_flag()
         return False  # Propagate the close event
 
     def setup_css(self):
@@ -518,18 +545,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
         save_db(self.jobs_db)
 
     def backfill_added_at(self):
-        """Add added_at timestamp to existing jobs and migrate old statuses."""
-        updated = False
-        for link, data in self.jobs_db.items():
-            if "added_at" not in data:
-                data["added_at"] = datetime.now(timezone.utc).isoformat()
-                updated = True
-            # Migrate old "Ongoing/Waiting" status to "Ongoing"
-            if data.get("status") == "Ongoing/Waiting":
-                data["status"] = "Ongoing"
-                updated = True
-        if updated:
-            self.save_db()
+        """Add added_at timestamp to existing jobs and migrate old statuses directly in SQLite."""
+        try:
+            conn = get_conn()
+            now_iso = datetime.now(timezone.utc).isoformat()
+            conn.execute("UPDATE jobs SET added_at=? WHERE added_at IS NULL", (now_iso,))
+            conn.execute("UPDATE jobs SET status='Ongoing' WHERE status='Ongoing/Waiting'")
+            conn.commit()
+            conn.close()
+        except sqlite3.OperationalError as e:
+            print(f"⚠️ [DB Notice] Database locked or busy during backfill_added_at: {e}")
+        except Exception as e:
+            print(f"⚠️ Warning in backfill_added_at: {e}")
 
     def expire_stale_jobs(self):
         """Auto-expire 'New' jobs older than 24 hours to 'NA' using direct fast SQLite query."""
@@ -548,7 +575,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         conn.close()
 
         if expired > 0:
-            for link, data in self.jobs_db.items():
+            for link, data in list(self.jobs_db.items()):
                 if data.get("status") == "New":
                     added_at_str = data.get("added_at")
                     if added_at_str and added_at_str < cutoff_iso:
@@ -624,12 +651,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
         # Run expiry check before displaying
         self.expire_stale_jobs()
 
-        counts = {"New": 0, "Applied": 0, "Ongoing": 0, "Rejected": 0, "NA": 0}
+        counts = get_status_counts()
         grouped_jobs = {"New": [], "Applied": [], "Ongoing": [], "Rejected": [], "NA": []}
 
         for link, data in self.jobs_db.items():
             status = data.get("status", "New")
-            counts[status] = counts.get(status, 0) + 1
             if status in grouped_jobs:
                 grouped_jobs[status].append((link, data))
 
@@ -660,8 +686,9 @@ class JobAppWindow(Gtk.ApplicationWindow):
             for link, data in items[:limit]:
                 render_queue.append((self._create_main_job_row, (link, data)))
 
-            if len(items) > limit:
-                render_queue.append((self._create_load_more_btn, (status, len(items) - limit)))
+            total_items = counts.get("NA", len(items)) if status == "NA" else len(items)
+            if total_items > limit:
+                render_queue.append((self._create_load_more_btn, (status, total_items - limit)))
             elif not items and status == "New" and self.search_query:
                 render_queue.append((self._create_empty_search_row, (self.search_query,)))
 
@@ -739,8 +766,28 @@ class JobAppWindow(Gtk.ApplicationWindow):
             render_queue = []
             self._build_priority_queue(render_queue)
             self._enqueue_rows(render_queue)
+        elif status == "NA":
+            self._repopulate_na_jobs()
         else:
             self.refresh_ui()
+
+    def _repopulate_na_jobs(self):
+        """Fetch and render paginated NA jobs directly from SQLite."""
+        self._cancel_pending_batch()
+        self.clear_listbox(self.na_listbox)
+        limit = self.page_offsets.get("NA", self.page_size)
+        na_jobs = get_na_jobs(limit=limit, offset=0)
+        self.jobs_db.update(na_jobs)
+
+        counts = get_status_counts()
+        total_na = counts.get("NA", len(na_jobs))
+
+        render_queue = []
+        for link, data in na_jobs.items():
+            render_queue.append((self._create_main_job_row, (link, data)))
+        if total_na > limit:
+            render_queue.append((self._create_load_more_btn, ("NA", total_na - limit)))
+        self._enqueue_rows(render_queue)
 
     def _create_main_job_row(self, link, data):
         """Create and append a single main job row."""
@@ -1061,10 +1108,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
         return False
 
     def update_counts(self):
-        counts = {"New": 0, "Applied": 0, "Ongoing": 0, "Rejected": 0, "NA": 0}
-        for data in self.jobs_db.values():
-            st = data.get("status", "New")
-            counts[st] = counts.get(st, 0) + 1
+        counts = get_status_counts()
         self.status_label.set_text(
             f"Fresh: {counts['New']} | Applied: {counts['Applied']} | "
             f"Ongoing: {counts['Ongoing']} | Rejected: {counts['Rejected']} | NA: {counts['NA']}"
@@ -1265,11 +1309,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     def on_delete_ignore_clicked(self, button):
         """Remove all IGNORE-ranked jobs from the database."""
-        ignore_links = [link for link, data in self.jobs_db.items() if data.get("rank") == "IGNORE"]
-        for link in ignore_links:
-            del self.jobs_db[link]
-        if ignore_links:
-            deleted = delete_jobs_by_rank("IGNORE")
+        deleted = delete_jobs_by_rank("IGNORE")
+        if deleted:
+            to_delete = [link for link, data in self.jobs_db.items() if data.get("rank") == "IGNORE"]
+            for link in to_delete:
+                del self.jobs_db[link]
             self.refresh_ui()
             self.status_label.set_text(f"🗑 Deleted {deleted} IGNORE jobs.")
         else:
@@ -1281,9 +1325,23 @@ class JobAppWindow(Gtk.ApplicationWindow):
         win.present()
 
     def on_refresh_clicked(self, button):
-        # Reload DB from SQLite
-        self.jobs_db = load_db()
-        self.refresh_ui()
+        # Reload DB asynchronously in a worker thread so the UI NEVER freezes
+        button.set_sensitive(False)
+        self.status_label.set_text("🔄 Refreshing database...")
+
+        def worker():
+            na_limit = self.page_offsets.get("NA", self.page_size)
+            fresh_jobs = load_active_jobs(na_limit=na_limit)
+
+            def apply_refresh():
+                self.jobs_db = fresh_jobs
+                self.refresh_ui()
+                button.set_sensitive(True)
+                return False
+
+            GLib.idle_add(apply_refresh)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def on_tab_switched(self, notebook, page, page_num):
         if page_num == self.priority_page_num and self._prio_dirty:
@@ -1357,11 +1415,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
             cmd = [venv_python, resolve_script_path(script_name)]
 
-            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=dict(os.environ))
-            process.wait()
-            GLib.idle_add(self.on_scrape_finished, process.returncode == 0)
+            self.scraper_process = subprocess.Popen(cmd, cwd=os.getcwd(), env=dict(os.environ))
+            register_child_process(self.scraper_process)
+            self.scraper_process.wait()
+            success = (self.scraper_process.returncode == 0)
+            unregister_child_process(self.scraper_process)
+            self.scraper_process = None
+            GLib.idle_add(self.on_scrape_finished, success)
         except Exception as e:
             print(f"Error running scraper: {e}")
+            if hasattr(self, 'scraper_process') and self.scraper_process:
+                unregister_child_process(self.scraper_process)
+                self.scraper_process = None
             GLib.idle_add(self.on_scrape_finished, False)
 
     def on_scrape_finished(self, success):
@@ -1371,12 +1436,26 @@ class JobAppWindow(Gtk.ApplicationWindow):
         else:
             self.status_label.set_text("⚠️ Scraping stopped or failed.")
 
-    def on_scrape_ats_clicked(self, button):
-        self.status_label.set_text("Scraping saved company ATS boards... (All unique jobs will be saved. Pre-filter and AI ranking are manual)")
+    def on_scrape_ats_clicked(self, button=None):
+        clear_stop_flag()
+        self.status_label.set_text("Scraping saved company ATS boards... (Click '🛑 Stop Companies' anytime to halt)")
         self.scrape_ats_btn.set_sensitive(False)
+        self.stop_ats_btn.set_sensitive(True)
+        if hasattr(self, "companies_win") and self.companies_win:
+            self.companies_win.update_scrape_state(is_scraping=True)
         thread = threading.Thread(target=self.run_ats_scraper_thread)
         thread.daemon = True
         thread.start()
+
+    def on_stop_ats_clicked(self, button=None):
+        create_stop_flag()
+        if hasattr(self, 'ats_process') and self.ats_process:
+            try:
+                self.ats_process.terminate()
+            except Exception:
+                pass
+        self.status_label.set_text("🛑 Stopping company scraper... Please wait.")
+        self.stop_ats_btn.set_sensitive(False)
 
     def run_ats_scraper_thread(self):
         try:
@@ -1386,20 +1465,31 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
             cmd = [venv_python, resolve_script_path("ats_scraper.py")]
 
-            process = subprocess.Popen(cmd, cwd=os.getcwd(), env=dict(os.environ))
-            process.wait()
-            GLib.idle_add(self.on_ats_scrape_finished, process.returncode == 0)
+            self.ats_process = subprocess.Popen(cmd, cwd=os.getcwd(), env=dict(os.environ))
+            register_child_process(self.ats_process)
+            self.ats_process.wait()
+            success = (self.ats_process.returncode == 0)
+            unregister_child_process(self.ats_process)
+            self.ats_process = None
+            GLib.idle_add(self.on_ats_scrape_finished, success)
         except Exception as e:
             print(f"Error running ATS scraper: {e}")
+            if hasattr(self, 'ats_process') and self.ats_process:
+                unregister_child_process(self.ats_process)
+                self.ats_process = None
             GLib.idle_add(self.on_ats_scrape_finished, False)
 
     def on_ats_scrape_finished(self, success):
         self.scrape_ats_btn.set_sensitive(True)
+        self.stop_ats_btn.set_sensitive(False)
+        clear_stop_flag()
+        if hasattr(self, "companies_win") and self.companies_win:
+            self.companies_win.update_scrape_state(is_scraping=False)
         if success:
             comp_cnt = get_company_count()
             self.status_label.set_text(f"✅ ATS Scraping finished ({comp_cnt} companies)! Click 'Refresh Everything' to view new jobs.")
         else:
-            self.status_label.set_text("⚠️ ATS Scraping stopped or failed.")
+            self.status_label.set_text("⚠️ ATS Scraping stopped or completed.")
 
     def on_view_companies_clicked(self, button):
         if not hasattr(self, "companies_win") or self.companies_win is None:
@@ -1501,15 +1591,20 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
     # --- LLM RANKING LOGIC ---
     def on_reset_rank_clicked(self, button):
-        count = 0
+        conn = get_conn()
+        cur = conn.execute(
+            "UPDATE jobs SET rank='UNKNOWN', reason='Reset for re-evaluation' WHERE status != 'Applied'"
+        )
+        count = cur.rowcount
+        conn.commit()
+        conn.close()
+
         for link, data in self.jobs_db.items():
             if data.get("status") != "Applied":
                 data["rank"] = "UNKNOWN"
                 data["reason"] = "Reset for re-evaluation"
-                count += 1
 
         if count > 0:
-            self.save_db()
             self.refresh_ui()
             self.sort_status_label.set_text(f"Reset {count} jobs to UNKNOWN rank.")
         else:
@@ -1569,11 +1664,16 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 cmd.append("--tier1-only")
 
             self.rank_process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
+            register_child_process(self.rank_process)
             self.rank_process.wait()
+            unregister_child_process(self.rank_process)
             self.rank_process = None
             GLib.idle_add(self.on_pipeline_finished, True, label_name)
         except Exception as e:
             print(f"Error running pipeline ({label_name}): {e}")
+            if hasattr(self, 'rank_process') and self.rank_process:
+                unregister_child_process(self.rank_process)
+                self.rank_process = None
             GLib.idle_add(self.on_pipeline_finished, False, label_name)
 
     def on_pipeline_finished(self, success: bool, label_name: str):
@@ -1883,6 +1983,19 @@ class CompaniesWindow(Gtk.Window):
         self.clear_all_companies_btn.connect("clicked", self.on_clear_all_companies_clicked)
         self.stats_banner.append(self.clear_all_companies_btn)
 
+        self.scrape_ats_btn = Gtk.Button(label="🏢 Scrape All")
+        self.scrape_ats_btn.add_css_class("suggested-action")
+        self.scrape_ats_btn.set_tooltip_text("Start scraping ATS job boards for saved companies")
+        self.scrape_ats_btn.connect("clicked", self.on_scrape_ats_clicked)
+        self.stats_banner.append(self.scrape_ats_btn)
+
+        self.stop_ats_btn = Gtk.Button(label="🛑 Stop")
+        self.stop_ats_btn.add_css_class("destructive-action")
+        self.stop_ats_btn.set_tooltip_text("Stop running company ATS scraper")
+        self.stop_ats_btn.set_sensitive(False)
+        self.stop_ats_btn.connect("clicked", self.on_stop_ats_clicked)
+        self.stats_banner.append(self.stop_ats_btn)
+
         vbox.append(self.stats_banner)
 
         # Scrolled List
@@ -1947,6 +2060,22 @@ class CompaniesWindow(Gtk.Window):
 
         # Initial Load
         self.load_data()
+        is_scraping = bool(getattr(self.parent_window, 'ats_process', None))
+        self.update_scrape_state(is_scraping)
+
+    def on_scrape_ats_clicked(self, button=None):
+        if self.parent_window:
+            self.parent_window.on_scrape_ats_clicked(button)
+
+    def on_stop_ats_clicked(self, button=None):
+        if self.parent_window:
+            self.parent_window.on_stop_ats_clicked(button)
+
+    def update_scrape_state(self, is_scraping: bool):
+        if hasattr(self, 'scrape_ats_btn'):
+            self.scrape_ats_btn.set_sensitive(not is_scraping)
+        if hasattr(self, 'stop_ats_btn'):
+            self.stop_ats_btn.set_sensitive(is_scraping)
 
     def on_close_request(self, window):
         if hasattr(self.parent_window, "companies_win"):
@@ -2475,6 +2604,14 @@ class GroqLimitsWindowGTK(Gtk.Window):
 class JobApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id="com.github.jobscraper")
+        self.connect("shutdown", self.on_shutdown)
+
+    def on_shutdown(self, app):
+        win = self.props.active_window
+        if win and hasattr(win, "cleanup_subprocesses"):
+            win.cleanup_subprocesses()
+        else:
+            cleanup_all_child_processes()
 
     def do_activate(self):
         from gi.repository import Gdk

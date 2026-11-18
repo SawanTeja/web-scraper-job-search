@@ -19,6 +19,12 @@ from src.core.db import (
     save_scraper_checkpoint, get_scraper_checkpoint, clear_scraper_checkpoint,
     reset_scraper_checkpoint, get_excluded_ats_sites, set_excluded_ats_sites
 )
+from src.core.process_manager import (
+    register_child_process, unregister_child_process,
+    get_active_child_processes, cleanup_all_child_processes,
+    cleanup_orphaned_scrapers, create_stop_flag, clear_stop_flag,
+    setup_process_signals
+)
 
 __all__ = [
     "get_conn", "init_db", "load_db", "save_db", "delete_jobs_by_rank",
@@ -27,5 +33,9 @@ __all__ = [
     "delete_company", "get_company_stats", "save_company", "job_exists", "get_all_urls",
     "extract_companies_from_existing_jobs", "DB_FILE",
     "save_scraper_checkpoint", "get_scraper_checkpoint", "clear_scraper_checkpoint",
-    "reset_scraper_checkpoint", "get_excluded_ats_sites", "set_excluded_ats_sites"
+    "reset_scraper_checkpoint", "get_excluded_ats_sites", "set_excluded_ats_sites",
+    "register_child_process", "unregister_child_process",
+    "get_active_child_processes", "cleanup_all_child_processes",
+    "cleanup_orphaned_scrapers", "create_stop_flag", "clear_stop_flag",
+    "setup_process_signals"
 ]

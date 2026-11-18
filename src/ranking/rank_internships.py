@@ -592,7 +592,7 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
     if filter_stats["total_ignored"] > 0:
         print(f"🧹 Deterministic Pre-Filter: Auto-ignored {filter_stats['total_ignored']} jobs ({filter_stats['senior_ignored']} Senior, {filter_stats['non_tech_ignored']} Non-tech, {filter_stats['us_ignored']} US) - 0 tokens used!")
 
-    jobs_db = load_db(conn)
+    jobs_db = load_db(conn, status="New")
 
     candidate_items = []
     skipped_count = 0
@@ -775,7 +775,7 @@ async def rank_clean_jobs(conn=None):
     except ImportError:
         from job_filter import evaluate_deep_jd_filter
 
-    jobs_db = load_db(conn)
+    jobs_db = load_db(conn, status="New")
 
     candidate_items = []
     skipped_ai_count = 0
@@ -897,7 +897,7 @@ async def process_stream_pipeline(conn=None):
     if filter_stats["total_ignored"] > 0:
         print(f"🧹 Title Pre-Filter: Auto-ignored {filter_stats['total_ignored']} jobs ({filter_stats['senior_ignored']} Senior, {filter_stats['non_tech_ignored']} Non-tech, {filter_stats['us_ignored']} US) - 0 tokens used!")
 
-    jobs_db = load_db(conn)
+    jobs_db = load_db(conn, status="New")
 
     candidate_items = []
     skipped_count = 0

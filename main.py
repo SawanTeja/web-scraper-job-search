@@ -37,6 +37,14 @@ for p in [ROOT_DIR, SRC_DIR]:
 
 
 def main():
+    from src.core.process_manager import (
+        cleanup_orphaned_scrapers,
+        cleanup_all_child_processes,
+        setup_process_signals
+    )
+    cleanup_orphaned_scrapers(repo_root=ROOT_DIR)
+    setup_process_signals()
+
     parser = argparse.ArgumentParser(description="Job Scraper & AI Tracker System (Linux)")
     parser.add_argument("--gui", action="store_true", help="Launch Linux GTK4 GUI")
     parser.add_argument("--ats", action="store_true", help="Run direct ATS scraper for saved companies")
@@ -157,8 +165,17 @@ def main():
         # Launch Linux GTK4 GUI
         from src.gui.gui import JobApp
         app = JobApp()
-        app.run(sys.argv)
+        try:
+            app.run(sys.argv)
+        finally:
+            cleanup_all_child_processes()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n👋 App terminated by user (Ctrl+C).")
+    finally:
+        from src.core.process_manager import cleanup_all_child_processes
+        cleanup_all_child_processes()
