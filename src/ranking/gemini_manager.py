@@ -136,21 +136,27 @@ class GeminiManager:
             msg += f" ({reason})"
         print(msg)
 
+    def switch_to_next_model(self, reason: str = "") -> bool:
+        """Switches to the next fallback Gemini model if available, else marks all exhausted."""
+        if self.model_idx + 1 < len(self.GEMINI_MODELS):
+            self.model_idx += 1
+            self.active_model = self.GEMINI_MODELS[self.model_idx]
+            self.daily_exhausted_keys.clear()
+            self.current_key_idx = 0
+            msg = f"\n🔀 Switched to fallback Gemini model ({reason}): {self.active_model}"
+            print(msg)
+            return True
+        else:
+            self.all_exhausted = True
+            print(f"\n🛑 ALL Gemini models unavailable or exhausted ({reason})! Falling back to Groq for JD extraction.")
+            return False
+
     def mark_key_exhausted(self, key_num: int):
         self.daily_exhausted_keys.add(key_num)
         print(f"   ⚠️ Gemini Key #{key_num}/{len(self.clients)} exhausted on {self.active_model}.")
 
         if len(self.daily_exhausted_keys) >= len(self.clients):
-            # All keys exhausted for current model -> try next fallback model
-            if self.model_idx + 1 < len(self.GEMINI_MODELS):
-                self.model_idx += 1
-                self.active_model = self.GEMINI_MODELS[self.model_idx]
-                self.daily_exhausted_keys.clear()
-                self.current_key_idx = 0
-                print(f"\n🔀 All Gemini keys exhausted on previous model! Switched to fallback: {self.active_model}")
-            else:
-                self.all_exhausted = True
-                print("\n🛑 ALL Gemini API keys and models exhausted! Falling back to Groq for JD extraction.")
+            self.switch_to_next_model("quota limit reached")
         else:
             self.rotate_key("daily-limit-rotate")
 
@@ -223,14 +229,27 @@ Guidelines:
 
             except Exception as e:
                 err_str = str(e).lower()
-                if any(k in err_str for k in ["429", "resource_exhausted", "quota", "rate limit", "limit exceeded"]):
+                is_rate_limit = any(k in err_str for k in ["429", "resource_exhausted", "quota", "rate limit", "limit exceeded"])
+                is_server_error = any(k in err_str for k in ["503", "unavailable", "high demand", "overloaded", "server error", "500", "504"])
+
+                if is_rate_limit:
                     self.mark_key_exhausted(key_num)
+                    await asyncio.sleep(0.5)
+                    continue
+                elif is_server_error:
+                    print(f"   ⚠️ Gemini Key #{key_num} hit temporary server error / high demand on {target_model}.")
+                    # If this is the last available key or only 1 key exists, switch model immediately rather than looping
+                    if (self.current_key_idx + 1) >= len(self.clients) or len(self.clients) <= 1:
+                        if not self.switch_to_next_model(f"{target_model} high demand / 503"):
+                            return None
+                    else:
+                        self.rotate_key("server-error-rotate")
                     await asyncio.sleep(0.5)
                     continue
                 else:
                     print(f"   ⚠️ Gemini extraction error on Key #{key_num} ({e}). Rotating...")
                     self.rotate_key("api-error")
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(0.5)
                     continue
 
         self.advance_key()

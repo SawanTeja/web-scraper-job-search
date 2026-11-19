@@ -62,12 +62,16 @@ def main():
     parser.add_argument("--crawl-mode", default="all", choices=["all", "feeds", "google"], help="Company crawler engine mode")
     parser.add_argument("--crawl-limit", type=int, default=None, help="Max new companies to add via crawler")
     parser.add_argument("--tier1-only", action="store_true", help="Scope 3-stage AI ranking pipeline to Tier 1 (Early Career / Intern) jobs only")
+    parser.add_argument("--extractor", choices=["auto", "gemini", "groq"], default=None, help="LLM provider for Stage 1 JD Extraction: auto, gemini, or groq (default: auto)")
     parser.add_argument("--test", action="store_true", help="Run unit test suite")
 
     args = parser.parse_args()
 
     if args.tier1_only:
         os.environ["SCRAPER_TIER_MODE"] = "tier1"
+
+    if args.extractor:
+        os.environ["SCRAPER_EXTRACTOR"] = args.extractor
 
     if args.limits:
         from src.ranking.groq_limits import run_limits_cli
@@ -105,6 +109,8 @@ def main():
 
     elif args.scrape:
         import asyncio
+        from src.core.process_manager import clear_stop_flag
+        clear_stop_flag()
         from src.scrapers.intern_scraper_fast import scrape_google_jobs
         asyncio.run(scrape_google_jobs())
 

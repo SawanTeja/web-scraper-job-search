@@ -291,31 +291,8 @@ def validate_job_json(data):
 
     return True
 
-async def extract_job_details_with_llm(job_title, jd_text, retries=3, preferred_key_idx: int = None):
-    """
-    Extracts structured data from the job description.
-    Priority 1: Uses Google Gemini first (gemini-3.5-flash-lite / gemini-3.1-flash-lite, 0 Groq tokens used).
-    Priority 2: If Gemini is exhausted or unavailable, automatically falls back to Groq.
-    """
-    # 1. Primary: Try Gemini extraction first (0 Groq tokens used)
-    if gemini_manager and gemini_manager.is_available():
-        data = await gemini_manager.extract_job_details(job_title, jd_text, preferred_key_idx=preferred_key_idx)
-        if data:
-            required_fields = [
-                "job_name", "company", "location", "salary", "job_type",
-                "experience_required", "skills_required", "skills_preferred",
-                "about_job", "responsibilities", "requirements", "nice_to_have"
-            ]
-            for f in required_fields:
-                if f not in data:
-                    data[f] = None
-            if validate_job_json(data):
-                log_prompt_to_file(job_title, "extraction_gemini", f"Title: {job_title}", json.dumps(data))
-                return data
-
-        print("   ↪️ Gemini extraction unavailable or exhausted. Falling back to Groq for JD extraction...")
-
-    # 2. Secondary: Fallback to Groq for JD extraction
+async def extract_job_details_with_groq(job_title: str, jd_text: str) -> dict | None:
+    """Extracts structured data from the job description directly using Groq's circular key rotation."""
     prompt = f"""
 If you produce anything other than valid JSON, the system will crash.
 Do not explain anything.
@@ -359,7 +336,7 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
         return None
 
     result = response.choices[0].message.content.strip()
-    log_prompt_to_file(job_title, "extraction", prompt, result)
+    log_prompt_to_file(job_title, "extraction_groq", prompt, result)
     data = extract_json_from_text(result)
 
     if data and validate_job_json(data):
@@ -368,6 +345,50 @@ If a field is not mentioned or you cannot find the data, you MUST use `null`. Do
     else:
         print(f"   ⚠️ JSON invalid or missing fields during extraction.")
         return None
+
+
+async def extract_job_details_with_llm(job_title, jd_text, retries=3, preferred_key_idx: int = None, extractor: str = None):
+    """
+    Extracts structured data from the job description.
+    Supports 3 modes (via extractor param or SCRAPER_EXTRACTOR env var):
+      - 'auto': Try Google Gemini first (0 Groq tokens used), fall back to Groq if unavailable/exhausted.
+      - 'groq': Directly extract with Groq (bypasses Gemini completely, avoids Gemini 503 / demand spikes).
+      - 'gemini': Only use Google Gemini (no Groq extraction fallback).
+    """
+    chosen_extractor = (extractor or os.environ.get("SCRAPER_EXTRACTOR", "auto")).strip().lower()
+
+    # 1. Groq Only: Bypass Gemini completely
+    if chosen_extractor == "groq":
+        return await extract_job_details_with_groq(job_title, jd_text)
+
+    # 2. Gemini Extraction (used in 'auto' and 'gemini' modes)
+    if gemini_manager and gemini_manager.is_available():
+        data = await gemini_manager.extract_job_details(job_title, jd_text, preferred_key_idx=preferred_key_idx)
+        if data:
+            required_fields = [
+                "job_name", "company", "location", "salary", "job_type",
+                "experience_required", "skills_required", "skills_preferred",
+                "about_job", "responsibilities", "requirements", "nice_to_have"
+            ]
+            for f in required_fields:
+                if f not in data:
+                    data[f] = None
+            if validate_job_json(data):
+                log_prompt_to_file(job_title, "extraction_gemini", f"Title: {job_title}", json.dumps(data))
+                return data
+
+        if chosen_extractor == "gemini":
+            print("   ⚠️ Gemini extraction failed or unavailable. (Groq fallback disabled in Gemini-only mode)")
+            return None
+
+        print("   ↪️ Gemini extraction unavailable or exhausted. Falling back to Groq for JD extraction...")
+
+    elif chosen_extractor == "gemini":
+        print("   ⚠️ Gemini is unavailable or exhausted. (Groq fallback disabled in Gemini-only mode)")
+        return None
+
+    # 3. Groq Fallback (for 'auto' mode)
+    return await extract_job_details_with_groq(job_title, jd_text)
 
 async def evaluate_job_with_llm(job_details_json, jd_text, job_title):
     """Evaluates the extracted job details or raw text against the candidate profile using Llama-3.3-70B-Versatile."""
@@ -678,7 +699,10 @@ async def extract_structured_jds(conn=None, auto_rank: bool = True):
 
             title = data.get("title", "Unknown")
             location = (data.get("details") or {}).get("location", "") if isinstance(data.get("details"), dict) else ""
-            if gemini_manager and gemini_manager.is_available():
+            active_extractor = os.environ.get("SCRAPER_EXTRACTOR", "auto").strip().lower()
+            if active_extractor == "groq":
+                extractor_tag = f"Groq Extractor #{groq_manager.current_idx + 1}/{groq_manager.total_keys}"
+            elif gemini_manager and gemini_manager.is_available():
                 extractor_tag = f"Gemini Key #{gemini_manager.get_current_key_num()}"
             else:
                 extractor_tag = f"Groq Extractor #{groq_manager.current_idx + 1}/{groq_manager.total_keys}"
@@ -1016,7 +1040,10 @@ async def process_stream_pipeline(conn=None):
                         pass
                 print(f"[{index + 1}/{len(candidate_items)}] {tier_badge} [Cached JD] Evaluating: {title}")
             else:
-                if gemini_manager and gemini_manager.is_available():
+                active_extractor = os.environ.get("SCRAPER_EXTRACTOR", "auto").strip().lower()
+                if active_extractor == "groq":
+                    extractor_tag = f"Groq Extractor #{groq_manager.current_idx + 1}/{groq_manager.total_keys}"
+                elif gemini_manager and gemini_manager.is_available():
                     extractor_tag = f"Gemini Key #{gemini_manager.get_current_key_num()}"
                 else:
                     extractor_tag = f"Groq Extractor #{groq_manager.current_idx + 1}/{groq_manager.total_keys}"
@@ -1137,6 +1164,7 @@ if __name__ == "__main__":
     parser.add_argument("--rank", "--rank-only", dest="rank", action="store_true", help="Stage 3: AI Rank clean jobs from DB (No browser required)")
     parser.add_argument("--full", action="store_true", help="Full Pipeline: Extract JDs -> Deep Filter -> AI Rank")
     parser.add_argument("--tier1-only", action="store_true", help="Only process Tier 1 (Early Career / Intern / High Priority) jobs to save tokens")
+    parser.add_argument("--extractor", choices=["auto", "gemini", "groq"], default=None, help="LLM provider for Stage 1 JD Extraction: auto, gemini, or groq (default: auto)")
     parser.add_argument("--reset-errors", action="store_true", help="Reset jobs with extraction errors/timeouts back to New/UNKNOWN for re-evaluation")
     args = parser.parse_args()
 
@@ -1146,6 +1174,9 @@ if __name__ == "__main__":
 
     if args.tier1_only:
         os.environ["SCRAPER_TIER_MODE"] = "tier1"
+
+    if args.extractor:
+        os.environ["SCRAPER_EXTRACTOR"] = args.extractor
 
     if args.extract:
         rank_jobs(mode="extract")

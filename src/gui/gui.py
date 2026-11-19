@@ -149,6 +149,13 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.scrape_btn.connect("clicked", self.on_scrape_clicked)
         header_box.append(self.scrape_btn)
 
+        self.stop_scrape_btn = Gtk.Button(label="🛑 Stop Scraper")
+        self.stop_scrape_btn.add_css_class("destructive-action")
+        self.stop_scrape_btn.set_sensitive(False)
+        self.stop_scrape_btn.set_tooltip_text("Stop running Google job scraper")
+        self.stop_scrape_btn.connect("clicked", self.on_stop_scrape_clicked)
+        header_box.append(self.stop_scrape_btn)
+
         self.scrape_ats_btn = Gtk.Button(label="🏢 Scrape Companies")
         self.scrape_ats_btn.add_css_class("suggested-action")
         self.scrape_ats_btn.connect("clicked", self.on_scrape_ats_clicked)
@@ -354,7 +361,7 @@ class JobAppWindow(Gtk.ApplicationWindow):
 
         # Tier Target Mode Dropdown (Tier 1 vs Tier 1 & 2) inside Priority Sorting
         prio_tier_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        prio_tier_lbl = Gtk.Label(label="🎯 AI Ranking Scope:")
+        prio_tier_lbl = Gtk.Label(label="🎯 Scope:")
         prio_tier_lbl.add_css_class("dim-label")
         prio_tier_box.append(prio_tier_lbl)
 
@@ -375,6 +382,31 @@ class JobAppWindow(Gtk.ApplicationWindow):
         self.prio_tier_dropdown = self.tier_dropdown
         prio_tier_box.append(self.tier_dropdown)
         prio_row2.append(prio_tier_box)
+
+        # JD Extractor Provider Dropdown (Gemini vs Groq vs Auto)
+        prio_extractor_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        prio_extractor_lbl = Gtk.Label(label="🤖 JD Extractor:")
+        prio_extractor_lbl.add_css_class("dim-label")
+        prio_extractor_box.append(prio_extractor_lbl)
+
+        self.extractor_options = [
+            "🌟 Gemini (Auto Groq Fallback)",
+            "⚡ Groq Only (Bypasses Gemini)",
+            "🌟 Gemini Only"
+        ]
+        extractor_model = Gtk.StringList.new(self.extractor_options)
+        self.extractor_dropdown = Gtk.DropDown.new(extractor_model, None)
+        self.extractor_dropdown.set_selected(0)
+        self.extractor_dropdown.set_tooltip_text(
+            "Choose LLM for Stage 1 Structured JD Extraction:\n"
+            "• Gemini (Auto Groq Fallback): Free Gemini first, falls back to Groq if exhausted or 503 unavailable.\n"
+            "• Groq Only: Directly extracts with Groq's circular rotation (bypasses Gemini completely to avoid high demand/503 limits).\n"
+            "• Gemini Only: Only uses Gemini; does not consume Groq tokens for extraction."
+        )
+        self.extractor_dropdown.connect("notify::selected", self.on_extractor_mode_changed)
+        self.prio_extractor_dropdown = self.extractor_dropdown
+        prio_extractor_box.append(self.extractor_dropdown)
+        prio_row2.append(prio_extractor_box)
 
         self.sort_status_label = Gtk.Label(label="")
         self.sort_status_label.set_hexpand(True)
@@ -1376,6 +1408,32 @@ class JobAppWindow(Gtk.ApplicationWindow):
         if hasattr(self, 'sort_status_label'):
             self.sort_status_label.set_text(msg)
 
+    def get_active_extractor_mode(self) -> str:
+        """Return 'auto', 'groq', or 'gemini' based on user selection."""
+        if hasattr(self, 'extractor_dropdown'):
+            idx = self.extractor_dropdown.get_selected()
+            if idx == 1:
+                return "groq"
+            elif idx == 2:
+                return "gemini"
+            return "auto"
+        return "auto"
+
+    def get_active_extractor_mode_label(self) -> str:
+        mode = self.get_active_extractor_mode()
+        if mode == "groq":
+            return "⚡ Groq Only (Bypasses Gemini)"
+        elif mode == "gemini":
+            return "🌟 Gemini Only (No Groq Fallback)"
+        return "🌟 Gemini (Auto Groq Fallback)"
+
+    def on_extractor_mode_changed(self, dropdown, pspec):
+        label = self.get_active_extractor_mode_label()
+        msg = f"🤖 JD Extractor set to: {label}"
+        self.status_label.set_text(msg)
+        if hasattr(self, 'sort_status_label'):
+            self.sort_status_label.set_text(msg)
+
     def on_scrape_clicked(self, button):
         dialog = Gtk.MessageDialog(
             transient_for=self,
@@ -1401,14 +1459,18 @@ class JobAppWindow(Gtk.ApplicationWindow):
         elif response_id == 3:
             script_name = "intern_scraper_overnight.py"
 
+        clear_stop_flag()
         self.status_label.set_text(f"Google Scraper started ({script_name})... (Check terminal output for progress)")
         self.scrape_btn.set_sensitive(False)
+        if hasattr(self, 'stop_scrape_btn'):
+            self.stop_scrape_btn.set_sensitive(True)
         thread = threading.Thread(target=self.run_scraper, args=(script_name,))
         thread.daemon = True
         thread.start()
 
     def run_scraper(self, script_name="intern_scraper.py"):
         try:
+            clear_stop_flag()
             venv_python = os.path.join(os.getcwd(), "scraper_env", "bin", "python")
             if not os.path.exists(venv_python):
                 venv_python = "python3"
@@ -1429,8 +1491,21 @@ class JobAppWindow(Gtk.ApplicationWindow):
                 self.scraper_process = None
             GLib.idle_add(self.on_scrape_finished, False)
 
+    def on_stop_scrape_clicked(self, button=None):
+        create_stop_flag()
+        if hasattr(self, 'scraper_process') and self.scraper_process:
+            try:
+                self.scraper_process.terminate()
+            except Exception:
+                pass
+        self.status_label.set_text("🛑 Stopping Google scraper... Please wait.")
+        if hasattr(self, 'stop_scrape_btn'):
+            self.stop_scrape_btn.set_sensitive(False)
+
     def on_scrape_finished(self, success):
         self.scrape_btn.set_sensitive(True)
+        if hasattr(self, 'stop_scrape_btn'):
+            self.stop_scrape_btn.set_sensitive(False)
         if success:
             self.status_label.set_text("✅ Scraping finished! Click 'Refresh Everything' to view new jobs.")
         else:
@@ -1638,10 +1713,11 @@ class JobAppWindow(Gtk.ApplicationWindow):
             self.sort_status_label.set_text(f"No {DB_FILE}. Scrape first!")
             return
 
+        extractor_mode = self.get_active_extractor_mode()
         key_count = sum(1 for i in range(1, 101) if os.environ.get(f"GROQ_API_KEY_{i}"))
         if key_count == 0 and os.environ.get("GROQ_API_KEY"):
             key_count = 1
-        key_info = f"({key_count} Groq API keys in circular rotation)" if key_count > 0 else ""
+        key_info = f"({key_count} Groq keys | Extractor: {extractor_mode.upper()})" if key_count > 0 else f"(Extractor: {extractor_mode.upper()})"
 
         self.sort_status_label.set_text(f"Starting {label_name} {key_info}... Check terminal!")
         self.set_pipeline_buttons_sensitive(False)
@@ -1658,10 +1734,14 @@ class JobAppWindow(Gtk.ApplicationWindow):
             env = dict(os.environ)
             tier_mode = self.get_active_tier_mode()
             env["SCRAPER_TIER_MODE"] = tier_mode
+            extractor_mode = self.get_active_extractor_mode()
+            env["SCRAPER_EXTRACTOR"] = extractor_mode
 
             cmd = [venv_python, resolve_script_path("rank_internships.py"), f"--{mode}"]
             if tier_mode == "tier1":
                 cmd.append("--tier1-only")
+            if extractor_mode:
+                cmd.extend(["--extractor", extractor_mode])
 
             self.rank_process = subprocess.Popen(cmd, cwd=os.getcwd(), env=env)
             register_child_process(self.rank_process)

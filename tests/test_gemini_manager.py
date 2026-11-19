@@ -74,6 +74,25 @@ class TestGeminiManager(unittest.TestCase):
         # Call 4: Key #2
         self.assertEqual(gm.get_current_key_num(), 2)
 
+    @patch("src.ranking.gemini_manager.genai.Client")
+    @patch.dict(os.environ, {
+        "GEMINI_API_KEY_1": "mock_key_1",
+        "GEMINI_API_KEY_2": "mock_key_2",
+    }, clear=False)
+    def test_switch_to_next_model(self, mock_client_cls):
+        gm = GeminiManager()
+        self.assertEqual(gm.active_model, "gemini-3.5-flash-lite")
+        switched = gm.switch_to_next_model("high demand / 503 test")
+        self.assertTrue(switched)
+        self.assertEqual(gm.active_model, "gemini-3.1-flash-lite")
+        self.assertFalse(gm.all_exhausted)
+
+        # Next switch exhausts all models
+        switched2 = gm.switch_to_next_model("second model unavailable")
+        self.assertFalse(switched2)
+        self.assertTrue(gm.all_exhausted)
+        self.assertFalse(gm.is_available())
+
 
 if __name__ == "__main__":
     unittest.main()
