@@ -180,12 +180,12 @@ async def resolve_url(raw_url, context):
 
     # Google encrypted redirect (/goto?url=CAES...)
     if "google.com/goto" in raw_url:
-        # 1. Try resolving via Playwright context request
+        # 1. Try resolving via Playwright context request (fail-fast timeout)
         try:
             resp = await context.request.get(
                 raw_url,
                 max_redirects=0,
-                timeout=5000,
+                timeout=2500,
                 headers={"User-Agent": USER_AGENT}
             )
             loc = resp.headers.get("location")
@@ -194,10 +194,13 @@ async def resolve_url(raw_url, context):
         except Exception:
             pass
 
-        # 2. Try python urllib redirect handler from ats_parser
+        # 2. Try python urllib redirect handler from ats_parser (fail-fast timeout)
         try:
             loop = asyncio.get_running_loop()
-            target = await loop.run_in_executor(None, resolve_redirect_url, raw_url)
+            target = await asyncio.wait_for(
+                loop.run_in_executor(None, resolve_redirect_url, raw_url),
+                timeout=2.0
+            )
             if target and target != raw_url and "google.com" not in target:
                 return target.split('?')[0]
         except Exception:
@@ -211,17 +214,17 @@ async def resolve_url(raw_url, context):
 
 # --- Anti-CAPTCHA Mouse and Scroll Function ---
 async def human_scroll_and_move(page):
-    """Simulates random human scrolling and mouse movements."""
+    """Simulates random human scrolling and mouse movements with minimal delay."""
     try:
         await page.mouse.move(random.randint(100, 800), random.randint(100, 600))
-        await asyncio.sleep(random.uniform(0.5, 1.5))
+        await asyncio.sleep(random.uniform(0.2, 0.5))
 
-        await page.mouse.wheel(0, random.randint(400, 1200))
-        await asyncio.sleep(random.uniform(2, 4))
+        await page.mouse.wheel(0, random.randint(300, 800))
+        await asyncio.sleep(random.uniform(0.8, 1.5))
 
         if random.choice([True, False]):
-            await page.mouse.wheel(0, -random.randint(100, 300))
-            await asyncio.sleep(random.uniform(1, 2))
+            await page.mouse.wheel(0, -random.randint(100, 250))
+            await asyncio.sleep(random.uniform(0.3, 0.6))
     except Exception:
         pass
 # ---------------------------------------------------
@@ -270,6 +273,11 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
         print("📁 Data will auto-save to jobs_db.sqlite in real-time.\n")
 
         for site in sites_list:
+            if os.path.exists("stop.flag"):
+                print("🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                conn.close()
+                return new_jobs_added
+
             clean_site = site.lower().strip().split("://")[-1].split("/")[0]
 
             print(f"\n=====================================")
@@ -277,19 +285,40 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
             print(f"=====================================")
 
             for query_term in SEARCH_QUERIES:
+                if os.path.exists("stop.flag"):
+                    print("🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                    conn.close()
+                    return new_jobs_added
+
                 raw_query = build_google_dork(clean_site, query_term)
                 print(f"\n   🔍 Query: {query_term}  ->  [{raw_query}]")
+                consecutive_duplicate_pages = 0
 
                 for start in range(0, pages_limit * 10, 10):
+                    if os.path.exists("stop.flag"):
+                        print("      🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                        conn.close()
+                        return new_jobs_added
+
                     search_count += 1
 
+                    # Periodic tab recycling every 25 searches to clear Chromium DOM/V8 heap bloat
+                    if search_count > 1 and search_count % 25 == 0:
+                        try:
+                            print("      🔄 Recycling browser tab to release DOM memory...")
+                            await page.close()
+                            page = await context.new_page()
+                            await Stealth().apply_stealth_async(page)
+                        except Exception:
+                            pass
+
                     # RANDOM HOMEPAGE DETOUR
-                    if search_count % random.randint(8, 12) == 0:
+                    if search_count % random.randint(12, 18) == 0:
                         print("      🏠 Taking a detour to Google homepage to act human...")
                         try:
                             await page.goto("https://www.google.com")
                             await human_scroll_and_move(page)
-                            await asyncio.sleep(random.uniform(3, 7))
+                            await asyncio.sleep(random.uniform(2, 4))
                         except Exception as e:
                             if "Target page, context or browser has been closed" in str(e) or isinstance(e, TargetClosedError):
                                 print("      ⚠️ Browser closed by user. Exiting cleanly.")
@@ -383,7 +412,7 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
                     await human_scroll_and_move(page)
 
                     # PAGE-TO-PAGE GAP
-                    sleep_time = random.uniform(3, 7)
+                    sleep_time = random.uniform(2.0, 3.5)
                     print(f"      ⏳ Page {int(start / 10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")
                     await asyncio.sleep(sleep_time)
 
@@ -434,16 +463,18 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
                         new_jobs_found = 0
                         valid_ats_count_on_page = 0
 
-                        for res in results:
-                            raw_url = res.get('url', '')
-                            title = res.get('title', 'Unknown Title')
-                            if not raw_url:
-                                continue
+                        # Batch resolve all Google redirects on the page in parallel
+                        raw_urls = [res.get('url', '') for res in results]
+                        resolved_urls = await asyncio.gather(
+                            *(resolve_url(u, context) for u in raw_urls),
+                            return_exceptions=True
+                        )
 
-                            # Resolve Google redirect to direct ATS destination URL
-                            final_url = await resolve_url(raw_url, context)
-                            if not final_url:
+                        for res, resolved in zip(results, resolved_urls):
+                            if isinstance(resolved, Exception) or not resolved:
                                 continue
+                            final_url = resolved
+                            title = res.get('title', 'Unknown Title')
 
                             # STRICT VALIDATION: Ensure URL belongs to target site or recognized ATS, rejecting YouTube/Reddit/Junk
                             if not is_valid_job_url(final_url, clean_site):
@@ -507,6 +538,12 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
                         if new_jobs_found > 0:
                             conn.commit()
                             print(f"      💾 Saved {new_jobs_found} new jobs to DB.")
+                            consecutive_duplicate_pages = 0
+                        else:
+                            consecutive_duplicate_pages += 1
+                            if consecutive_duplicate_pages >= 2:
+                                print(f"      ⏩ 2 consecutive duplicate pages (0 new jobs). Fast-forwarding to next query.")
+                                break
 
                     except Exception as e:
                         if "Target page, context or browser has been closed" in str(e) or isinstance(e, TargetClosedError):
@@ -515,15 +552,25 @@ async def scrape_google_jobs(max_pages=None, sites_override=None, time_filter_ov
                             return new_jobs_added
                         print(f"      ❌ Error extracting links: {e}")
 
-                # QUERY-TO-QUERY GAP
-                query_pause = random.uniform(8, 15)
+                # QUERY-TO-QUERY GAP (interruptible)
+                query_pause = random.uniform(5, 8)
                 print(f"   🛑 Finished query block. Resting for {query_pause:.0f}s...")
-                await asyncio.sleep(query_pause)
+                for _ in range(int(query_pause)):
+                    if os.path.exists("stop.flag"):
+                        print("   🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                        conn.close()
+                        return new_jobs_added
+                    await asyncio.sleep(1)
 
-            # SITE-TO-SITE GAP
-            site_pause = random.uniform(20, 30)
-            print(f"☕ Finished {clean_site}. Taking a long {site_pause:.0f}s break...")
-            await asyncio.sleep(site_pause)
+            # SITE-TO-SITE GAP (interruptible)
+            site_pause = random.uniform(10, 15)
+            print(f"☕ Finished {clean_site}. Taking a {site_pause:.0f}s break...")
+            for _ in range(int(site_pause)):
+                if os.path.exists("stop.flag"):
+                    print("🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                    conn.close()
+                    return new_jobs_added
+                await asyncio.sleep(1)
 
         await context.close()
 

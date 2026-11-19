@@ -202,14 +202,27 @@ async def scrape_google_jobs():
         print(f"📦 {len(jobs_db)} existing jobs loaded (will skip duplicates).\n")
 
         for site in SITES:
+            if os.path.exists("stop.flag"):
+                print("🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                break
+
             print(f"\n=====================================")
             print(f"🏢 TARGETING: {site}")
             print(f"=====================================")
             
             for query_term in SEARCH_QUERIES:
+                if os.path.exists("stop.flag"):
+                    print("🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                    break
+
                 print(f"\n   🔍 Query: {query_term}")
+                consecutive_duplicate_pages = 0
                 
                 for start in range(0, MAX_PAGES * 10, 10):
+                    if os.path.exists("stop.flag"):
+                        print("      🛑 Stop flag detected! Stopping Google scraper cleanly.")
+                        break
+
                     search_count += 1 
                     
                     # RANDOM HOMEPAGE DETOUR 
@@ -217,7 +230,7 @@ async def scrape_google_jobs():
                         print("      🏠 Taking a detour to Google homepage to act human...")
                         await page.goto("https://www.google.com")
                         await human_scroll_and_move(page)
-                        await asyncio.sleep(random.uniform(30, 60))
+                        await asyncio.sleep(random.uniform(10, 20))
 
                     from src.scrapers.ats_parser import build_google_dork
                     query = build_google_dork(site, query_term)
@@ -237,7 +250,7 @@ async def scrape_google_jobs():
                     await human_scroll_and_move(page)
 
                     # 1. PAGE-TO-PAGE GAP
-                    sleep_time = random.uniform(25, 45)
+                    sleep_time = random.uniform(10, 20)
                     print(f"      ⏳ Page {int(start/10) + 1} loaded. Sleeping for {sleep_time:.2f}s...")
                     await asyncio.sleep(sleep_time)
                     
@@ -341,19 +354,35 @@ async def scrape_google_jobs():
                         
                         if new_jobs_found > 0:
                             print(f"      💾 Auto-saved {new_jobs_found} new jobs to DB.")
+                            consecutive_duplicate_pages = 0
+                        else:
+                            consecutive_duplicate_pages += 1
+                            if consecutive_duplicate_pages >= 2:
+                                print(f"      ⏩ 2 consecutive duplicate pages (0 new jobs). Fast-forwarding to next query.")
+                                break
                                 
                     except Exception as e:
                         print(f"      ❌ Error extracting links: {e}")
 
-                # 2. QUERY-TO-QUERY GAP
-                query_pause = random.uniform(60, 120)
+                # 2. QUERY-TO-QUERY GAP (interruptible)
+                query_pause = random.uniform(20, 40)
                 print(f"   🛑 Finished query block. Resting for {query_pause:.0f}s...")
-                await asyncio.sleep(query_pause)
+                for _ in range(int(query_pause)):
+                    if os.path.exists("stop.flag"):
+                        break
+                    await asyncio.sleep(1)
+                if os.path.exists("stop.flag"):
+                    break
 
-            # 3. SITE-TO-SITE GAP
-            site_pause = random.uniform(180, 420)
-            print(f"☕ Finished {site}. Taking a long {site_pause:.0f}s break...")
-            await asyncio.sleep(site_pause)
+            # 3. SITE-TO-SITE GAP (interruptible)
+            site_pause = random.uniform(45, 90)
+            print(f"☕ Finished {site}. Taking a {site_pause:.0f}s break...")
+            for _ in range(int(site_pause)):
+                if os.path.exists("stop.flag"):
+                    break
+                await asyncio.sleep(1)
+            if os.path.exists("stop.flag"):
+                break
 
         await context.close()
         return new_jobs_added

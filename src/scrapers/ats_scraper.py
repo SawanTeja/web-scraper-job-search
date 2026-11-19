@@ -84,6 +84,13 @@ COMMON_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# Concurrency & Network Tuning Constants (fail-fast on dead hosts to prevent straggler bottlenecks)
+HTTP_TIMEOUT = 3.0
+HTTP_CONNECT_TIMEOUT = 2.0
+URLLIB_TIMEOUT = 3
+CHUNK_SIZE = 1000
+BATCH_SIZE = 250
+
 
 def is_relevant_role(title: str) -> bool:
     """Filter to ensure we pull software, tech, and internship roles."""
@@ -103,7 +110,7 @@ def fetch_greenhouse_jobs(identifier: str, client: "httpx.Client" = None) -> lis
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for j in data.get("jobs", []):
@@ -115,7 +122,7 @@ def fetch_greenhouse_jobs(identifier: str, client: "httpx.Client" = None) -> lis
                 return results
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for j in data.get("jobs", []):
                     results.append({
@@ -137,11 +144,11 @@ def scrape_greenhouse_html(identifier: str, client: "httpx.Client" = None) -> li
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         if html:
@@ -163,7 +170,7 @@ def fetch_lever_jobs(identifier: str, client: "httpx.Client" = None) -> list[dic
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 postings = resp.json()
                 if isinstance(postings, list):
@@ -175,7 +182,7 @@ def fetch_lever_jobs(identifier: str, client: "httpx.Client" = None) -> list[dic
                         })
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 postings = json.loads(r.read().decode("utf-8"))
                 if isinstance(postings, list):
                     for p in postings:
@@ -195,7 +202,7 @@ def fetch_ashby_jobs(identifier: str, client: "httpx.Client" = None) -> list[dic
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for j in data.get("jobs", []):
@@ -206,7 +213,7 @@ def fetch_ashby_jobs(identifier: str, client: "httpx.Client" = None) -> list[dic
                     })
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for j in data.get("jobs", []):
                     results.append({
@@ -225,7 +232,7 @@ def fetch_smartrecruiters_jobs(identifier: str, client: "httpx.Client" = None) -
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for item in data.get("content", []):
@@ -237,7 +244,7 @@ def fetch_smartrecruiters_jobs(identifier: str, client: "httpx.Client" = None) -
                     })
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for item in data.get("content", []):
                     jid = item.get("id")
@@ -266,7 +273,7 @@ def fetch_workday_jobs(identifier: str, client: "httpx.Client" = None) -> list[d
     results = []
     try:
         if client:
-            resp = client.post(url, json=payload, headers={"Accept": "application/json"}, timeout=6.0)
+            resp = client.post(url, json=payload, headers={"Accept": "application/json"}, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for item in data.get("jobPostings", []):
@@ -283,7 +290,7 @@ def fetch_workday_jobs(identifier: str, client: "httpx.Client" = None) -> list[d
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"User-Agent": USER_AGENT, "Content-Type": "application/json", "Accept": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=8) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for item in data.get("jobPostings", []):
                     ext_path = item.get("externalPath", "")
@@ -304,7 +311,7 @@ def fetch_bamboohr_jobs(identifier: str, client: "httpx.Client" = None) -> list[
     results = []
     try:
         if client:
-            resp = client.get(url, headers={"Accept": "application/json"}, timeout=5.0)
+            resp = client.get(url, headers={"Accept": "application/json"}, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for j in data.get("result", []):
@@ -315,7 +322,7 @@ def fetch_bamboohr_jobs(identifier: str, client: "httpx.Client" = None) -> list[
                     })
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for j in data.get("result", []):
                     jid = j.get("id")
@@ -334,7 +341,7 @@ def fetch_breezy_jobs(identifier: str, client: "httpx.Client" = None) -> list[di
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 items = resp.json()
                 for item in items:
@@ -348,7 +355,7 @@ def fetch_breezy_jobs(identifier: str, client: "httpx.Client" = None) -> list[di
                     })
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 items = json.loads(r.read().decode("utf-8"))
                 for item in items:
                     jid = item.get("id")
@@ -370,7 +377,7 @@ def fetch_recruitee_jobs(identifier: str, client: "httpx.Client" = None) -> list
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for item in data.get("offers", []):
@@ -382,7 +389,7 @@ def fetch_recruitee_jobs(identifier: str, client: "httpx.Client" = None) -> list
                     })
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for item in data.get("offers", []):
                     loc = item.get("location") or item.get("city") or ""
@@ -402,7 +409,7 @@ def fetch_workable_jobs(identifier: str, client: "httpx.Client" = None) -> list[
     results = []
     try:
         if client:
-            resp = client.post(url, json={}, timeout=5.0)
+            resp = client.post(url, json={}, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for item in data.get("results", []):
@@ -418,7 +425,7 @@ def fetch_workable_jobs(identifier: str, client: "httpx.Client" = None) -> list[
                     })
         else:
             req = urllib.request.Request(url, data=b'{}', headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for item in data.get("results", []):
                     shortcode = item.get("shortcode", "")
@@ -442,11 +449,11 @@ def fetch_paylocity_jobs(identifier: str, client: "httpx.Client" = None) -> list
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         if html:
@@ -474,11 +481,11 @@ def fetch_teamtailor_jobs(identifier: str, client: "httpx.Client" = None) -> lis
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         if html:
@@ -508,7 +515,7 @@ def fetch_pinpoint_jobs(identifier: str, client: "httpx.Client" = None) -> list[
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for item in data.get("data", []):
@@ -523,7 +530,7 @@ def fetch_pinpoint_jobs(identifier: str, client: "httpx.Client" = None) -> list[
                         })
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for item in data.get("data", []):
                     title = item.get("title", "Unknown Title").strip()
@@ -546,11 +553,11 @@ def fetch_jobvite_jobs(identifier: str, client: "httpx.Client" = None) -> list[d
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         if html:
@@ -573,11 +580,11 @@ def fetch_icims_jobs(identifier: str, client: "httpx.Client" = None) -> list[dic
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=6.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=8) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         if html:
@@ -608,7 +615,7 @@ def fetch_oraclecloud_jobs(identifier: str, client: "httpx.Client" = None) -> li
     results = []
     try:
         if client:
-            resp = client.get(url, headers={"Accept": "application/json"}, timeout=6.0)
+            resp = client.get(url, headers={"Accept": "application/json"}, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for item in data.get("items", []):
@@ -620,7 +627,7 @@ def fetch_oraclecloud_jobs(identifier: str, client: "httpx.Client" = None) -> li
                         results.append({"title": title, "url": full_url, "location": loc})
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=8) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
                 for item in data.get("items", []):
                     for req_item in item.get("requisitionList", []):
@@ -640,11 +647,11 @@ def fetch_keka_jobs(identifier: str, client: "httpx.Client" = None) -> list[dict
     results = []
     try:
         if client:
-            resp = client.get(career_url, timeout=5.0)
+            resp = client.get(career_url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(career_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         guids = re.findall(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', html)
@@ -654,11 +661,11 @@ def fetch_keka_jobs(identifier: str, client: "httpx.Client" = None) -> list[dict
         api_url = f"https://{identifier}.keka.com/careers/api/embedjobs/default/active/{guid}"
 
         if client:
-            resp2 = client.get(api_url, timeout=5.0)
+            resp2 = client.get(api_url, timeout=HTTP_TIMEOUT)
             data = resp2.json() if resp2.status_code == 200 else []
         else:
             req2 = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req2, timeout=6) as r2:
+            with urllib.request.urlopen(req2, timeout=URLLIB_TIMEOUT) as r2:
                 data = json.loads(r2.read().decode("utf-8"))
 
         for j in data:
@@ -683,11 +690,11 @@ def fetch_personio_jobs(identifier: str, client: "httpx.Client" = None) -> list[
         url = f"https://{identifier}.jobs.personio.{domain}/xml"
         try:
             if client:
-                resp = client.get(url, timeout=5.0)
+                resp = client.get(url, timeout=HTTP_TIMEOUT)
                 xml_data = resp.content if resp.status_code == 200 else None
             else:
                 req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req, timeout=6) as r:
+                with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                     xml_data = r.read()
 
             if xml_data:
@@ -711,11 +718,11 @@ def fetch_rippling_jobs(identifier: str, client: "httpx.Client" = None) -> list[
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             data = resp.json() if resp.status_code == 200 else []
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 data = json.loads(r.read().decode("utf-8"))
 
         for j in data:
@@ -735,11 +742,11 @@ def fetch_eightfold_jobs(identifier: str, client: "httpx.Client" = None) -> list
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         if not html:
@@ -750,11 +757,11 @@ def fetch_eightfold_jobs(identifier: str, client: "httpx.Client" = None) -> list
 
         api_url = f"https://{identifier}.eightfold.ai/api/pcsx/search?domain={domain}&query=&start=0&num=50"
         if client:
-            api_resp = client.get(api_url, timeout=6.0)
+            api_resp = client.get(api_url, timeout=HTTP_TIMEOUT)
             data = api_resp.json() if api_resp.status_code == 200 else {}
         else:
             req2 = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-            with urllib.request.urlopen(req2, timeout=6) as r2:
+            with urllib.request.urlopen(req2, timeout=URLLIB_TIMEOUT) as r2:
                 data = json.loads(r2.read().decode("utf-8"))
 
         positions = data.get("data", {}).get("positions", []) if isinstance(data.get("data"), dict) else []
@@ -781,11 +788,11 @@ def fetch_jazzhr_jobs(identifier: str, client: "httpx.Client" = None) -> list[di
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             html = resp.text if resp.status_code == 200 else ""
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as r:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
                 html = r.read().decode("utf-8", errors="ignore")
 
         if html:
@@ -803,7 +810,7 @@ def fetch_adp_jobs(identifier: str, client: "httpx.Client" = None) -> list[dict]
     results = []
     try:
         if client:
-            resp = client.get(url, timeout=5.0)
+            resp = client.get(url, timeout=HTTP_TIMEOUT)
             if resp.status_code == 200:
                 data = resp.json()
                 for r in data.get("jobRequisitions", []):
@@ -817,7 +824,7 @@ def fetch_adp_jobs(identifier: str, client: "httpx.Client" = None) -> list[dict]
                     results.append({"title": title, "url": job_url, "location": loc_name})
         else:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=6) as response:
+            with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 for r in data.get("jobRequisitions", []):
                     title = r.get("requisitionTitle", "").strip()
@@ -985,7 +992,6 @@ def run_ats_scraper(filter_tech: bool = False,
     last_heartbeat_time = start_time
 
     # Batch buffers for high-speed writes
-    BATCH_SIZE = 100
     job_buffer = []
     company_updates = []
 
@@ -1011,7 +1017,7 @@ def run_ats_scraper(filter_tech: bool = False,
     if HAS_HTTPX:
         http_client = httpx.Client(
             headers=COMMON_HEADERS,
-            timeout=httpx.Timeout(timeout=5.0, connect=3.0, pool=5.0),
+            timeout=httpx.Timeout(timeout=HTTP_TIMEOUT, connect=HTTP_CONNECT_TIMEOUT, read=HTTP_TIMEOUT, pool=2.0),
             follow_redirects=True,
             limits=httpx.Limits(
                 max_connections=max_workers * 2,
@@ -1023,90 +1029,108 @@ def run_ats_scraper(filter_tech: bool = False,
     stopped_early = False
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_company = {
-                executor.submit(scrape_company_ats, comp, filter_tech, http_client): comp
-                for comp in companies
-            }
-
-            for future in as_completed(future_to_company):
+            for chunk_start in range(0, len(companies), CHUNK_SIZE):
                 if os.path.exists("stop.flag"):
                     print("\n🛑 [STOP] stop.flag detected! Terminating company scraper gracefully...")
                     stopped_early = True
-                    try:
-                        executor.shutdown(wait=False, cancel_futures=True)
-                    except Exception:
-                        pass
                     break
 
-                comp = future_to_company[future]
-                comp_name = comp.get("name") or comp.get("identifier")
-                platform = comp.get("ats_platform")
-                ident = comp.get("identifier")
-                companies_processed += 1
+                chunk = companies[chunk_start:chunk_start + CHUNK_SIZE]
+                future_to_company = {
+                    executor.submit(scrape_company_ats, comp, filter_tech, http_client): comp
+                    for comp in chunk
+                }
 
-                try:
-                    _, jobs = future.result()
-                except Exception:
-                    jobs = []
+                for future in as_completed(future_to_company):
+                    if os.path.exists("stop.flag"):
+                        print("\n🛑 [STOP] stop.flag detected! Terminating company scraper gracefully...")
+                        stopped_early = True
+                        try:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                        except Exception:
+                            pass
+                        break
 
-                new_for_company = 0
-                now_iso = datetime.now(timezone.utc).isoformat()
+                    comp = future_to_company[future]
+                    comp_name = comp.get("name") or comp.get("identifier")
+                    platform = comp.get("ats_platform")
+                    ident = comp.get("identifier")
+                    companies_processed += 1
 
-                for job in jobs:
-                    url = (job.get("url") or "").strip()
-                    title = (job.get("title") or "Unknown Title").strip()
+                    try:
+                        _, jobs = future.result()
+                    except Exception:
+                        jobs = []
 
-                    if not url or url in known_urls:
-                        continue
+                    new_for_company = 0
+                    now_iso = datetime.now(timezone.utc).isoformat()
 
-                    known_urls.add(url)
-                    location = job.get("location", "")
-                    clean_loc = clean_location_input(location)
+                    for job in jobs:
+                        url = (job.get("url") or "").strip()
+                        title = (job.get("title") or "Unknown Title").strip()
 
-                    initial_rank = "UNKNOWN"
-                    initial_status = "New"
-                    initial_reason = ""
-                    details_blob = json.dumps({"location": clean_loc}) if clean_loc else None
-                    job_title = f"{comp_name} - {title}" if comp_name not in title else title
+                        if not url or url in known_urls:
+                            continue
 
-                    job_buffer.append((
-                        url,
-                        job_title,
-                        initial_status,
-                        initial_rank,
-                        initial_reason,
-                        now_iso,
-                        details_blob,
-                        comp_name,
-                        platform
-                    ))
-                    new_for_company += 1
-                    new_jobs_added += 1
+                        known_urls.add(url)
+                        location = job.get("location", "")
+                        clean_loc = clean_location_input(location)
 
-                company_updates.append((now_iso, len(jobs), platform, ident))
+                        initial_rank = "UNKNOWN"
+                        initial_status = "New"
+                        initial_reason = ""
+                        details_blob = json.dumps({"location": clean_loc}) if clean_loc else None
+                        job_title = f"{comp_name} - {title}" if comp_name not in title else title
 
-                # Flush to SQLite in high-speed batches
-                if len(company_updates) >= BATCH_SIZE or len(job_buffer) >= BATCH_SIZE:
-                    flush_batch()
+                        job_buffer.append((
+                            url,
+                            job_title,
+                            initial_status,
+                            initial_rank,
+                            initial_reason,
+                            now_iso,
+                            details_blob,
+                            comp_name,
+                            platform
+                        ))
+                        new_for_company += 1
+                        new_jobs_added += 1
 
-                # Telemetry: show immediate log if company yielded new jobs
-                if new_for_company > 0:
-                    print(f"[{companies_processed:,}/{len(companies):,}] 🎯 {comp_name} ({platform}): {len(jobs)} jobs -> 💾 +{new_for_company} NEW jobs added!")
-                    sys.stdout.flush()
+                    company_updates.append((now_iso, len(jobs), platform, ident))
 
-                # Telemetry: periodic heartbeat every 200 companies or 5 seconds
-                curr_t = time.time()
-                if companies_processed % 200 == 0 or (curr_t - last_heartbeat_time) >= 5.0:
-                    elapsed = curr_t - start_time
-                    rate = companies_processed / elapsed if elapsed > 0 else 0.0
-                    rem_companies = len(companies) - companies_processed
-                    eta_sec = rem_companies / rate if rate > 0 else 0
-                    eta_str = f"{int(eta_sec // 60)}m {int(eta_sec % 60):02d}s" if eta_sec >= 60 else f"{int(eta_sec)}s"
-                    pct = (companies_processed / len(companies)) * 100.0
+                    # Flush to SQLite in high-speed batches
+                    if len(company_updates) >= BATCH_SIZE or len(job_buffer) >= BATCH_SIZE:
+                        flush_batch()
 
-                    print(f"⚡ [PROGRESS] {companies_processed:,}/{len(companies):,} ({pct:.1f}%) | 💾 +{new_jobs_added:,} NEW | {rate:.1f} comp/s | ETA: {eta_str}")
-                    sys.stdout.flush()
-                    last_heartbeat_time = curr_t
+                    # Telemetry: show immediate log if company yielded new jobs
+                    if new_for_company > 0:
+                        print(f"[{companies_processed:,}/{len(companies):,}] 🎯 {comp_name} ({platform}): {len(jobs)} jobs -> 💾 +{new_for_company} NEW jobs added!")
+                        sys.stdout.flush()
+
+                    # Telemetry: periodic heartbeat every 200 companies or 5 seconds
+                    curr_t = time.time()
+                    if companies_processed % 200 == 0 or (curr_t - last_heartbeat_time) >= 5.0:
+                        elapsed = curr_t - start_time
+                        rate = companies_processed / elapsed if elapsed > 0 else 0.0
+                        rem_companies = len(companies) - companies_processed
+                        eta_sec = rem_companies / rate if rate > 0 else 0
+                        eta_str = f"{int(eta_sec // 60)}m {int(eta_sec % 60):02d}s" if eta_sec >= 60 else f"{int(eta_sec)}s"
+                        pct = (companies_processed / len(companies)) * 100.0
+
+                        print(f"⚡ [PROGRESS] {companies_processed:,}/{len(companies):,} ({pct:.1f}%) | 💾 +{new_jobs_added:,} NEW | {rate:.1f} comp/s | ETA: {eta_str}")
+                        sys.stdout.flush()
+                        last_heartbeat_time = curr_t
+
+                if stopped_early:
+                    break
+
+                # Periodic WAL checkpoint every 2,000 companies to prevent WAL bloat
+                if companies_processed % 2000 < CHUNK_SIZE:
+                    try:
+                        flush_batch()
+                        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                    except Exception:
+                        pass
 
         # Final commit for remaining buffered records
         flush_batch()
