@@ -797,6 +797,42 @@ def fetch_jazzhr_jobs(identifier: str, client: "httpx.Client" = None) -> list[di
     return results
 
 
+def fetch_adp_jobs(identifier: str, client: "httpx.Client" = None) -> list[dict]:
+    """Fetches jobs via ADP Workforce Now public Career Center API."""
+    url = f"https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid={identifier}"
+    results = []
+    try:
+        if client:
+            resp = client.get(url, timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                for r in data.get("jobRequisitions", []):
+                    title = r.get("requisitionTitle", "").strip()
+                    item_id = r.get("itemID", "")
+                    if not title or not item_id:
+                        continue
+                    job_url = f"https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid={identifier}&jobId={item_id}"
+                    locs = r.get("requisitionLocations", [])
+                    loc_name = locs[0].get("nameCode", {}).get("shortName", "").strip() if locs else ""
+                    results.append({"title": title, "url": job_url, "location": loc_name})
+        else:
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=6) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                for r in data.get("jobRequisitions", []):
+                    title = r.get("requisitionTitle", "").strip()
+                    item_id = r.get("itemID", "")
+                    if not title or not item_id:
+                        continue
+                    job_url = f"https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid={identifier}&jobId={item_id}"
+                    locs = r.get("requisitionLocations", [])
+                    loc_name = locs[0].get("nameCode", {}).get("shortName", "").strip() if locs else ""
+                    results.append({"title": title, "url": job_url, "location": loc_name})
+    except Exception:
+        pass
+    return results
+
+
 # Mapping of ATS platform name to fetch function
 PLATFORM_FETCHERS = {
     "greenhouse": fetch_greenhouse_jobs,
@@ -811,6 +847,7 @@ PLATFORM_FETCHERS = {
     "paylocity": fetch_paylocity_jobs,
     "teamtailor": fetch_teamtailor_jobs,
     "pinpoint": fetch_pinpoint_jobs,
+    "pinpointhq": fetch_pinpoint_jobs,
     "jobvite": fetch_jobvite_jobs,
     "icims": fetch_icims_jobs,
     "oraclecloud": fetch_oraclecloud_jobs,
@@ -819,6 +856,7 @@ PLATFORM_FETCHERS = {
     "rippling": fetch_rippling_jobs,
     "jazzhr": fetch_jazzhr_jobs,
     "eightfold": fetch_eightfold_jobs,
+    "adp": fetch_adp_jobs,
 }
 
 
